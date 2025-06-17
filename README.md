@@ -46,8 +46,8 @@ llm-benchmarking/
 │   ├── initial_details_easy.txt
 │   └── initial_details_medium_hard.txt
 │
-├── R005_constants.py
-├── R005_driver_lemos.py
+├── constants.py
+├── main.py
 └── README.md
 
 ```
@@ -64,13 +64,13 @@ llm-benchmarking/
    pip install openai pymupdf pandas
    ```
 
-3. Configure API key in `R005_constants.py`
+3. Configure API key in `constants.py`
 
 ## Usage
 ```bash
 # Run extraction phase only
-python R005_driver_lemos.py --study_path ./studies/example --stage 1 --difficulty medium
-python R005_driver_lemos.py --study_path ./studies/example --stage 2 --difficulty medium
+python main.py --study_path ./studies/example --stage 1 --difficulty medium
+python main.py --study_path ./studies/example --stage 2 --difficulty medium
 ```
 
 **Arguments:**
