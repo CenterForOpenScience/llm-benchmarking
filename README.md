@@ -26,6 +26,80 @@ Over time, we will open up parts of this repo for **community use and feedback**
 * Benchmarks and datasets
 * Contribution guidelines for task submissions and agent evaluation strategies
 
+
+## Project Structure
+```
+llm-benchmarking/
+│
+├── info_extractor/
+│   ├── extractor.py
+│   ├── file_utils.py
+│   ├── prompt_builder.py
+│   └── README.md
+│
+├── templates/
+│   ├── replication_info_schema.json
+│   ├── info_extractor_stage1_instructions.json
+│   └── info_extractor_stage2_instructions.json
+│
+├── samples/
+│   ├── initial_details_easy.txt
+│   └── initial_details_medium_hard.txt
+│
+├── R005_constants.py
+├── R005_driver_lemos.py
+└── README.md
+
+```
+
+## Installation
+1. Clone repository:
+   ```bash
+   git clone https://github.com/CenterForOpenScience/llm-benchmarking.git
+   cd llm-benchmarking
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install openai pymupdf pandas
+   ```
+
+3. Configure API key in `R005_constants.py`
+
+## Usage
+```bash
+# Run extraction phase only
+python R005_driver_lemos.py --study_path ./studies/example --stage 1 --difficulty medium
+python R005_driver_lemos.py --study_path ./studies/example --stage 2 --difficulty medium
+```
+
+**Arguments:**
+* `--study_path`: Path to study folder
+* `--stage`: "1" (original) or "2" (replication)
+* `--difficulty`: "easy", "medium", or "hard"
+* `--show-prompt`: Print prompt
+
+## Output Files
+* Stage 1: `replication_info_stage1.json`
+* Stage 2: `replication_info.json`
+
+## File Requirements
+
+### Stage 1
+| Difficulty | Required Files |
+|------------|----------------|
+| Easy       | `initial_details_easy.txt`, `original_paper.pdf`, `data_description.txt`|
+| Medium     | `initial_details_medium_hard.txt`, `original_paper.pdf` |
+| Hard       | `initial_details_medium_hard.txt`, `original_paper.pdf` |
+
+### Stage2
+| Difficulty | Required Files |
+|------------|----------------|
+| Easy       | `initial_details_easy.txt`, `original_paper.pdf`, `replication_info_stage1.json`, `replication_data.csv` |
+| Medium     | `initial_details_medium_hard.txt`, `original_paper.pdf`, `replication_info_stage1.json` |
+| Hard       | `initial_details_medium_hard.txt`, `original_paper.pdf`, `replication_info_stage1.json` |
+
+
 ## 🔐 Access and Permissions
 
 This repository is managed under the **COS GitHub organization**, with:
