@@ -1,5 +1,5 @@
 """
-R005_LLM_Benchmarking__
+LLM_Benchmarking__
 |
 info_extractor--|extractor.py
 Created on Mon Jun  9 15:36:52 2025
@@ -15,7 +15,7 @@ from openai.types.beta.threads import TextContentBlock
 
 from info_extractor.file_utils import read_file_contents, save_output, save_prompt_log
 from info_extractor.prompt_builder import build_prompt, build_context_and_message
-from R005_constants import API_KEY, TEMPLATE_PATHS, FILE_SELECTION_RULES
+from constants import API_KEY, TEMPLATE_PATHS, FILE_SELECTION_RULES
 
 client = OpenAI(api_key=API_KEY)
 
