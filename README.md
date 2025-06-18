@@ -61,7 +61,7 @@ llm-benchmarking/
 
 2. Install dependencies:
    ```bash
-   pip install openai pymupdf pandas
+   pip install openai pymupdf pandas python-docx
    ```
 
 3. Configure API key in `constants.py`
