@@ -114,11 +114,11 @@ All content in this repository is shared under <placeholder for LICENCE>
 
 ## 👥 Contributors
 
-Core team members from COS, plus external partners specializing in:
+Core team members from COS, plus external partners from Old Dominion University, Pennsylvania State University, and University of Notre Dame  specializing in:
 
 * Agent development
 * Benchmark design
-* Reproducibility and evaluation
+* Opoen Science Research
 
 ## 📬 Contact
 
