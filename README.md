@@ -37,6 +37,11 @@ llm-benchmarking/
 │   ├── prompt_builder.py
 │   └── README.md
 │
+├── validator/
+│   ├── extract_from_human_replication_study.py
+│   ├── compare_outputs.py                        
+│   └── README.md                                 
+│
 ├── templates/
 │   ├── replication_info_schema.json
 │   ├── info_extractor_stage1_instructions.json
@@ -44,15 +49,18 @@ llm-benchmarking/
 │
 ├── samples/
 │   ├── initial_details_easy.txt
-│   └── initial_details_medium_hard.txt
+│   └── initial_details_medium_hard.txt             
 │
 ├── constants.py
+├── extract_human_replication_info.py
 ├── main.py
-└── README.md
+├── README.md
+└── validate_info_extractor.py
+
 
 ```
 
-## Installation
+## 🧰 Installation
 1. Clone repository:
    ```bash
    git clone https://github.com/CenterForOpenScience/llm-benchmarking.git
@@ -66,38 +74,76 @@ llm-benchmarking/
 
 3. Configure API key in `constants.py`
 
-## Usage
+## 🔧 Usage
+
+### Info Extractor Module
+
+This module runs LLM-based extraction of structured metadata from original and replication studies (based on the difficulty level).
+
 ```bash
-# Run extraction phase only
-python main.py --study_path ./studies/example --stage 1 --difficulty medium
-python main.py --study_path ./studies/example --stage 2 --difficulty medium
+# Stage 1: Extract from original study
+python main.py --study_path ./studies/case_study_1 --stage 1 --difficulty medium
+
+# Stage 2: Extract from replication study
+python main.py --study_path ./studies/case_study_1 --stage 2 --difficulty medium
 ```
 
 **Arguments:**
-* `--study_path`: Path to study folder
-* `--stage`: "1" (original) or "2" (replication)
-* `--difficulty`: "easy", "medium", or "hard"
-* `--show-prompt`: Print prompt
+* `--study_path`: Path to the study folder
+* `--stage`: `"1"` for original, `"2"` for replication
+* `--difficulty`: `"easy"`, `"medium"`, or `"hard"`
+* `--show-prompt`: Print the constructed LLM prompt for debugging
 
-## Output Files
-* Stage 1: `replication_info_stage1.json`
-* Stage 2: `replication_info.json`
+#### Output Files
+* Stage 1 → `replication_info_stage1.json`
+* Stage 2 → `replication_info.json`
 
-## File Requirements
+#### File Requirements
 
-### Stage 1
+##### Stage 1
+
 | Difficulty | Required Files |
 |------------|----------------|
-| Easy       | `initial_details_easy.txt`, `original_paper.pdf`, `data_description.txt`|
-| Medium     | `initial_details_medium_hard.txt`, `original_paper.pdf` |
-| Hard       | `initial_details_medium_hard.txt`, `original_paper.pdf` |
+| Easy | `initial_details_easy.txt`, `original_paper.pdf`, `data_description.txt` |
+| Medium | `initial_details_medium_hard.txt`, `original_paper.pdf` |
+| Hard | `initial_details_medium_hard.txt`, `original_paper.pdf` |
 
-### Stage2
+##### Stage 2
+
 | Difficulty | Required Files |
 |------------|----------------|
-| Easy       | `initial_details_easy.txt`, `original_paper.pdf`, `replication_info_stage1.json`, `replication_data.csv` |
-| Medium     | `initial_details_medium_hard.txt`, `original_paper.pdf`, `replication_info_stage1.json` |
-| Hard       | `initial_details_medium_hard.txt`, `original_paper.pdf`, `replication_info_stage1.json` |
+| Easy | `initial_details_easy.txt`, `original_paper.pdf`, `replication_info_stage1.json`, `replication_data.csv` |
+| Medium | `initial_details_medium_hard.txt`, `original_paper.pdf`, `replication_info_stage1.json` |
+| Hard | `initial_details_medium_hard.txt`, `original_paper.pdf`, `replication_info_stage1.json` |
+
+
+### Validator Module
+
+This module validates whether the metadata extracted by the info extractor matches what is expected based on human-authored replication documents.
+
+#### Stage 1 — Extract Expected Values
+
+Uses LLMs to generate a `replication_info_expected.json` from pre-registration and SCORE reports.
+
+```bash
+python scripts/extract_human_replication_info.py \
+  --preregistration path/to/prereg.pdf \
+  --score_report path/to/report.docx \
+  --output_path path/to/study_dir/replication_info_expected.json
+```
+
+#### Stage 2 — Validate info_extractor Output
+
+Compares `replication_info.json` (from info extractor) to `replication_info_expected.json` (from validator module Stage 1).
+
+```bash
+python validate_info_extractor.py --study_dir "data/study_dir" --results_file "info_exractor_validation_results.json"
+```
+
+#### Output
+* JSON formatted summary of matched and mismatched fields
+* prompt for traceability (`logs/` directory)
+
 
 
 ## 🔐 Access and Permissions
