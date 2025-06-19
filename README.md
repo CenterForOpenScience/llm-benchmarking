@@ -126,7 +126,7 @@ This module validates whether the metadata extracted by the info extractor match
 Uses LLMs to generate a `replication_info_expected.json` from pre-registration and SCORE reports.
 
 ```bash
-python scripts/extract_human_replication_info.py \
+python extract_human_replication_info.py \
   --preregistration path/to/prereg.pdf \
   --score_report path/to/report.docx \
   --output_path path/to/study_dir/replication_info_expected.json
