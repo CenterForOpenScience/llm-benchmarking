@@ -11,7 +11,7 @@ API_KEY = ""
 TEMPLATE_PATHS = {
     "replication_info_template": "templates/replication_info_schema.json",
     "stage1_instructions": "templates/info_extractor_stage1_instructions.json",
-    "stage2_instructions": "templates/info_extractor_stage2_instructions.json"
+    "stage2_instructions": "templates/info_extractor_stage2_instructions.json",
 }
 
 FILE_SELECTION_RULES = {
@@ -27,3 +27,13 @@ FILE_SELECTION_RULES = {
     }
 }
 
+
+INTERPRET_CONSTANTS = {
+    "files": {
+        "original_paper.pdf": "The pdf file containing the full text of the original paper",
+        "preregistration.pdf": "Preregistration that documents the research plan for replicating a focal claim from the original paper.",
+        "replication_code": "The folder containing the code you used to run the replication study based on your preregistration.",
+        "execution_outputs": "The folder containing output files after executing the code in the replication_code folder"
+    },
+    "json_template": "templates/interpret_schema.json"
+}
