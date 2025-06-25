@@ -164,7 +164,7 @@ Core team members from COS, plus external partners from Old Dominion University,
 
 * Agent development
 * Benchmark design
-* Opoen Science Research
+* Open Science Research
 
 ## 📬 Contact
 
