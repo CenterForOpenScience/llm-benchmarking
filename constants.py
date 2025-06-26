@@ -3,7 +3,7 @@ LLM_Benchmarking__
 |
 constants.py
 Created on Mon Jun  9 15:36:52 2025
-@author: Rochana Obadage
+@authors: Rochana Obadage, Bang Nguyen
 """
 
 API_KEY = ""
@@ -11,7 +11,7 @@ API_KEY = ""
 TEMPLATE_PATHS = {
     "replication_info_template": "templates/replication_info_schema.json",
     "stage1_instructions": "templates/info_extractor_stage1_instructions.json",
-    "stage2_instructions": "templates/info_extractor_stage2_instructions.json",
+    "stage2_instructions": "templates/info_extractor_stage2_instructions.json"
 }
 
 FILE_SELECTION_RULES = {
