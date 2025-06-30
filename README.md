@@ -156,7 +156,7 @@ This repository is managed under the **COS GitHub organization**, with:
 
 ## 📄 License
 
-All content in this repository is shared under <placeholder for LICENCE>
+All content in this repository is shared under the [Apache License 2.0](LICENSE)
 
 ## 👥 Contributors
 
