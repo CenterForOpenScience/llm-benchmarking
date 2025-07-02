@@ -49,21 +49,12 @@ FILE_READERS = {
     ".csv": read_csv,
 }
 
-def read_file_contents(folder, stage, difficulty, selection_rules):
-    """
-    Reads and concatenates contents of selected files based on stage and difficulty.
 
-    Args:
-        folder (str or Path): Path to the case study folder.
-        stage (str): "1" or "2"
-        difficulty (str): "easy", "medium", or "hard"
-        selection_rules (dict): FILE_SELECTION_RULES from constants
-
-    Returns:
-        str: A single formatted string containing the contents of all selected files.
-    """
+def read_file_contents(folder, difficulty, selection_rules):
     folder = Path(folder)
-    allowed_files = selection_rules[stage][difficulty]
+
+    allowed_files = selection_rules['info_extractor'][difficulty]
+
     aggregated_content = []
 
     for file in folder.iterdir():
@@ -71,35 +62,22 @@ def read_file_contents(folder, stage, difficulty, selection_rules):
             try:
                 reader = FILE_READERS[file.suffix]
                 content = reader(file)
-                
                 aggregated_content.append(f"\n---\n **{file.name}**\n{content}")
             except Exception as e:
                 print(f"Skipping {file.name} due to reader error: {e}")
 
     if not aggregated_content:
-        print(f"No matching readable files for stage {stage}, difficulty '{difficulty}'")
+        print(f"No matching readable files for difficulty '{difficulty}'")
 
-    return "\n".join(aggregated_content)
+    return "\n".join(aggregated_content)    
     
 
-def save_output(stage, extracted_json, study_path, stage1_data):
-
-    # Save output JSON files
-    if stage == '1':
-        output_path = os.path.join(study_path, "replication_info_stage1.json")
-    else:
-        # Merge full replication_info.json with original_study from stage1
-        final_output = {
-            "original_study": stage1_data,
-            **extracted_json
-        }
-        output_path = os.path.join(study_path, "replication_info.json")
-        extracted_json = final_output
-
+def save_output(extracted_json, study_path):
+    output_path = os.path.join(study_path, "replication_info.json")
     with open(output_path, 'w') as f:
         json.dump(extracted_json, f, indent=2)
 
-    print(f"Stage {stage} output saved to {output_path}")
+    print(f"[INFO] Combined output saved to {output_path}")
 
 
 def save_prompt_log(study_path, stage, prompt, full_message):

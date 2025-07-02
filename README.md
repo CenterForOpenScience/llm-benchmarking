@@ -81,26 +81,20 @@ llm-benchmarking/
 This module runs LLM-based extraction of structured metadata from original and replication studies (based on the difficulty level).
 
 ```bash
-# Stage 1: Extract from original study
-python main.py --study_path ./studies/case_study_1 --stage 1 --difficulty medium
-
-# Stage 2: Extract from replication study
-python main.py --study_path ./studies/case_study_1 --stage 2 --difficulty medium
+# Extract details required to conduct the replication study
+python main.py --study_path ./studies/case_study_1 --difficulty medium
 ```
 
 **Arguments:**
 * `--study_path`: Path to the study folder
-* `--stage`: `"1"` for original, `"2"` for replication
 * `--difficulty`: `"easy"`, `"medium"`, or `"hard"`
 * `--show-prompt`: Print the constructed LLM prompt for debugging
 
 #### Output Files
-* Stage 1 → `replication_info_stage1.json`
-* Stage 2 → `replication_info.json`
+* inside the study folder → `replication_info.json`
 
 #### File Requirements
 
-##### Stage 1
 
 | Difficulty | Required Files |
 |------------|----------------|
@@ -108,13 +102,6 @@ python main.py --study_path ./studies/case_study_1 --stage 2 --difficulty medium
 | Medium | `initial_details_medium_hard.txt`, `original_paper.pdf` |
 | Hard | `initial_details_medium_hard.txt`, `original_paper.pdf` |
 
-##### Stage 2
-
-| Difficulty | Required Files |
-|------------|----------------|
-| Easy | `initial_details_easy.txt`, `original_paper.pdf`, `replication_info_stage1.json`, `replication_data.csv` |
-| Medium | `initial_details_medium_hard.txt`, `original_paper.pdf`, `replication_info_stage1.json` |
-| Hard | `initial_details_medium_hard.txt`, `original_paper.pdf`, `replication_info_stage1.json` |
 
 
 ### Validator Module
