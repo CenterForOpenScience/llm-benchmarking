@@ -10,19 +10,19 @@ Main extraction logic that:
 - Loads templates and instructions
 - Reads input files
 - Creates and manages OpenAI Assistant interactions
-- Handles stage 1 (original study) and stage 2 (replication) extraction
-- Merges and saves outputs
+- Handles original study and replication study related initial details extraction
+- Saves outputs
 
 ### `file_utils.py`
 File handling utilities:
 - Reads PDF, TXT, JSON, and CSV files
-- Selects files based on stage/difficulty rules
+- Selects files based on difficulty rules
 - Saves output JSON
 
 ### `prompt_builder.py`
 Constructs LLM prompts by combining:
 - JSON template schemas
-- Stage-specific instructions
+- Difficulty level-specific instructions
 
 ## Usage
 ```python
@@ -30,7 +30,6 @@ from info_extractor.extractor import run_extraction
 
 run_extraction(
     study_path="path/to/study_folder",
-    stage="1",  # or "2"
     difficulty="easy",  # "medium" or "hard"
     show_prompt=False
 )
