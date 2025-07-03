@@ -10,15 +10,18 @@ import json
 import time
 from openai import OpenAI
 from openai.types.beta.threads import TextContentBlock
+from logger import get_logger
 
 from info_extractor.file_utils import read_file_contents, save_output, save_prompt_log
 from info_extractor.prompt_builder import build_prompt, build_context_and_message
 from constants import API_KEY, TEMPLATE_PATHS, FILE_SELECTION_RULES
 
 client = OpenAI(api_key=API_KEY)
-
+logger = get_logger()
 
 def run_extraction(study_path, difficulty, show_prompt=False):
+    
+    logger.info(f"inside run extraction")
     # Load replication_info template
     with open(TEMPLATE_PATHS['replication_info_template']) as f:
         full_template = json.load(f)
@@ -41,9 +44,12 @@ def run_extraction(study_path, difficulty, show_prompt=False):
     if show_prompt:
         print("=== GENERATED PROMPT ===")
         print(prompt)
+        logger.info(f"=== GENERATED PROMPT ===\n{prompt}")
+        logger.info(f"\n\n=== GENERATED MESSAGE ===\n{full_message}")
 
     save_prompt_log(study_path, "combined", prompt, full_message)
 
+    # return
     assistant = client.beta.assistants.create(
         name=f"Extractor-Combined-{difficulty}",
         instructions=prompt,
@@ -88,6 +94,7 @@ def run_extraction(study_path, difficulty, show_prompt=False):
         except json.JSONDecodeError as e:
             print("Failed to parse JSON:", e)
             print("Raw text was:", json_text)
+            logger.info(f"\n\n=== RAW TEXT ===\n{json_text}")
             extracted_json = None
     else:
         print("No assistant reply found.")
