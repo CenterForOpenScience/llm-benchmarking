@@ -40,7 +40,7 @@ python extract_human_replication_info.py \
 Compares `replication_info.json` (from info_extractor module) with `replication_info_expected.json` (from validator module Stage 1).
 
 ### Input:
-* `--study_dir`: Directory containing both JSON files (`replication_info_expected.json` and `replication_info_expected.json`)
+* `--study_dir`: Directory containing both JSON files (`replication_info.json` and `replication_info_expected.json`)
 * `--results_file`: File name for json formatted summary of matched and mismatched fields (ex: `info_exractor_validation_results.json`)
 
 ### Command:
