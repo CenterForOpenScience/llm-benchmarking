@@ -7,6 +7,9 @@ Created on Mon Jun  9 15:36:52 2025
 """
 
 import json
+from logger import get_logger
+
+logger = get_logger()
 
 
 def build_prompt(template, instruction):

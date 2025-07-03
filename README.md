@@ -43,9 +43,9 @@ llm-benchmarking/
 │   └── README.md                                 
 │
 ├── templates/
-│   ├── replication_info_schema.json
-│   ├── info_extractor_stage1_instructions.json
-│   └── info_extractor_stage2_instructions.json
+│   ├── info_extractor_instructions.json
+│   ├── interpret_schema.json
+│   └── replication_info_schema.json
 │
 ├── samples/
 │   ├── initial_details_easy.txt
@@ -69,7 +69,7 @@ llm-benchmarking/
 
 2. Install dependencies:
    ```bash
-   pip install openai pymupdf pandas python-docx
+   pip install openai pymupdf pandas python-docx dotenv pyreadr
    ```
 
 3. Configure API key in `constants.py`
