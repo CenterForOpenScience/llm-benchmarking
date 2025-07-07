@@ -13,7 +13,7 @@ import re
 
 def main():
     parser = argparse.ArgumentParser(description="LLM-based Replication Info Extractor")
-    parser.add_argument('--study_path', required=True)
+    parser.add_argument('--study_path', required=True, help="Path to case study folder", help="Difficulty level")
     parser.add_argument('--difficulty', choices=['easy', 'medium', 'hard'], required=True)
     parser.add_argument("--show-prompt", action="store_true")
     args = parser.parse_args()
