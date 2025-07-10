@@ -213,29 +213,7 @@ def read_file_contents(folder, difficulty, selection_rules):
     # Combine everything into one string prompt context
     file_context = "\n".join(aggregated_content + code_section + dataset_section)
 
-    return file_context, datasets_original, datasets_replication, code_file_descriptions
-
-
-# def read_file_contents(folder, difficulty, selection_rules):
-#     folder = Path(folder)
-
-#     allowed_files = selection_rules['info_extractor'][difficulty]
-
-#     aggregated_content = []
-
-#     for file in folder.iterdir():
-#         if file.name in allowed_files and file.suffix in FILE_READERS:
-#             try:
-#                 reader = FILE_READERS[file.suffix]
-#                 content = reader(file)
-#                 aggregated_content.append(f"\n---\n **{file.name}**\n{content}")
-#             except Exception as e:
-#                 print(f"Skipping {file.name} due to reader error: {e}")
-
-#     if not aggregated_content:
-#         print(f"No matching readable files for difficulty '{difficulty}'")
-
-#     return "\n".join(aggregated_content)    
+    return file_context, datasets_original, datasets_replication, code_file_descriptions 
     
 
 def save_output(extracted_json, study_path):

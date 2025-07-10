@@ -8,6 +8,7 @@ Created on Mon Jun  9 15:36:52 2025
 
 import json
 import time
+import re
 from openai import OpenAI
 from openai.types.beta.threads import TextContentBlock
 from logger import get_logger
@@ -81,14 +82,22 @@ def run_extraction(study_path, difficulty, show_prompt=False):
     messages = client.beta.threads.messages.list(thread_id=run.thread_id)
     reply = next(msg for msg in messages.data if msg.role == "assistant")
 
+
     if reply and reply.content:
         for block in reply.content:
             if isinstance(block, TextContentBlock):
-                json_text = block.text.value
+                json_text = block.text.value.strip()
                 break
         else:
             raise ValueError("No TextContentBlock found in assistant reply.")
-
+    
+        # Remove markdown-style code fences if present (e.g., ```json ... ```)
+        if json_text.startswith("```"):
+            # Use regex to extract content between the code fences
+            match = re.search(r"```(?:json)?\s*(.*?)\s*```", json_text, re.DOTALL)
+            if match:
+                json_text = match.group(1).strip()
+    
         try:
             extracted_json = json.loads(json_text)
         except json.JSONDecodeError as e:
@@ -98,5 +107,23 @@ def run_extraction(study_path, difficulty, show_prompt=False):
             extracted_json = None
     else:
         print("No assistant reply found.")
+
+    # if reply and reply.content:
+    #     for block in reply.content:
+    #         if isinstance(block, TextContentBlock):
+    #             json_text = block.text.value
+    #             break
+    #     else:
+    #         raise ValueError("No TextContentBlock found in assistant reply.")
+
+    #     try:
+    #         extracted_json = json.loads(json_text)
+    #     except json.JSONDecodeError as e:
+    #         print("Failed to parse JSON:", e)
+    #         print("Raw text was:", json_text)
+    #         logger.info(f"\n\n=== RAW TEXT ===\n{json_text}")
+    #         extracted_json = None
+    # else:
+    #     print("No assistant reply found.")
 
     save_output(extracted_json, study_path)
