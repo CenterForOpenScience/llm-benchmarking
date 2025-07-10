@@ -106,9 +106,11 @@ python main.py --study_path ./studies/case_study_1 --difficulty medium
 
 ### Validator Module
 
-This module validates whether the metadata extracted by the info extractor matches what is expected based on human-authored replication documents.
+This module validates whether the metadata extracted by the info extractor matches what is expected based on human-authored replication documents. Currently, we experiment with 2 evaluation approaches
 
-#### Stage 1 — Extract Expected Values
+#### Approach 1: Extract-then-Evaluate
+
+##### Stage 1 — Extract Expected Values
 
 Uses LLMs to generate a `replication_info_expected.json` from pre-registration and SCORE reports.
 
@@ -119,7 +121,7 @@ python extract_human_replication_info.py \
   --output_path path/to/study_dir/replication_info_expected.json
 ```
 
-#### Stage 2 — Validate info_extractor Output
+##### Stage 2 — Validate info_extractor Output
 
 Compares `replication_info.json` (from info extractor) to `replication_info_expected.json` (from validator module Stage 1).
 
@@ -127,11 +129,24 @@ Compares `replication_info.json` (from info extractor) to `replication_info_expe
 python validate_info_extractor.py --study_dir "data/study_dir" --results_file "info_exractor_validation_results.json"
 ```
 
-#### Output
+##### Output
 * JSON formatted summary of matched and mismatched fields
 * prompt for traceability (`logs/` directory)
 
+#### Approach 2: Extract-and-Evaluate
 
+We use an LLM to extract expected information from preregistration AND evaluate quality of the info-extractor module at the same time (Combine stage 1 and 2).
+
+```bash
+python evaluate_extract_info.py \
+  --original_paer path/to/paper.pdf \
+  --preregistration path/to/prereg.pdf \
+  --extracted_json_path path/to/extracted_json.json \
+  --output_path path/to/study_dir/llm_eval.json
+```
+##### Output
+* JSON formatted summary of matched and mismatched fields
+* prompt for traceability (`logs/` directory)
 
 ## 🔐 Access and Permissions
 
