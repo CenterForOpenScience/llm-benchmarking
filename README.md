@@ -98,7 +98,7 @@ python main.py --study_path ./studies/case_study_1 --difficulty medium
 
 | Difficulty | Required Files |
 |------------|----------------|
-| Easy | `initial_details_easy.txt`, `original_paper.pdf`, `data_description.txt` |
+| Easy | `initial_details_easy.txt`, `original_paper.pdf`, `data`, `code` |
 | Medium | `initial_details_medium_hard.txt`, `original_paper.pdf` |
 | Hard | `initial_details_medium_hard.txt`, `original_paper.pdf` |
 
