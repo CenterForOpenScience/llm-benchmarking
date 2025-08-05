@@ -112,9 +112,13 @@ def summarize_dataset(file_path):
 
 
 
-def read_file_contents(folder, difficulty, selection_rules):
+def read_file_contents(folder, difficulty, selection_rules, stage="stage_1"):
     folder = Path(folder)
-    allowed_files = selection_rules['info_extractor'][difficulty]['files']
+
+    tier_rules = selection_rules['info_extractor'].get(difficulty, {})
+    stage_rules = tier_rules.get(stage, {})
+    allowed_files = stage_rules.get("files", [])
+    allowed_folders = stage_rules.get("folders", {})
 
     aggregated_content = []
     code_section = ["\n=== CODE RELATED FILES ==="]
@@ -126,10 +130,10 @@ def read_file_contents(folder, difficulty, selection_rules):
     for file in folder.iterdir():
 
         if file.is_dir():
-            # CODEBASE folder
-            if file.name.lower() == "code":
+            # CODEBASE folder (only include if allowed via folder rules or conventionally named)
+            if (file.name.lower() == "code") and ("code" in allowed_folders or not allowed_folders):
                 for code_file in file.glob("*.*"):
-                    print(code_file)
+									
                     try:
                         with open(code_file, "r", encoding="utf-8", errors="ignore") as f:
                             code_content = f.read(3000)
@@ -140,7 +144,8 @@ def read_file_contents(folder, difficulty, selection_rules):
                         logger.warning(f"\n---\n**{code_file.name}**\n[Error reading file: {e}]")
 
             # DATASET folder
-            elif file.name.lower() in ["dataset_folder", "datasets", "data"]:
+            if file.name.lower() in ["dataset_folder", "datasets", "data"] and \
+               ("data" in allowed_folders or not allowed_folders):
                 for data_file in file.glob("*.*"):
                     summary = summarize_dataset(data_file)
                     head = ""
@@ -166,10 +171,10 @@ def read_file_contents(folder, difficulty, selection_rules):
                                 head = df.head().to_string()
                     except Exception as e:
                         head = f"[Error reading dataset head: {e}]"
-                        # logger.warning( f"[Error reading dataset head: {e}]")
+																			   
                         logger.exception(f"[Error reading dataset head: {e}]")
 
-                    # Add head + summaries to dataset section for prompt
+																		
                     dataset_section.append(f"\n---\n**{data_file.name}**\n"
                                            f"=== HEAD ===\n{head}\n"
                                            f"=== INFO ===\n{summary.get('info')}\n"
@@ -197,10 +202,10 @@ def read_file_contents(folder, difficulty, selection_rules):
                     else:
                         datasets_original.append(dataset_obj)
 
+        # non-directory core files
         if file.name not in allowed_files:
             continue
-
-        # Handle non-directory core files (e.g., initial_details, original_paper)
+        																				 
         elif file.suffix in FILE_READERS:
             try:
                 reader = FILE_READERS[file.suffix]
@@ -209,23 +214,48 @@ def read_file_contents(folder, difficulty, selection_rules):
             except Exception as e:
                 aggregated_content.append(f"\n---\n**{file.name}**\n[Error reading file: {e}]")
                 logger.exception(f"\n---\n**{file.name}**\n[Error reading file: {e}]")
+        
+    original_study_data = None
+    if stage == 'stage_2':                
+        # Load existing original study output
+        post_reg_path = os.path.join(folder, "post_registration.json")
+        
+        
+        if os.path.exists(post_reg_path):
+            try:
+                with open(post_reg_path, "r", encoding="utf-8") as f:
+                    original_study_data = json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to read existing post_registration.json: {e}")
+        else:
+            raise ValueError("post_registration.json not found")
 
-    # Combine everything into one string prompt context
+													   
     file_context = "\n".join(aggregated_content + code_section + dataset_section)
 
-    return file_context, datasets_original, datasets_replication, code_file_descriptions 
+    return file_context, datasets_original, datasets_replication, code_file_descriptions, original_study_data 
+
     
 
-def save_output(extracted_json, study_path):
-    output_path = os.path.join(study_path, "replication_info.json")
-    with open(output_path, 'w') as f:
-        json.dump(extracted_json, f, indent=2)
+def save_output(extracted_json, study_path, stage):
+    if stage == "stage_1":
+        output_filename = "post_registration.json"
+    elif stage == "stage_2":
+        output_filename = "replication_info.json"
 
-    print(f"[INFO] Combined output saved to {output_path}")
+
+    output_path = os.path.join(study_path, output_filename)
+    try:
+        with open(output_path, 'w', encoding="utf-8") as f:
+            json.dump(extracted_json, f, indent=2)
+        print(f"[INFO] Stage '{stage}' output saved to {output_path}")
+    except Exception as e:
+        print(f"[ERROR] Failed to save output for stage {stage}: {e}")
+        logger.exception(f"Failed to save output for stage {stage}: {e}")
     
 
 def save_prompt_log(study_path, stage, prompt, full_message):
-    # Extract case study name from path
+									   
     case_name = os.path.basename(os.path.normpath(study_path))
     
     if "case_study" not in case_name:
@@ -233,15 +263,15 @@ def save_prompt_log(study_path, stage, prompt, full_message):
         if match:
             case_name = match.group()
 
-    # Create log folder
+					   
     log_dir = "logs"
-    # log_dir = os.path.join(study_path, "logs")
+												
     os.makedirs(log_dir, exist_ok=True)
 
-    # Log file name
-    log_file = os.path.join(log_dir, f"{case_name}_stage_{stage}_log.txt")
+				   
+    log_file = os.path.join(log_dir, f"{case_name}_{stage}_log.txt")
 
-    # Save content
+				  
     with open(log_file, "w", encoding="utf-8") as f:
         f.write("=== GENERATED PROMPT ===\n")
         f.write(prompt + "\n\n")
@@ -249,4 +279,5 @@ def save_prompt_log(study_path, stage, prompt, full_message):
         f.write(full_message + "\n")
 
     print(f"[INFO] Prompt and message logged to {log_file}")
+
 
