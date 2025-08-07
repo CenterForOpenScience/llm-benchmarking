@@ -138,19 +138,6 @@ def run_stage_2(study_path, difficulty, show_prompt=False):
     if not file_context:
         print(f"No content was read from {study_path}")
 
-    # # Load existing original study output
-    # post_reg_path = os.path.join(study_path, "post_registration.json")
-    # original_study_data = {}
-    # if os.path.exists(post_reg_path):
-    #     try:
-    #         with open(post_reg_path, "r", encoding="utf-8") as f:
-    #             original_study_data = json.load(f)
-    #     except Exception as e:
-    #         logger.warning(f"Failed to read existing post_registration.json: {e}")
-    # else:
-    #     raise ValueError("post_registration.json not found")
-    #     # logger.warning("post_registration.json not found; proceeding without original study data.")
-
     context_message, full_message = build_context_and_message(
         study_path, template, file_context, stage="stage_2", original_study=original_study_data
     )
@@ -234,16 +221,6 @@ def run_stage_2(study_path, difficulty, show_prompt=False):
         #         original_study_data,
         #         "replication_study": replication_part
         #     }
-    
-    # if isinstance(replication_part, dict):
-    #     final_output = replication_part.copy()
-    #     final_output["original_study"] = original_study_data
-    # else:
-    #     # put both under explicit keys
-    #     final_output = {
-    #         "original_study": original_study_data,
-    #         "replication_study": replication_part
-    #     }
 
     save_output(final_output, study_path, stage="stage_2")
     return final_output
@@ -255,10 +232,6 @@ def run_extraction(study_path, difficulty, stage, show_prompt=False):
         return run_stage_1(study_path, difficulty, show_prompt)
     elif stage == "stage_2":
         return run_stage_2(study_path, difficulty, show_prompt)
-    # elif stage == "combined":
-    #     original = run_stage_1(study_path, difficulty, show_prompt)
-    #     final = run_stage_2(study_path, difficulty, show_prompt)
-    #     return final
     else:
         raise ValueError(f"Unknown stage: {stage}")
 
