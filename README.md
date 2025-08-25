@@ -119,46 +119,18 @@ python main.py --study_path ./studies/case_study_1 --stage stage_2 --difficulty 
 
 ### Validator Module
 
-This module validates whether the metadata extracted by the info extractor matches what is expected based on human-authored replication documents. Currently, we experiment with 2 evaluation approaches
-
-#### Approach 1: Extract-then-Evaluate
-
-##### Stage 1 — Extract Expected Values
-
-Uses LLMs to generate a `replication_info_expected.json` from pre-registration and SCORE reports.
-
-```bash
-python extract_human_replication_info.py \
-  --preregistration path/to/prereg.pdf \
-  --score_report path/to/report.docx \
-  --output_path path/to/study_dir/replication_info_expected.json
-```
-
-##### Stage 2 — Validate info_extractor Output
-
-Compares `replication_info.json` (from info extractor) to `replication_info_expected.json` (from validator module Stage 1).
-
-```bash
-python validate_info_extractor.py --study_dir "data/study_dir" --results_file "info_exractor_validation_results.json"
-```
-
-##### Output
-* JSON formatted summary of matched and mismatched fields
-* prompt for traceability (`logs/` directory)
-
-#### Approach 2: Extract-and-Evaluate
-
-We use an LLM to extract expected information from preregistration AND evaluate quality of the info-extractor module at the same time (Combine stage 1 and 2).
+This module validates whether the metadata extracted by the info extractor matches what is expected based on human-annotated metadata.
+- We use an LLM (GPT4o) to compare the extracted info (`extracted_json.json`) against the human-annotated ground-truth (`expected_json.json`).
+- We use the same proposed evaluation rubrics in the task design as prompt to the LLM-as-judge and ask it to assign a score for the extracted info (can be found under `templates/prompts/extract_eval.txt`.
 
 ```bash
 python evaluate_extract_info.py \
-  --original_paer path/to/paper.pdf \
-  --preregistration path/to/prereg.pdf \
   --extracted_json_path path/to/extracted_json.json \
+  --expected_json_path path/to/expected_json.json \
   --output_path path/to/study_dir/llm_eval.json
 ```
 ##### Output
-* JSON formatted summary of matched and mismatched fields
+* JSON formatted evaluation of the extracted metadata
 * prompt for traceability (`logs/` directory)
 
 ## 🔐 Access and Permissions
