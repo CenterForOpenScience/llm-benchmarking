@@ -17,7 +17,8 @@ API_KEY = os.getenv("API_KEY")
 TEMPLATE_PATHS = {
     "post_registration_template": "templates/post_registration_schema.json",
     "pre_registration_template": "templates/replication_info_schema.json",
-    "info_extractor_instructions": "templates/info_extractor_instructions.json"
+    "info_extractor_instructions": "templates/info_extractor_instructions.json",
+    "extract_eval_prompt_template": "templates/prompts/extract_eval.txt"
 }
 
 
