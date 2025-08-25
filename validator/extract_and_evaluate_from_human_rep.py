@@ -7,7 +7,7 @@ from docx import Document
 from openai import OpenAI
 
 from constants import API_KEY, TEMPLATE_PATHS
-from info_extractor.file_utils import read_json
+from info_extractor.file_utils import read_json, read_txt
 
 
 def extract_text_from_pdf(pdf_path):
@@ -29,56 +29,16 @@ def load_report_text(path):
         raise ValueError("Unsupported format")
 
 
-def build_extract_evaluate_prompt(original_paper, preregistration, extraction_schema, extracted_json):
-    return f"""
-        You are an information verifier.
-        You are given (1) a research paper, (2) a preregistraton document that attempts to replicate a claim in the paper and (3) a JSON object, your task is to verify whether the information (key, value pair) presented in the JSON object matches with the information presented in the preregistration and/or paper.
-        A match is considered when they are logically equivalent or semantically similar statements.
-        If the value of the field is null, treat it as "Information cannot be found". You have to evaluate all values in the JSON.
-        
-        === START OF EXPLANATION OF WHAT EACH FIELD IN THE JSON MEAN ===
-        {extraction_schema}
-        === END OF EXPLANATION OF WHAT EACH FIELD IN THE JSON MEAN ===
-        
-        
-        Please return your evaluation as another JSON object:
-        {{
-            "matches": [
-                {{
-                    "key": [the key path leading to the value, e.g. key1.key2],
-                    "predicted": [the information presented in the provided json],
-                    "expected": [the information you extract from the provided documents],
-                    "explanation": [explanation why you think the predict info matches the info in the doc.]
-                    "
-                }},
-                ...
-            ],
-            "unmatches: [
-                {{
-                    "key": [the key path leading to the value, e.g. key1.key2],
-                    "predicted": [the information presented in the provided json],
-                    "expected" [the information you extract from the provided documents (not the json). If possible, use as much original wording from the original paper and preregistration.,
-                    "explanation": [explanation why you think the predict info does NOT match the info in the doc.]
-                    "
-                }},
-                ...
-            ],
-        }}
-        
-        === ORIGINAL PAPER START ===
-        {original_paper}
-        === ORIGINAL PAPER END ===
-                
-        === REPLICATION STUDY PRE-REGISTRATION DOCUMENT START ===
-        {preregistration}
-        === REPLICATION STUDY PRE-REGISTRATION DOCUMENT END ===
-        
-        === JSON TO BE EVALUATED START ===
-        {extracted_json}
-        === JSON TO BE EVALUATED END ===
 
-        Output Requirements:\n- Return a valid JSON object only.\n- Do NOT wrap the output in markdown (no ```json).\n- Do NOT include extra text, commentary, or notes.\n\n Ensure accuracy and completeness.\n- Strictly use provided sources as specified.
-        """
+def build_extract_evaluate_prompt(eval_prompt_template, extraction_schema, extracted_json, expected_json):
+    variables = {
+        'extraction_schema': extraction_schema,
+        'extracted_json': extracted_json,
+        'expected_json': expected_json,
+    }
+
+    final_prompt = eval_prompt_template.format(**variables)
+    return final_prompt
 
 def save_prompt_log(study_path, prompt):
     case_name = os.path.basename(os.path.normpath(study_path))
@@ -101,8 +61,8 @@ def save_prompt_log(study_path, prompt):
     print(f"[INFO] Prompt logged to {log_file}")
     
 
-def generate_expected_json(original_paper, preregistration, expected_schema, extracted_json, client, log_path):
-    prompt = build_extract_evaluate_prompt(original_paper, preregistration, expected_schema, extracted_json)
+def generate_evaluation_json(eval_prompt_template, expected_schema, extracted_json, expected_json, client, log_path):
+    prompt = build_extract_evaluate_prompt(eval_prompt_template, expected_schema, extracted_json, expected_json)
 
     save_prompt_log(log_path, prompt)
     
@@ -121,16 +81,15 @@ def save_json(data, path):
         print(f"extract_and_evaluate_from_human_rep.py output saved to {path}")
 
 
-def extract_from_human_replication_study(original_paper_path, preregistration_path, extracted_json_path, output_path):
+def extract_from_human_replication_study(extracted_json_path, expected_json_path, output_path):
     client = OpenAI(api_key=API_KEY)
     
-    expected_schema = read_json(TEMPLATE_PATHS['replication_info_template'])
+    eval_prompt_template = read_txt(TEMPLATE_PATHS['extract_eval_prompt_template'])
     
-    original_paper = extract_text_from_pdf(original_paper_path)
-    preregistration = load_report_text(preregistration_path)
-    
+    expected_schema = read_json(TEMPLATE_PATHS['post_registration_template'])
     extracted_json = read_json(extracted_json_path)
+    expected_json = read_json(expected_json_path)
     
     log_path = os.path.dirname(output_path)
-    expected_json = generate_expected_json(original_paper, preregistration, expected_schema, extracted_json, client, log_path)
-    save_json(expected_json, output_path)
+    evaluated_json = generate_evaluation_json(eval_prompt_template, expected_schema, extracted_json, expected_json, client, log_path)
+    save_json(evaluated_json, output_path)
