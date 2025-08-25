@@ -15,29 +15,68 @@ API_KEY = os.getenv("API_KEY")
 
 
 TEMPLATE_PATHS = {
-    "replication_info_template": "templates/replication_info_schema.json",
-    "info_extractor_instructions": "templates/info_extractor_instructions.json"
+    "post_registration_template": "templates/post_registration_schema.json",
+    "pre_registration_template": "templates/replication_info_schema.json",
+    "info_extractor_instructions": "templates/info_extractor_instructions.json",
+    "extract_eval_prompt_template": "templates/prompts/extract_eval.txt"
 }
 
 
 FILE_SELECTION_RULES = {
     "info_extractor": {
         "easy": {
-            "files": ["initial_details_easy.txt", "original_paper.pdf"],
-            "folders": {
-                "data": {
-                    "type": ["original", "replication"]
-                },
-                "code": {}
+            "stage_1": {
+                "files": ["initial_details_easy.txt", "original_paper.pdf"],
+                "folders": {
+                    "original_data": {},
+                    "original_code": {}
+                }
+            },
+            "stage_2": {
+                "files": ["initial_details_easy.txt", "post_registration.json"],
+                "folders": {
+                    "data": {},
+                    "replication_data": {},
+                    "replication_code": {},
+                    "execution_outputs": {}
+                }
             }
         },
         "medium": {
-            "files": ["initial_details_medium_hard.txt", "original_paper.pdf"],
-            "folders": {}
+            "stage_1": {
+                "files": ["initial_details_medium_hard.txt", "original_paper.pdf"],
+                "folders": {
+                    "original_data": {},
+                    "original_code": {}
+                }
+            },
+            "stage_2": {
+                "files": ["initial_details_easy.txt", "post_registration.json"],
+                "folders": {
+                    "data": {},
+                    "replication_data": {},
+                    "replication_code": {},
+                    "execution_outputs": {}
+                }
+            }
         },
         "hard": {
-            "files": ["initial_details_medium_hard.txt", "original_paper.pdf"],
-            "folders": {}
+            "stage_1": {
+                "files": ["initial_details_medium_hard.txt", "original_paper.pdf"],
+                "folders": {
+                    "original_data": {},
+                    "original_code": {}
+                }
+            },
+            "stage_2": {
+                "files": ["initial_details_easy.txt", "post_registration.json"],
+                "folders": {
+                    "data": {},
+                    "replication_data": {},
+                    "replication_code": {},
+                    "execution_outputs": {}
+                }
+            }
         }
     }
 }
