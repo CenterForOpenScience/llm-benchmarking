@@ -4,27 +4,30 @@ Implements the two-stage **Generate** phase for the Replicator:
 1) **Design**: builds a preregistration from Stage-1 extractions.
 2) **Execute**: runs the preregistration on the replication dataset/code.
 
-## Directory Structure
+## Repository Structure
 ```bash
 llm-benchmarking/
-├── case_study_1/
+├── case_studies/
+│ ├── case_study_1/
+│ ├── case_study_3/
+│ └── ...
 ├── templates/
 │ └── post_registration_schema.json
 ├── generate/
 │ ├── README.md
-│ ├── init.py
-│ ├── main.py # unified CLI
+│ ├── __init__.py
+│ ├── __main__.py # unified CLI
 │ ├── common/
-│ │ ├── init.py
+│ │ ├── __init__.py
 │ │ ├── io.py # small helpers for read_json/write_json/read_text
 │ │ ├── logging.py # setup_logger(...)
 │ │ └── schema_utils.py # load/blank schema, fallback_build, etc.
 │ ├── design/
-│ │ ├── init.py
+│ │ ├── __init__.py
 │ │ └── easy.py 
 │ └── execute/
-│ ├── init.py
-│ └── easy.py # placeholder stub
+│   ├── __init__.py
+│   └── easy.py # placeholder stub
 ```
 
 ## Inputs (Design/Easy)
