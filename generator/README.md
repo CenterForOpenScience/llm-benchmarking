@@ -5,7 +5,7 @@ Implements the two-stage **Generate** phase for the Replicator:
 2) **Execute**: runs the preregistration on the replication dataset/code.
 
 ## Directory Structure
-
+```bash
 llm-benchmarking/
 ├── case_study_1/
 ├── templates/
@@ -18,13 +18,14 @@ llm-benchmarking/
 │ │ ├── init.py
 │ │ ├── io.py # small helpers for read_json/write_json/read_text
 │ │ ├── logging.py # setup_logger(...)
-│ │ └── schema_utils.py # load/blank schema, merge, etc.
+│ │ └── schema_utils.py # load/blank schema, fallback_build, etc.
 │ ├── design/
 │ │ ├── init.py
 │ │ └── easy.py 
 │ └── execute/
 │ ├── init.py
 │ └── easy.py # placeholder stub
+```
 
 ## Inputs (Design/Easy)
 - `post_registration.json` (Stage-1 output — authoritative for `original_study`)
