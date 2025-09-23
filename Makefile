@@ -13,6 +13,12 @@ check-deps:
 install-deps:
 	pip install -r requirements-dev.txt
 
+extract-stage1: check-deps
+	python -m info_extractor --stage stage_1 --difficulty easy --study-path ./case_studies/case_study_3
+
+extract-stage2: check-deps
+	python -m info_extractor --stage stage_2 --difficulty easy --study-path ./case_studies/case_study_3
+
 design-easy: check-deps
 	python -m generator --stage design --tier easy --study-path ./case_studies/case_study_12 --templates-dir ./templates
 execute-easy: check-deps
