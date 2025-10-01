@@ -4,7 +4,7 @@ import os
 import json
 import re
 from openai import OpenAI
-from constants import API_KEY, INTERPRET_CONSTANTS
+from constants import API_KEY, GENERATE_REACT_CONSTANTS
 import logging
 import sys
 logger = logging.getLogger(__name__)
@@ -22,15 +22,17 @@ console_handler.setLevel(logging.INFO)
 logger.addHandler(console_handler)
 
 client = OpenAI(api_key=API_KEY) 
-from info_extractor.file_utils import read_txt, read_csv, read_json, read_pdf # Keep save_output here if the agent orchestrates saving
-from info_extractor.interpret.interpret_tools import read_image, list_files_in_folder
+from info_extractor.file_utils import read_txt, read_csv, read_json, read_pdf, read_docx # Keep save_output here if the agent orchestrates saving
+from generator.design_react.design_tools import load_dataset, get_dataset_head, get_dataset_shape, get_dataset_description, get_dataset_info
+from generator.design_react.design_tools import read_image, list_files_in_folder, ask_human_input
 
 class Agent:
-    def __init__(self, system=""):
+    def __init__(self, system="", session_state={}):
         self.system = system
         self.messages = []
         if self.system:
             self.messages.append({"role": "system", "content": system})
+        self.session_state = session_state
 
     def __call__(self, message):
         self.messages.append({"role": "user", "content": message})
@@ -44,10 +46,37 @@ class Agent:
                                 temperature=0,
                                 messages=self.messages)
         return completion.choices[0].message.content
+    
+    def _execute_tool_call(self, known_actions, action, action_input_str):
+        # Parse action_input_str as JSON for tool arguments if it's a dict, otherwise keep as string
+        parsed_action_input = None
+        try:
+            # Attempt to parse as JSON. If it fails, assume it's a string argument.
+            parsed_action_input = json.loads(action_input_str)
+            # parsed_action_input['session_state'] = self.session_state
+        except json.JSONDecodeError:
+            parsed_action_input = action_input_str # It's a string, not JSON
+        observation = None
+        if isinstance(parsed_action_input, dict):
+            # If it's a dictionary, unpack it as keyword arguments
+            if "dataset" in action:
+                observation = known_actions[action](self.session_state, **parsed_action_input)
+            else:
+                observation = known_actions[action](**parsed_action_input)
+        else:
+            # Otherwise, pass it as a single positional argument
+            try:
+                if "dataset" in action:
+                    observation = known_actions[action](self.session_state, parsed_action_input)
+                else:
+                    observation = known_actions[action](parsed_action_input)
+            except Exception as e:
+                print(e)
+        return observation
 
 # --- Agent System Prompt ---
 agent_prompt = """
-You are an advanced research assistant specialized in extracting structured information from replication studies of some focal claim in a research paper.
+You are an advanced research assistant specialized in replicating some focal claim in a research paper.
 You operate in a loop of Thought, Action, PAUSE, Observation.
 At the end of the loop, you output an Answer in JSON format.
 
@@ -77,18 +106,50 @@ Your available actions are:
     e.g. read_json: "data/study_Z/config.json"
     Description: Reads and parses a JSON (.json) file.
     Returns: The content of the JSON file as a Python dictionary (which will be converted to string representation for observation).
-
-5.  read_csv:
-    e.g. read_csv: "data/study_W/data.csv"
-    Description: Reads a CSV (.csv) file and returns its content as a string table.
-    Returns: A string representation of the CSV data.
+    
+5. "read_docx": tools.read_docx:
+    e.g. `read_docx: "data/study_Z/protocol.docx"`
+    * Description: Extracts and reads the text content from a Microsoft Word (.docx) file.
+    * Returns: The extracted text content of the file as a string.
 
 6. read_image:
    e.g read_image: "data/study_T/image.png"
    Description: Take in an input image of type .png, .jpeg, .jpg, .webp, or .gif and describe in natural language what the image is about.
    Returns: Textual description of the provided image
 
-Important: When reading a file, you must choose the *specific* reader tool based on the file's extension. If the extension is not listed (e.g., .docx, .xlsx), you should use `read_txt` as a fallback. 
+7. Dataset Related Tools
+   7a.  load_dataset:
+    * e.g. `load_dataset: "data/study_A/patient_records.csv"` or  `load_dataset: "data/study_A/patient_records.xlsx"`
+    * Description: Loads a dataset from a CSV or Excel file into memory for analysis. This function must be called successfully on a file path before any other `get_dataset_*` tools can be used on it.
+    * Returns: A string confirming that the dataset was loaded successfully, or an error message if it failed.
+
+   7b.  get_dataset_head:    
+    * e.g. `get_dataset_head: "data/study_A/patient_records.csv"`
+    * Description: Retrieves the first 5 rows of a previously loaded CSV dataset. This is useful for quickly inspecting the data's structure, column names, and sample values.
+    * Returns: A string containing the first 'n' rows of the dataset in a comma-separated format.
+
+   7c.  get_dataset_shape:
+    * e.g. `get_dataset_shape: "data/study_A/patient_records.csv"`
+    * Description: Gets the dimensions (number of rows, number of columns) of a previously loaded CSV dataset.
+    * Returns: A string representing a tuple, for example, "(150, 4)", indicating (rows, columns).
+
+   7d.  get_dataset_description:
+    * e.g. `get_dataset_description: "data/study_A/patient_records.csv"`
+    * Description: Calculates descriptive statistics for the numerical columns of a loaded CSV dataset. This includes count, mean, standard deviation, min, max, and percentiles.
+    * Returns: A string containing a summary table of the descriptive statistics.
+
+8.  get_dataset_info:
+    
+    * e.g. `get_dataset_info: "data/study_A/patient_records.csv"`
+    * Description: Provides a concise technical summary of a loaded CSV dataset, including column names, data types (e.g., integer, float), and the number of non-missing values for each column.
+    * Returns: A string containing the full summary information of the dataset.
+    
+9. ask_human_input:
+    * e.g. `ask_human_input: "Need access permission to download data, please download it and give me the path to the downloaded folder"`
+    * Description: Asks a clarifying question to the human user and waits for their text response. Use this tool only when you are stuck, if the instructions are ambiguous, or if you need external information you cannot find in the files.
+    * Returns: The human's raw text response as a string.
+    
+Important: When reading a file, you must choose the *specific* reader tool based on the file's extension. If the extension is not listed above, you should use `read_txt` as a fallback. 
 Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
 
 Example Session:
@@ -151,7 +212,14 @@ known_actions = {
     "read_csv": read_csv,
     "read_pdf": read_pdf,
     "read_json": read_json,
+    "read_docx": read_docx,
     "read_image": read_image,
+    "load_dataset": load_dataset,
+    "get_dataset_head": get_dataset_head, 
+    "get_dataset_shape": get_dataset_shape, 
+    "get_dataset_description": get_dataset_description, 
+    "get_dataset_info": get_dataset_info,
+    "ask_human_input": ask_human_input
 }
 
 action_re = re.compile(r'^Action: (\w+): (.*)$', re.MULTILINE) # Use re.MULTILINE for multiline parsing
@@ -160,19 +228,19 @@ def save_output(extracted_json, study_path):
         "stage": "interpret",
         **extracted_json
     }
-    output_path = os.path.join(study_path, "extracted_replication_results.json")
+    output_path = os.path.join(study_path, "replication_preregistration.json")
     extracted_json = final_output
     with open(output_path, 'w') as f:
         json.dump(extracted_json, f, indent=2)
 
     logger.info(f"Interpret stage output saved to {output_path}")
     
-def query_agent(question: str, max_turns: int = 10, study_path_for_saving=None):
+def query_agent(question: str, max_turns: int = 20, study_path_for_saving=None):
     """
     Main function to query the agent and orchestrate the extraction process.
     """
     i = 0
-    bot = Agent(agent_prompt)
+    bot = Agent(agent_prompt, session_state = {"analyzers": {}})
     next_prompt = question
 
     final_extracted_data = {} # To accumulate results
@@ -186,10 +254,10 @@ def query_agent(question: str, max_turns: int = 10, study_path_for_saving=None):
         display_prompt = next_prompt
         if len(display_prompt) > MAX_DISPLAY_PROMPT_LEN:
             display_prompt = display_prompt[:MAX_DISPLAY_PROMPT_LEN] + "\n... (truncated for display)"
-        logger.debug(f"Agent input: {display_prompt}")
+        logger.info(f"\n***Agent input: {display_prompt}")
 
         result = bot(next_prompt) # Get LLM's thought/action/answer
-        logger.info(f"Agent output:\n{result}")
+        logger.info(f"\n***Agent output:\n{result}")
 
         # Check if the LLM provided a final answer
         if "Answer:" in result:
@@ -248,21 +316,7 @@ def query_agent(question: str, max_turns: int = 10, study_path_for_saving=None):
                     logger.error(f"Unknown action: {action}: {action_input_str}") 
                     raise Exception(f"Unknown action: {action}: {action_input_str}")
 
-                # Parse action_input_str as JSON for tool arguments if it's a dict, otherwise keep as string
-                parsed_action_input = None
-                try:
-                    # Attempt to parse as JSON. If it fails, assume it's a string argument.
-                    parsed_action_input = json.loads(action_input_str)
-                except json.JSONDecodeError:
-                    parsed_action_input = action_input_str # It's a string, not JSON
-
-                observation = None
-                if isinstance(parsed_action_input, dict):
-                    # If it's a dictionary, unpack it as keyword arguments
-                    observation = known_actions[action](**parsed_action_input)
-                else:
-                    # Otherwise, pass it as a single positional argument
-                    observation = known_actions[action](parsed_action_input)
+                observation = bot._execute_tool_call(known_actions, action, action_input_str)
 
                 # print(f"Observation: {observation}")
                 next_prompt = f"Observation: {observation}"
@@ -311,19 +365,30 @@ def _configure_file_logging(study_path: str):
     logger.info(f"File logging configured to: '{log_file_full_path}'.")
 
 
-def run_extraction(study_path, show_prompt=False):
+def run_design(study_path, show_prompt=False):
     _configure_file_logging(study_path)
     # Load json template
     logger.info(f"Starting extraction for study path: {study_path}")
-    with open(INTERPRET_CONSTANTS['json_template']) as f:
-        template = json.load(f)  
+    template =  read_json(GENERATE_REACT_CONSTANTS['json_template'])
+        
     
     query_question = f"""
-    Extract information from the provided files and fill out this JSON template
-        {json.dumps(template)}
     You will have access to the following documents:
-    {build_file_description(INTERPRET_CONSTANTS['files'], study_path)}
+    {build_file_description(GENERATE_REACT_CONSTANTS['files'], study_path)}
+    
+    Based on the provided documents, your goal is to plan for the replication study.
+    
+    First, determine whether the provided data can be used for replicating the provided focal claim. 
+    - Ensure that all necessary variables are available.
+    - Ensure that the data qualify for replication criteria. Replication data achieves its purpose by being different data collected under similar/identical conditions, thus testing if the phenomenon is robust across independent instances.
+    
+    If you have determined the provided data are good for replication, extract information from the provided documents and fill out this JSON template to help plan for the replication.
+        {json.dumps(template)}
+        
+    Otherwise, follow-up with a human supervisor to ask for a different data source until appropriate data is given.".
     """.strip()
+    
+    
     
     query_agent(
         query_question,

@@ -13,7 +13,7 @@ import pandas as pd
 import pyreadr
 import io
 import re
-
+import docx
 from pathlib import Path
 from logger import get_logger
 
@@ -31,6 +31,18 @@ def read_pdf(file_path):
             return "\n".join([page.get_text() for page in doc])
     except Exception as e:
         return f"[PDF read error: {e}]"
+    
+def read_docx(file_path: str) -> str:
+    try:
+        doc = docx.Document(file_path)
+        # Extract text from each paragraph and join with a newline
+        full_text = [para.text for para in doc.paragraphs]
+        return '\n'.join(full_text)
+    except FileNotFoundError:
+        return f"Error: The file at {file_path} was not found."
+    except Exception as e:
+        # This can catch errors from corrupted or non-standard docx files
+        return f"An error occurred while reading the docx file: {e}"
 
 
 def read_json(file_path):
