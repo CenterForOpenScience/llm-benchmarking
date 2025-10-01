@@ -16,9 +16,10 @@ API_KEY = os.getenv("API_KEY")
 
 TEMPLATE_PATHS = {
     "post_registration_template": "templates/post_registration_schema.json",
-    "pre_registration_template": "templates/replication_info_schema.json",
+    "pre_registration_template": "templates/pre_registration_schema.json",
     "info_extractor_instructions": "templates/info_extractor_instructions.json",
-    "extract_eval_prompt_template": "templates/prompts/extract_eval.txt"
+    "extract_eval_prompt_template": "templates/prompts/extract_eval.txt",
+    "generate_design_eval_prompt_template": "templates/prompts/generate_design_eval.txt"
 }
 
 
@@ -82,12 +83,12 @@ FILE_SELECTION_RULES = {
 }
 
 
-INTERPRET_CONSTANTS = {
+GENERATE_REACT_CONSTANTS = {
     "files": {
         "original_paper.pdf": "The pdf file containing the full text of the original paper",
-        "preregistration.pdf": "Preregistration that documents the research plan for replicating a focal claim from the original paper.",
-        "replication_code": "The folder containing the code you used to run the replication study based on your preregistration.",
-        "execution_outputs": "The folder containing output files after executing the code in the replication_code folder"
+        "initial_details.txt": "Details about the claim from the original paper to be replicated",
+        "post_registration.json": "A structured document with key extracted information about the original paper and the claim to be replicated.",
+        "replication_data": "The folder containing the data that can potentially be used for the replication.",
     },
-    "json_template": "templates/interpret_schema.json"
+    "json_template": "templates/pre_registration_schema.json"
 }
