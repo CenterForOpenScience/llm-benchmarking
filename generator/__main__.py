@@ -12,15 +12,25 @@ def main():
     args = p.parse_args()
 
     if args.stage == "design" and args.tier == "easy":
-        from .design.easy import run_design_easy
-        logger = setup_logger(os.path.join(args.study_path, "_logs", "design_easy.log"))
-        run_design_easy(args.study_path, args.templates_dir, args.show_prompt, logger)
+        # Use your LLM agent in design_react/agent.py
+        # It already configures its own file logging via _configure_file_logging().
+        from generator.design_react.agent import run_design
+        # Optional: still create a top-level log to mirror execute behavior:
+        _ = setup_logger(os.path.join(args.study_path, "_logs", "design_easy.log"))
+        # run the agent that generates the plan / prereg JSON
+        run_design(args.study_path, show_prompt=args.show_prompt)
+
     elif args.stage == "execute" and args.tier == "easy":
+        # Orchestrator-backed execution
         from .execute.easy import run_execute_easy
-        run_execute_easy(args.study_path)
+        logger = setup_logger(os.path.join(args.study_path, "_logs", "execute_easy.log"))
+        result = run_execute_easy(args.study_path, logger=logger)
+        if not result.get("ok", False):
+            sys.stderr.write("[execute] plan failed. See execution_result.json for details.\n")
+            sys.exit(2)
+
     else:
         sys.exit(f"Stage/tier not implemented yet: {args.stage}/{args.tier}")
 
 if __name__ == "__main__":
     main()
-
