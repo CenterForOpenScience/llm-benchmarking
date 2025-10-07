@@ -92,3 +92,15 @@ GENERATE_REACT_CONSTANTS = {
     },
     "json_template": "templates/pre_registration_schema.json"
 }
+
+GENERATE_EXECUTE_REACT_CONSTANTS = {
+    "files": {
+        "original_paper.pdf": "The pdf file containing the full text of the original paper",
+        "initial_details.txt": "Details about the claim from the original paper to be replicated",
+        "post_registration.json": "A structured document with key extracted information about the original paper and the claim to be replicated.",
+        "replication_preregistration.json": "A structured document with plans for your replication of the claim.",
+        "replication_data_code": "The folder containing the data and code that can be used for the replication.",
+    },
+    "json_template": "templates/execute_schema.json"
+}
+
