@@ -5,6 +5,8 @@ PYTHON ?= python3
 # libs we need before running anything
 REQ := pytest pytest_cov openai dotenv pymupdf pyreadr pandas numpy docker docx
 
+STUDY ?= ./case_studies/case_study_1
+
 .PHONY: check-deps install-dev test test-extractor test-generator test-all design-easy execute-easy
 
 check-deps:
@@ -20,29 +22,29 @@ check-docker:
 
 # extractor
 extract-stage1: check-deps
-	python -m info_extractor --stage stage_1 --difficulty easy --study-path ./case_studies/case_study_1
+	python -m info_extractor --stage stage_1 --difficulty easy --study-path $(STUDY)
 
 extract-stage2: check-deps
-	python -m info_extractor --stage stage_2 --difficulty easy --study-path ./case_studies/case_study_1
+	python -m info_extractor --stage stage_2 --difficulty easy --study-path $(STUDY)
 
 # validator module
 validate-info: check-deps
-	python -m validator.cli.validate_info_extractor --study_dir ./case_studies/case_study_3 --results_file info_extractor_validation_results.json --show-mismatches
+	python -m validator.cli.validate_info_extractor --study_dir $(STUDY) --results_file info_extractor_validation_results.json --show-mismatches
 
 extract-human-info: check-deps
-	python -m validator.cli.extract_human_replication_info --preregistration ./case_studies/case_study_5/prereg.docx --score_report ./case_studies/case_study_5/report.pdf --output_path ./case_studies/case_study_5/replication_info_expected.json
+	python -m validator.cli.extract_human_replication_info --preregistration $(STUDY)/prereg.docx --score_report $(STUDY)/report.pdf --output_path $(STUDY)/replication_info_expected.json
 
 evaluate-human-info: check-deps
-	python -m validator.cli.evaluate_extracted_info --extracted_json_path ./case_studies/case_study_5/replication_info.json --expected_json_path ./case_studies/case_study_5/replication_info_expected.json --output_path ./case_studies/case_study_5
-
+	python -m validator.cli.evaluate_extracted_info --extracted_json_path $(STUDY)/replication_info.json --expected_json_path $(STUDY)/replication_info_expected.json --output_path $(STUDY)
+	
 extract-results: check-deps
-	python -m validator.cli.extract_replication_results --study_path ./case_studies/case_study_5
+	python -m validator.cli.extract_replication_results --study_path $(STUDY)
 
 # generator module
 design-easy: check-deps
-	python -m generator --stage design --tier easy --study-path ./case_studies/case_study_4 --templates-dir ./templates
+	python -m generator --stage design --tier easy --study-path $(STUDY) --templates-dir ./templates
 execute-easy: check-deps check-docker
-	python -m generator --stage execute --tier easy --study-path ./case_studies/case_study_4
+	python -m generator --stage execute --tier easy --study-path $(STUDY)
 
 # test suite
 test: check-deps
