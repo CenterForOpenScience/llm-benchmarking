@@ -21,13 +21,14 @@ def main():
         run_design(args.study_path, show_prompt=args.show_prompt)
 
     elif args.stage == "execute" and args.tier == "easy":
-        # Orchestrator-backed execution
-        from .execute.easy import run_execute_easy
-        logger = setup_logger(os.path.join(args.study_path, "_logs", "execute_easy.log"))
-        result = run_execute_easy(args.study_path, logger=logger)
-        if not result.get("ok", False):
-            sys.stderr.write("[execute] plan failed. See execution_result.json for details.\n")
-            sys.exit(2)
+        # Agent-driven, step-by-step with human confirmation before executing
+        from generator.execute_react.agent import run_execute_with_human_confirm
+        _ = setup_logger(os.path.join(args.study_path, "_logs", "execute_easy.log"))
+        run_execute_with_human_confirm(
+            study_path=args.study_path,
+            show_prompt=args.show_prompt,
+            templates_dir=args.templates_dir,
+        )
 
     else:
         sys.exit(f"Stage/tier not implemented yet: {args.stage}/{args.tier}")
