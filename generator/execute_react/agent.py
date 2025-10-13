@@ -26,6 +26,16 @@ from info_extractor.file_utils import read_txt, read_csv, read_json, read_pdf, r
 from generator.execute_react.execute_tools import load_dataset, get_dataset_head, get_dataset_shape, get_dataset_description, get_dataset_info, run_shell_command
 from generator.execute_react.execute_tools import read_image, list_files_in_folder, ask_human_input, run_stata_do_file
 
+from generator.execute_react.orchestrator_tool import (
+    orchestrator_generate_dockerfile,
+    orchestrator_build_image,
+    orchestrator_run_container,
+    orchestrator_plan,
+    orchestrator_preview_entry,
+    orchestrator_execute_entry,
+    orchestrator_stop_container,
+)
+
 class Agent:
     def __init__(self, system="", session_state={}):
         self.system = system
@@ -48,31 +58,54 @@ class Agent:
         return completion.choices[0].message.content
     
     def _execute_tool_call(self, known_actions, action, action_input_str):
-        # Parse action_input_str as JSON for tool arguments if it's a dict, otherwise keep as string
-        parsed_action_input = None
+        """
+        Robustly parse tool arguments the LLM may emit as:
+          - a dict JSON string:        '{"k":"v"}'
+          - a JSON-encoded JSON string: "\"{\\\"k\\\":\\\"v\\\"}\""
+          - a raw string (path, etc.)
+        Backwards-compatible: if parsing fails, we pass the original string like before.
+        """
+        s = (action_input_str or "").strip()
+
+        # Strip common code-fence wrapping without being strict
+        if s.startswith("```") and s.endswith("```"):
+            s = s.strip("`").strip()
+
+        parsed = None
+
+        # First attempt: parse JSON once
         try:
-            # Attempt to parse as JSON. If it fails, assume it's a string argument.
-            parsed_action_input = json.loads(action_input_str)
-            # parsed_action_input['session_state'] = self.session_state
-        except json.JSONDecodeError:
-            parsed_action_input = action_input_str # It's a string, not JSON
-        observation = None
-        if isinstance(parsed_action_input, dict):
-            # If it's a dictionary, unpack it as keyword arguments
-            if "dataset" in action:
-                observation = known_actions[action](self.session_state, **parsed_action_input)
+            tmp = json.loads(s)
+            # If the first parse yields a string (JSON-encoded JSON), try a second pass
+            if isinstance(tmp, str):
+                try:
+                    parsed = json.loads(tmp)
+                except Exception:
+                    parsed = tmp  # leave as string if inner parse fails
             else:
-                observation = known_actions[action](**parsed_action_input)
+                parsed = tmp
+        except json.JSONDecodeError:
+            parsed = s  # not JSON → treat as raw string (legacy behavior)
+
+        observation = None
+        if isinstance(parsed, dict):
+            # Dict -> kwargs (preserve your dataset-session_state special case)
+            if "dataset" in action:
+                observation = known_actions[action](self.session_state, **parsed)
+            else:
+                observation = known_actions[action](**parsed)
         else:
-            # Otherwise, pass it as a single positional argument
+            # String -> single positional arg (legacy behavior)
             try:
                 if "dataset" in action:
-                    observation = known_actions[action](self.session_state, parsed_action_input)
+                    observation = known_actions[action](self.session_state, parsed)
                 else:
-                    observation = known_actions[action](parsed_action_input)
+                    observation = known_actions[action](parsed)
             except Exception as e:
                 print(e)
+
         return observation
+
 
 # --- Agent System Prompt ---
 agent_prompt = """
@@ -159,6 +192,38 @@ Important: When reading a file, you must choose the *specific* reader tool based
     * e.g. `"run_shell_command "stata-mp -b do path_to_file.do"`
     * Description: Executes a Stata .do file
     * Returns: The full log output
+
+12. orchestrator_preview_entry:
+    e.g. orchestrator_preview_entry: "<STUDY_PATH>"
+    Description: Returns the resolved inside-container path and exact command that would be executed (does NOT execute).
+
+(confirmation step)
+Use `ask_human_input` to show the command and ask: "Approve to execute? (yes/no)". Only if the human replies "yes", proceed to orchestrator_execute_entry.
+
+13. orchestrator_generate_dockerfile:
+    * e.g. orchestrator_generate_dockerfile: "<STUDY_PATH>"
+    * Description: Reads replication_info.json → writes _runtime/Dockerfile.
+
+14. orchestrator_build_image:
+    * e.g. orchestrator_build_image: "<STUDY_PATH>"
+    * Description: Builds the Docker image from _runtime/Dockerfile.
+
+15. orchestrator_run_container:
+    * e.g. orchestrator_run_container: "{\"study_path\": \"<STUDY_PATH>\", \"mem_limit\": null, \"cpus\": null, \"read_only\": false, \"network_disabled\": false}"
+    * Description: Starts a long-running container, mounts data and artifacts.
+
+16. orchestrator_plan:
+    * e.g. orchestrator_plan: "<STUDY_PATH>"
+    * Description: Returns the execution plan (plan_id, steps, entry, lang).
+
+17. orchestrator_execute_entry:
+    * e.g. orchestrator_execute_entry: "<STUDY_PATH>"
+    * Description: Executes the declared entry file inside the running container; writes execution_result.json.
+
+18. orchestrator_stop_container:
+    * e.g. orchestrator_stop_container: "<STUDY_PATH>"
+    * Description: Stops and removes the container (idempotent).
+
 Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
 
 Example Session:
@@ -232,6 +297,16 @@ known_actions = {
     "run_shell_command": run_shell_command,
     "run_stata_do_file": run_stata_do_file,
 }
+
+known_actions.update({
+    "orchestrator_generate_dockerfile": orchestrator_generate_dockerfile,
+    "orchestrator_build_image": orchestrator_build_image,
+    "orchestrator_run_container": orchestrator_run_container,
+    "orchestrator_plan": orchestrator_plan,
+    "orchestrator_preview_entry": orchestrator_preview_entry,
+    "orchestrator_execute_entry": orchestrator_execute_entry,
+    "orchestrator_stop_container": orchestrator_stop_container,
+})
 
 action_re = re.compile(r'^Action: (\w+): (.*)$', re.MULTILINE) # Use re.MULTILINE for multiline parsing
 def save_output(extracted_json, study_path):
@@ -374,6 +449,81 @@ def _configure_file_logging(study_path: str):
     logger.addHandler(file_handler)
 
     logger.info(f"File logging configured to: '{log_file_full_path}'.")
+
+def run_execute_with_human_confirm(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates"):
+    """
+    Agent runs orchestrator in explicit steps with a HUMAN CONFIRMATION gate before execution:
+      1) generate_dockerfile
+      2) build_image
+      3) run_container
+      4) plan (optional metadata)
+      5) preview_entry  -> ask_human_input(...) MUST return 'yes' to continue
+      6) execute_entry
+      7) stop_container
+    Then it reads execution_result.json and outputs the final schema JSON to execution_results.json.
+    """
+    _configure_file_logging(study_path)
+    logger.info(f"[agent] stepwise orchestrator run WITH confirmation for: {study_path}")
+
+    schema_path = os.path.join(templates_dir, "execute_schema.json")
+    from constants import GENERATE_EXECUTE_REACT_CONSTANTS
+    prev_files = GENERATE_EXECUTE_REACT_CONSTANTS.get("files", {}).copy()
+    prev_template = GENERATE_EXECUTE_REACT_CONSTANTS.get("json_template")
+
+    try:
+        # Let the agent "see" the key files for summarization
+        GENERATE_EXECUTE_REACT_CONSTANTS["files"] = {
+            "replication_info.json": "Spec with docker base image, packages, volumes, and declared code files.",
+            "execution_result.json": "Raw execution output from the run (plan, steps, stdout/stderr, artifacts)."
+        }
+        GENERATE_EXECUTE_REACT_CONSTANTS["json_template"] = schema_path
+
+        instruction = f"""
+Follow these Actions IN ORDER. You MUST preview and get human approval before executing:
+
+1) Action: orchestrator_generate_dockerfile: "{study_path}"
+2) Action: orchestrator_build_image: "{study_path}"
+3) Action: orchestrator_run_container: "{{\\"study_path\\": \\"{study_path}\\", \\"mem_limit\\": null, \\"cpus\\": null, \\"read_only\\": false, \\"network_disabled\\": false}}"
+4) Action: orchestrator_plan: "{study_path}"
+5) Action: orchestrator_preview_entry: "{study_path}"
+
+You will receive a JSON that includes "command_pretty" (the exact command).
+Now ask the human to approve:
+
+6) Action: ask_human_input: "About to execute inside the container: {{command_pretty}}. Approve to execute? (yes/no)"
+
+If and only if the human answers exactly "yes" (case-insensitive), continue:
+
+7) Action: orchestrator_execute_entry: "{study_path}"
+
+Then stop the container:
+
+8) Action: orchestrator_stop_container: "{study_path}"
+
+After step 7, {os.path.join(study_path, "execution_result.json")} will exist.
+Use that (stdout/stderr, artifacts) to fill this schema:
+{json.dumps(read_json(schema_path))}
+
+FINAL OUTPUT FORMAT:
+Answer: {{...}}   # a single JSON object conforming to the schema
+
+If the human does NOT approve, still stop the container (step 8) and then output the schema with:
+- execution_summary explaining that execution was cancelled by the human,
+- code_executed showing the planned command with status "Not executed (cancelled)",
+- results as empty/NA where appropriate.
+""".strip()
+
+        if show_prompt:
+            logger.info("\n\n===== Agent Input (truncated) =====\n" + instruction[:2000])
+
+        query_agent(
+            instruction,
+            study_path_for_saving=study_path,  # save_output -> execution_results.json (polished report)
+        )
+    finally:
+        GENERATE_EXECUTE_REACT_CONSTANTS["files"] = prev_files
+        if prev_template:
+            GENERATE_EXECUTE_REACT_CONSTANTS["json_template"] = prev_template
 
 
 def run_execute(study_path, show_prompt=False):
