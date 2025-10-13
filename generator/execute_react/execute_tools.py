@@ -310,5 +310,5 @@ def list_files_in_folder(folder_path: str) -> str:
     file_names.sort()
     
     file_info = f"Folder path: {folder_path}\n"
-    file_info += f"All files: {", ".join(file_names)}"
+    file_info += f"All files: {', '.join(file_names)}"
     return file_info
