@@ -435,12 +435,14 @@ def _configure_file_logging(study_path: str):
             handler.close() # Important: close the file handle to release the file
 
     # Construct the log file path within the given study_path
-    log_file_name = 'agent_process.log'
+    log_file_name = 'agent_execute.log'
     log_directory = study_path # Assuming study_path is already the directory where you want the log
     log_file_full_path = os.path.join(log_directory, log_file_name)
 
     # Ensure the directory exists before trying to write the log file
     os.makedirs(os.path.dirname(log_file_full_path), exist_ok=True)
+    
+    logger.setLevel(logging.DEBUG)
 
     # Create a new FileHandler
     file_handler = logging.FileHandler(log_file_full_path, mode='a') # 'a' for append
