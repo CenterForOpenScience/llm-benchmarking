@@ -4,17 +4,15 @@ import os
 import json
 import re
 from openai import OpenAI
-from constants import API_KEY, GENERATE_REACT_CONSTANTS
+from constants import API_KEY, EVALUATE_GENERATE_EXECUTE_CONSTANTS
 import logging
 import sys
+import tiktoken
+import copy
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG) # Set to DEBUG during development to see everything
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-import codecs
-# log_file_path = 'agent_process.log' # You can change this log file name
-# file_handler = logging.FileHandler(log_file_path, mode='a') # 'a' for append, 'w' for overwrite
-# file_handler.setFormatter(formatter)
-# logger.addHandler(file_handler)
 
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
@@ -23,8 +21,84 @@ logger.addHandler(console_handler)
 
 client = OpenAI(api_key=API_KEY) 
 from info_extractor.file_utils import read_txt, read_csv, read_json, read_pdf, read_docx # Keep save_output here if the agent orchestrates saving
-from generator.design_react.design_tools import load_dataset, get_dataset_head, get_dataset_shape, get_dataset_description, get_dataset_info
-from generator.design_react.design_tools import read_image, list_files_in_folder, ask_human_input, write_file
+from generator.execute_react.execute_tools import load_dataset, get_dataset_head, get_dataset_shape, get_dataset_description, get_dataset_info
+from generator.execute_react.execute_tools import read_image, list_files_in_folder, ask_human_input
+
+MAX_TOKENS = 20000
+
+def count_tokens_in_messages(messages, model_name="gpt-4"):
+    """Counts the number of tokens in a list of messages for a given model."""
+    encoding = tiktoken.encoding_for_model(model_name)
+    num_tokens = 0
+    for message in messages:
+        # Each message has a role, content, and potentially a name
+        num_tokens += 4  # every message follows <im_start>{role/name}\n{content}<im_end>\n
+        for key, value in message.items():
+            num_tokens += len(encoding.encode(value))
+            if key == "name":
+                num_tokens -= 1  # role/name is always followed by token
+    num_tokens += 2  # every reply is primed with <im_start>assistant
+    return num_tokens
+
+def read_log(file_path, model_name="gpt-4"):
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        full_log =  f.read()
+    encoding = tiktoken.encoding_for_model(model_name)
+    log_token_count =  len(encoding.encode(full_log))
+    if log_token_count > MAX_TOKENS:
+        log_lines = []
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                log_lines.append(line)
+        processed_chunks = []
+        chunk_size = 500
+        print("NUMBER OF LOG LINES", len(log_lines))
+        # Loop through the list in steps of 50
+        for i in range(0, len(log_lines), chunk_size):
+            # Get the chunk of 50 lines (e.g., 0:50, 50:100, etc.)
+            chunk = log_lines[i : i + chunk_size]
+            
+            # Join the lines in that chunk into a single string
+            combined_string = "".join(chunk)
+            
+            # Add the combined string to your new list
+            processed_chunks.append(combined_string)
+            
+        summary_messages = [
+            {
+                "role": "system",
+                "content": """You are an effective log reader. 
+                Your task is to process a specific chunk of a long log. 
+                Generate a concise but informative summary of the current chunk. 
+                Only output the summary without anything else.
+                """.strip()
+            }
+        ]
+        
+        summarized_content = ""
+        for chunk_id, chunk in enumerate(processed_chunks, start=1):
+            
+            current_messages = copy.deepcopy(summary_messages)
+            current_messages.append({
+                "role": "user",
+                "content": f"CURRENT CHUNK:\n {chunk}"
+            })
+            chunk_summary_completion = client.chat.completions.create(
+                                        model="gpt-4o",
+                                        temperature=0,
+                                        messages=current_messages)
+            chunk_summary = chunk_summary_completion.choices[0].message.content
+            summary_messages.append({
+                "role": "system",
+                "content": chunk_summary   
+            })
+            summarized_content += chunk_summary + "\n"
+            print(f"SUMMARIZED CHUNK {chunk_id} out of {len(processed_chunks)} chunks", chunk_summary)
+        return summarized_content
+    else:
+        return full_log
+                
+
 
 class Agent:
     def __init__(self, system="", session_state={}):
@@ -33,14 +107,66 @@ class Agent:
         if self.system:
             self.messages.append({"role": "system", "content": system})
         self.session_state = session_state
+        
+    def count_tokens_in_messages(self, model_name="gpt-4"):
+        """Counts the number of tokens in a list of messages for a given model."""
+        encoding = tiktoken.encoding_for_model(model_name)
+        num_tokens = 0
+        for message in self.messages:
+            # Each message has a role, content, and potentially a name
+            num_tokens += 4  # every message follows <im_start>{role/name}\n{content}<im_end>\n
+            for key, value in message.items():
+                num_tokens += len(encoding.encode(value))
+                if key == "name":
+                    num_tokens -= 1  # role/name is always followed by token
+        num_tokens += 2  # every reply is primed with <im_start>assistant
+        return num_tokens
+
+    # Example usage:
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Hello, how are you today?"},
+        {"role": "assistant", "content": "I'm doing well, thank you! How can I assist you?"}
+    ]
 
     def __call__(self, message):
         self.messages.append({"role": "user", "content": message})
         result = self.execute()
         self.messages.append({"role": "assistant", "content": result})
         return result
+    
+    def summarize_messages(self, history):
+        messages = copy.deepcopy(history)
+        summary_prompt = """
+        Your conversation history with the user and the environment will now be soon refreshed. 
+        Generate a detailed summary to help you accomplish the main task.
+        Simply output the summary without saying anything else.
+        """
+        
+        messages.append({
+            "role": "user",
+            "content": summary_prompt
+        })
+        
+        summary_completion = client.chat.completions.create(
+                                    model="gpt-4o",
+                                    temperature=0,
+                                    messages=messages)
+        return summary_completion.choices[0].message.content
 
     def execute(self):
+        token_count = count_tokens_in_messages(self.messages)
+        print(f"Total tokens in messages: {token_count}")
+        if  token_count > MAX_TOKENS:
+            summary = self.summarize_messages(history=self.messages[:-1])
+            self.messages = [
+                self.messages[0],
+                {
+                    "role": "assistant",
+                    "content": summary
+                },
+                self.messages[-1]
+            ]
         completion = client.chat.completions.create(
                                 model="gpt-4o",
                                 temperature=0,
@@ -49,35 +175,52 @@ class Agent:
     
     def _execute_tool_call(self, known_actions, action, action_input_str):
         """
-        Executes a tool call by parsing the input string as JSON.
+        Robustly parse tool arguments the LLM may emit as:
+          - a dict JSON string:        '{"k":"v"}'
+          - a JSON-encoded JSON string: "\"{\\\"k\\\":\\\"v\\\"}\""
+          - a raw string (path, etc.)
+        Backwards-compatible: if parsing fails, we pass the original string like before.
         """
-        tool_func = known_actions[action]
-        
+        s = (action_input_str or "").strip()
+
+        # Strip common code-fence wrapping without being strict
+        if s.startswith("```") and s.endswith("```"):
+            s = s.strip("`").strip()
+
+        parsed = None
+
+        # First attempt: parse JSON once
         try:
-            # The ONLY parsing step you need. It correctly handles quotes,
-            # escapes, and complex objects. No more codecs.
-            parsed_args = json.loads(action_input_str)
-
-            # Your existing logic for calling the function is good, let's keep it.
-            if isinstance(parsed_args, dict):
-                # For tools expecting keyword arguments, e.g., func(**{"path": "...", "content": "..."})
-                if "dataset" in action:
-                    observation = tool_func(self.session_state, **parsed_args)
-                else:
-                    observation = tool_func(**parsed_args)
+            tmp = json.loads(s)
+            # If the first parse yields a string (JSON-encoded JSON), try a second pass
+            if isinstance(tmp, str):
+                try:
+                    parsed = json.loads(tmp)
+                except Exception:
+                    parsed = tmp  # leave as string if inner parse fails
             else:
-                # For tools expecting a single positional argument, e.g., func("my_file.txt")
-                if "dataset" in action:
-                    observation = tool_func(self.session_state, parsed_args)
-                else:
-                    observation = tool_func(parsed_args)
-            
-            return observation
-
+                parsed = tmp
         except json.JSONDecodeError:
-            return f"Error: The tool input was not valid JSON. Please check your formatting. Input received: {action_input_str}"
-        except Exception as e:
-            return f"Error while executing tool '{action}': {e}"
+            parsed = s  # not JSON → treat as raw string (legacy behavior)
+
+        observation = None
+        if isinstance(parsed, dict):
+            # Dict -> kwargs (preserve your dataset-session_state special case)
+            if "dataset" in action:
+                observation = known_actions[action](self.session_state, **parsed)
+            else:
+                observation = known_actions[action](**parsed)
+        else:
+            # String -> single positional arg (legacy behavior)
+            try:
+                if "dataset" in action:
+                    observation = known_actions[action](self.session_state, parsed)
+                else:
+                    observation = known_actions[action](parsed)
+            except Exception as e:
+                print(e)
+
+        return observation
 
 
 # --- Agent System Prompt ---
@@ -113,17 +256,22 @@ Your available actions are:
     Description: Reads and parses a JSON (.json) file.
     Returns: The content of the JSON file as a Python dictionary (which will be converted to string representation for observation).
     
-5. "read_docx": tools.read_docx:
+5. read_docx: 
     e.g. `read_docx: "data/study_Z/protocol.docx"`
     * Description: Extracts and reads the text content from a Microsoft Word (.docx) file.
     * Returns: The extracted text content of the file as a string.
+    
+6. read_log:
+    e.g. `read_log: "data/study_Z/design.log"`
+    * Description: Extracts and reads the text content from a log file. If a log is too long, a shorter version, where the full log is separated into chunks. Each chunk is summarized and then combined into a overall summary of log content. 
+    * Returns: Full or summarized content of the log file.
 
-6. read_image:
+7. read_image:
    e.g read_image: "data/study_T/image.png"
    Description: Take in an input image of type .png, .jpeg, .jpg, .webp, or .gif and describe in natural language what the image is about.
    Returns: Textual description of the provided image
 
-7. Dataset Related Tools
+8. Dataset Related Tools
    7a.  load_dataset:
     * e.g. `load_dataset: "data/study_A/patient_records.csv"` or  `load_dataset: "data/study_A/patient_records.xlsx"`
     * Description: Loads a dataset from a CSV or Excel file into memory for analysis. This function must be called successfully on a file path before any other `get_dataset_*` tools can be used on it.
@@ -144,23 +292,17 @@ Your available actions are:
     * Description: Calculates descriptive statistics for the numerical columns of a loaded CSV dataset. This includes count, mean, standard deviation, min, max, and percentiles.
     * Returns: A string containing a summary table of the descriptive statistics.
 
-8.  get_dataset_info:
+9.  get_dataset_info:
     
     * e.g. `get_dataset_info: "data/study_A/patient_records.csv"`
     * Description: Provides a concise technical summary of a loaded CSV dataset, including column names, data types (e.g., integer, float), and the number of non-missing values for each column.
     * Returns: A string containing the full summary information of the dataset.
     
-9. ask_human_input:
+10. ask_human_input:
     * e.g. `ask_human_input: "Need access permission to download data, please download it and give me the path to the downloaded folder"`
     * Description: Asks a clarifying question to the human user and waits for their text response. Use this tool only when you are stuck, if the instructions are ambiguous, or if you need external information you cannot find in the files.
     * Returns: The human's raw text response as a string.
-    
-10. write_file:
-    * e.g. `write_file: {"file_path": "path/to/file.txt", "file_content": "This is the first line of the file\nThis is the second line."}
-    * Description: Creates a file at file_path and dump file_content into it. Use this tool when you need to write new code or modify existing code.
-    * Returns: A confirmation if the file is approved and has been created or a rejection/error message.
-    
-Important: When reading a file, you must choose the *specific* reader tool based on the file's extension. If the extension is not listed above, you should use `read_txt` as a fallback. 
+
 Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
 
 Example Session:
@@ -224,6 +366,7 @@ known_actions = {
     "read_pdf": read_pdf,
     "read_json": read_json,
     "read_docx": read_docx,
+    "read_log": read_log,
     "read_image": read_image,
     "load_dataset": load_dataset,
     "get_dataset_head": get_dataset_head, 
@@ -231,15 +374,15 @@ known_actions = {
     "get_dataset_description": get_dataset_description, 
     "get_dataset_info": get_dataset_info,
     "ask_human_input": ask_human_input,
-    "write_file": write_file
 }
 
 action_re = re.compile(r'^Action: (\w+): (.*)$', re.MULTILINE) # Use re.MULTILINE for multiline parsing
 def save_output(extracted_json, study_path):
     final_output = {
+        "stage": "execute",
         **extracted_json
     }
-    output_path = os.path.join(study_path, "replication_info_react.json")
+    output_path = os.path.join(study_path, "execution_evaluation_results.json")
     extracted_json = final_output
     with open(output_path, 'w') as f:
         json.dump(extracted_json, f, indent=2)
@@ -310,22 +453,15 @@ def query_agent(question: str, max_turns: int = 20, study_path_for_saving=None):
                 logger.error(f"An error occurred processing final answer: {e}")
                 return {"error": str(e)}
         else:
-            # actions_matches = [
-            #     action_re.match(line)
-            #     for line in result.split('\n')
-            #     if action_re.match(line)
-            # ]
-            # print(actions_matches)
-            
-            action_re = re.compile(r"Action: (\w+): (.*)")
+            actions_matches = [
+                action_re.match(line)
+                for line in result.split('\n')
+                if action_re.match(line)
+            ]
 
-            # 2. Search the ENTIRE result string, not line by line
-            match = action_re.search(result)
-
-
-            if match:
+            if actions_matches:
                 # There is an action to run
-                # match = actions_matches[0]
+                match = actions_matches[0]
                 action, action_input_str = match.groups()
 
                 logger.info(f" -- Running Action: {action} with input: {action_input_str}")
@@ -367,13 +503,12 @@ def _configure_file_logging(study_path: str):
             handler.close() # Important: close the file handle to release the file
 
     # Construct the log file path within the given study_path
-    log_file_name = 'agent_design.log'
+    log_file_name = 'evaluate_execute.log'
     log_directory = study_path # Assuming study_path is already the directory where you want the log
     log_file_full_path = os.path.join(log_directory, log_file_name)
 
     # Ensure the directory exists before trying to write the log file
     os.makedirs(os.path.dirname(log_file_full_path), exist_ok=True)
-    logger.setLevel(logging.DEBUG)
 
     # Create a new FileHandler
     file_handler = logging.FileHandler(log_file_full_path, mode='a') # 'a' for append
@@ -384,32 +519,23 @@ def _configure_file_logging(study_path: str):
     logger.info(f"File logging configured to: '{log_file_full_path}'.")
 
 
-def run_design(study_path, show_prompt=False):
+def run_evaluate_execute(study_path, show_prompt=False):
     _configure_file_logging(study_path)
     # Load json template
-    logger.info(f"Starting extraction for study path: {study_path}")
-    template =  read_json(GENERATE_REACT_CONSTANTS['json_template'])
-        
+    logger.info(f"Starting execution evaluation for study path: {study_path}")
+    eval_prompt_template = read_txt(EVALUATE_GENERATE_EXECUTE_CONSTANTS['prompt_template'])
+    rubric_schema =  read_json(EVALUATE_GENERATE_EXECUTE_CONSTANTS['json_template'])
+    claim_docs_for_evaluator = build_file_description(EVALUATE_GENERATE_EXECUTE_CONSTANTS['claim_files'], study_path)
+    agent_docs_for_evaluator = build_file_description(EVALUATE_GENERATE_EXECUTE_CONSTANTS['agent_files'], study_path)
     
-    query_question = f"""
-    You will have access to the following documents:
-    {build_file_description(GENERATE_REACT_CONSTANTS['files'], study_path)}
-    
-    Based on the provided documents, your goal is to plan for the replication study and fill out this JSON template:
-    {json.dumps(template)}
-    
-    First, determine whether the provided data can be used for replicating the provided focal claim. 
-    - Ensure that all necessary variables are available.
-    - Ensure that the data qualify for replication criteria. Replication data achieves its purpose by being different data collected under similar/identical conditions, thus testing if the phenomenon is robust across independent instances.
-    
-    If you find issues with the provided data, follow-up with a human supervisor to ask for a different data source until appropriate data is given.
-    
-    Once you have determined the provided data are good for replication, explore the code to help fill out fields related to the codebase. This code will operate directly on the data files given to you.
-    If there are potential issues with the provided code such as a data file path that is different from the data files you have looked at, YOU MUST RESOLVE THEM and rewrite the code to a new file.
-    
-    After all issues have been resolved, finish by complete by filling out the required JSON with all the updated/final information to prepare for replication execution.        
-    ".
-    """.strip()
+
+    variables = {
+        'rubric_schema': rubric_schema,
+        'claim_docs_for_evaluator': claim_docs_for_evaluator,
+        'agent_docs_for_evaluator': agent_docs_for_evaluator,
+    }
+
+    query_question = eval_prompt_template.format(**variables)
     
     
     query_agent(
