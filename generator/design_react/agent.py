@@ -10,7 +10,7 @@ import sys
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG) # Set to DEBUG during development to see everything
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
+import codecs
 # log_file_path = 'agent_process.log' # You can change this log file name
 # file_handler = logging.FileHandler(log_file_path, mode='a') # 'a' for append, 'w' for overwrite
 # file_handler.setFormatter(formatter)
@@ -24,7 +24,7 @@ logger.addHandler(console_handler)
 client = OpenAI(api_key=API_KEY) 
 from info_extractor.file_utils import read_txt, read_csv, read_json, read_pdf, read_docx # Keep save_output here if the agent orchestrates saving
 from generator.design_react.design_tools import load_dataset, get_dataset_head, get_dataset_shape, get_dataset_description, get_dataset_info
-from generator.design_react.design_tools import read_image, list_files_in_folder, ask_human_input
+from generator.design_react.design_tools import read_image, list_files_in_folder, ask_human_input, write_file
 
 class Agent:
     def __init__(self, system="", session_state={}):
@@ -48,31 +48,37 @@ class Agent:
         return completion.choices[0].message.content
     
     def _execute_tool_call(self, known_actions, action, action_input_str):
-        # Parse action_input_str as JSON for tool arguments if it's a dict, otherwise keep as string
-        parsed_action_input = None
+        """
+        Executes a tool call by parsing the input string as JSON.
+        """
+        tool_func = known_actions[action]
+        
         try:
-            # Attempt to parse as JSON. If it fails, assume it's a string argument.
-            parsed_action_input = json.loads(action_input_str)
-            # parsed_action_input['session_state'] = self.session_state
-        except json.JSONDecodeError:
-            parsed_action_input = action_input_str # It's a string, not JSON
-        observation = None
-        if isinstance(parsed_action_input, dict):
-            # If it's a dictionary, unpack it as keyword arguments
-            if "dataset" in action:
-                observation = known_actions[action](self.session_state, **parsed_action_input)
-            else:
-                observation = known_actions[action](**parsed_action_input)
-        else:
-            # Otherwise, pass it as a single positional argument
-            try:
+            # The ONLY parsing step you need. It correctly handles quotes,
+            # escapes, and complex objects. No more codecs.
+            parsed_args = json.loads(action_input_str)
+
+            # Your existing logic for calling the function is good, let's keep it.
+            if isinstance(parsed_args, dict):
+                # For tools expecting keyword arguments, e.g., func(**{"path": "...", "content": "..."})
                 if "dataset" in action:
-                    observation = known_actions[action](self.session_state, parsed_action_input)
+                    observation = tool_func(self.session_state, **parsed_args)
                 else:
-                    observation = known_actions[action](parsed_action_input)
-            except Exception as e:
-                print(e)
-        return observation
+                    observation = tool_func(**parsed_args)
+            else:
+                # For tools expecting a single positional argument, e.g., func("my_file.txt")
+                if "dataset" in action:
+                    observation = tool_func(self.session_state, parsed_args)
+                else:
+                    observation = tool_func(parsed_args)
+            
+            return observation
+
+        except json.JSONDecodeError:
+            return f"Error: The tool input was not valid JSON. Please check your formatting. Input received: {action_input_str}"
+        except Exception as e:
+            return f"Error while executing tool '{action}': {e}"
+
 
 # --- Agent System Prompt ---
 agent_prompt = """
@@ -149,6 +155,11 @@ Your available actions are:
     * Description: Asks a clarifying question to the human user and waits for their text response. Use this tool only when you are stuck, if the instructions are ambiguous, or if you need external information you cannot find in the files.
     * Returns: The human's raw text response as a string.
     
+10. write_file:
+    * e.g. `write_file: {"file_path": "path/to/file.txt", "file_content": "This is the first line of the file\nThis is the second line."}
+    * Description: Creates a file at file_path and dump file_content into it. Use this tool when you need to write new code or modify existing code.
+    * Returns: A confirmation if the file is approved and has been created or a rejection/error message.
+    
 Important: When reading a file, you must choose the *specific* reader tool based on the file's extension. If the extension is not listed above, you should use `read_txt` as a fallback. 
 Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
 
@@ -219,16 +230,16 @@ known_actions = {
     "get_dataset_shape": get_dataset_shape, 
     "get_dataset_description": get_dataset_description, 
     "get_dataset_info": get_dataset_info,
-    "ask_human_input": ask_human_input
+    "ask_human_input": ask_human_input,
+    "write_file": write_file
 }
 
 action_re = re.compile(r'^Action: (\w+): (.*)$', re.MULTILINE) # Use re.MULTILINE for multiline parsing
 def save_output(extracted_json, study_path):
     final_output = {
-        "stage": "interpret",
         **extracted_json
     }
-    output_path = os.path.join(study_path, "replication_preregistration.json")
+    output_path = os.path.join(study_path, "replication_info_react.json")
     extracted_json = final_output
     with open(output_path, 'w') as f:
         json.dump(extracted_json, f, indent=2)
@@ -299,15 +310,22 @@ def query_agent(question: str, max_turns: int = 20, study_path_for_saving=None):
                 logger.error(f"An error occurred processing final answer: {e}")
                 return {"error": str(e)}
         else:
-            actions_matches = [
-                action_re.match(line)
-                for line in result.split('\n')
-                if action_re.match(line)
-            ]
+            # actions_matches = [
+            #     action_re.match(line)
+            #     for line in result.split('\n')
+            #     if action_re.match(line)
+            # ]
+            # print(actions_matches)
+            
+            action_re = re.compile(r"Action: (\w+): (.*)")
 
-            if actions_matches:
+            # 2. Search the ENTIRE result string, not line by line
+            match = action_re.search(result)
+
+
+            if match:
                 # There is an action to run
-                match = actions_matches[0]
+                # match = actions_matches[0]
                 action, action_input_str = match.groups()
 
                 logger.info(f" -- Running Action: {action} with input: {action_input_str}")
@@ -376,18 +394,21 @@ def run_design(study_path, show_prompt=False):
     You will have access to the following documents:
     {build_file_description(GENERATE_REACT_CONSTANTS['files'], study_path)}
     
-    Based on the provided documents, your goal is to plan for the replication study.
+    Based on the provided documents, your goal is to plan for the replication study and fill out this JSON template:
+    {json.dumps(template)}
     
     First, determine whether the provided data can be used for replicating the provided focal claim. 
     - Ensure that all necessary variables are available.
     - Ensure that the data qualify for replication criteria. Replication data achieves its purpose by being different data collected under similar/identical conditions, thus testing if the phenomenon is robust across independent instances.
     
-    If you have determined the provided data are good for replication, extract information from the provided documents and fill out this JSON template to help plan for the replication.
-        {json.dumps(template)}
-        
-    Otherwise, follow-up with a human supervisor to ask for a different data source until appropriate data is given.".
-    """.strip()
+    If you find issues with the provided data, follow-up with a human supervisor to ask for a different data source until appropriate data is given.
     
+    Once you have determined the provided data are good for replication, explore the code to help fill out fields related to the codebase. This code will operate directly on the data files given to you.
+    If there are potential issues with the provided code such as a data file path that is different from the data files you have looked at, YOU MUST RESOLVE THEM and rewrite the code to a new file.
+    
+    After all issues have been resolved, finish by complete by filling out the required JSON with all the updated/final information to prepare for replication execution.        
+    ".
+    """.strip()
     
     
     query_agent(

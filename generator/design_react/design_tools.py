@@ -6,6 +6,7 @@ import pandas as pd
 from constants import API_KEY
 from typing import Dict, Any, Optional, Tuple
 import io # Add this import at the top of your file
+from pathlib import Path
 
 
 client = OpenAI(api_key=API_KEY)
@@ -181,6 +182,51 @@ def ask_human_input(question_to_ask: str) -> str:
     
     return human_response
 
+
+
+def write_file(file_path: str, file_content: str) -> str:
+    """
+    Create a file at file_path and dump file_content into it.
+
+    Use this tool when you need to write new code or modify existing code.
+
+    Args:
+        file_path (str): Path to where new file will be created
+
+    Returns:
+        str: A confirmation if the file is approved and has been created or a rejection message.
+    """
+     # Determine the full, absolute path for user confirmation
+    full_path = Path.cwd() / file_path
+
+    # Print a clear message to the user indicating the agent needs help
+    print("\n🤔 [AGENT ASKS TO WRITE A NEW FILE 🤔")
+    print(f"FULL PATH: {full_path}")
+    print(f"FILE CONTENT:\n---\n{file_content}\n---")
+
+    # Get input from the user
+    user_response = input("Do you approve? (yes/no): ")
+
+    # Check the user's response
+    if user_response.lower().strip() != 'yes':
+        print("❌ User denied execution.")
+        return "Command execution denied by the user."
+
+    try:
+        # Ensure the parent directory of the full path exists
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write the content to the specified full path
+        with open(full_path, 'w', encoding='utf-8') as f:
+            f.write(file_content)
+            
+        success_message = f"✅ Successfully wrote content to {full_path}"
+        print(success_message)
+        return success_message
+    except Exception as e:
+        error_message = f"❌ Error writing file to {full_path}: {e}"
+        print(error_message)
+        return error_message
     
 
 
