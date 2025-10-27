@@ -40,11 +40,18 @@ evaluate-human-info: check-deps
 extract-results: check-deps
 	python -m validator.cli.extract_replication_results --study_path $(STUDY)
 
+evaluate-execute: check-deps
+	python -m validator.cli.evaluate_execute_cli  --study_path $(STUDY)
+
 # generator module
 design-easy: check-deps
 	python -m generator --stage design --tier easy --study-path $(STUDY) --templates-dir ./templates
 execute-easy: check-deps check-docker
 	python -m generator --stage execute --tier easy --study-path $(STUDY)
+
+# interpreter module
+interpret-easy: check-deps
+	python -m interpreter --tier easy --study-path $(STUDY)$
 
 # test suite
 test: check-deps
