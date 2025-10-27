@@ -121,3 +121,19 @@ EVALUATE_GENERATE_EXECUTE_CONSTANTS = {
     "json_template": "templates/evaluate_execute_schema.json"
 }
 
+
+INTERPRET_CONSTANTS = {
+    "prompt_template": "templates/prompts/interpret.txt",
+    "claim_files": {
+        "original_paper.pdf": "The pdf file containing the full text of the original paper",
+        "initial_details.txt": "Details about the claim from the original paper to be replicated",
+        "replication_data": "The folder containing the data and code that were used for the replication.",
+    },
+    "agent_files": {
+        "post_registration.json": "A structured document with key extracted information about the original paper and the claim to be replicated.",
+        "replication_info.json": "Structured report of the agent at the PLANNING stage for the replication of the given claim.",
+        "execution_results.json": "Final structured report of the execution stage by the agent."
+    },
+    "json_template": "templates/interpret_schema.json"
+}
+
