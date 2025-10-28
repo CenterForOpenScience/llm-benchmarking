@@ -43,6 +43,10 @@ extract-results: check-deps
 evaluate-execute: check-deps
 	python -m validator.cli.evaluate_execute_cli  --study_path $(STUDY)
 
+
+evaluate-interpret: check-deps
+	python -m validator.cli.evaluate_interpret_cli  --study_path $(STUDY) --reference_report_path $(STUDY_HUMAN_REPORT)
+
 # generator module
 design-easy: check-deps
 	python -m generator --stage design --tier easy --study-path $(STUDY) --templates-dir ./templates
