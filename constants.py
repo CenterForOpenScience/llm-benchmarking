@@ -137,3 +137,9 @@ INTERPRET_CONSTANTS = {
     "json_template": "templates/interpret_schema.json"
 }
 
+EVALUATE_INTERPRET_CONSTANTS = {
+    "prompt_template": "templates/prompts/interpret_eval.txt",
+    "interpret_results": "interpret_results.json",
+    "json_template": "templates/interpret_schema.json"
+}
+
