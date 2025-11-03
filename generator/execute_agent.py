@@ -6,14 +6,18 @@ import re
 import logging
 import sys
 
-from constants import API_KEY, GENERATE_EXECUTE_REACT_CONSTANTS
+from core.constants import GENERATE_EXECUTE_REACT_CONSTANTS
+from core.actions import base_known_actions
+from core.agent import run_react_loop, save_output
+from core.prompts import PREAMBLE, EXECUTE, EXAMPLE
+from core.utils import build_file_description, configure_file_logging, get_logger
+from info_extractor.file_utils import read_json
 
-from info_extractor.file_utils import read_txt, read_csv, read_json, read_pdf, read_docx
-from generator.execute_react.execute_tools import (
-    load_dataset, get_dataset_head, get_dataset_shape, get_dataset_description, get_dataset_info,
-    run_shell_command, read_image, list_files_in_folder, ask_human_input, run_stata_do_file
+# Execute-stage-only tools
+from generator.execute_tools import (
+    run_shell_command, run_stata_do_file
 )
-from generator.execute_react.orchestrator_tool import (
+from generator.orchestrator_tool import (
     orchestrator_generate_dockerfile,
     orchestrator_build_image,
     orchestrator_run_container,
@@ -23,36 +27,12 @@ from generator.execute_react.orchestrator_tool import (
     orchestrator_stop_container,
 )
 
-from core.agent import run_react_loop, save_output
-from core.prompts import PREAMBLE, EXECUTE, EXAMPLE 
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(formatter)
-console_handler.setLevel(logging.INFO)
-logger.addHandler(console_handler)
-
+logger, formatter = get_logger("execute")
 system_prompt = "\n\n".join([PREAMBLE, EXECUTE, EXAMPLE])
 
-# Map action names to their functions (keep name EXACTLY: known_actions) ----------
+# Map action names to their functions
 known_actions = {
-    "list_files_in_folder": list_files_in_folder,
-    "read_txt": read_txt,
-    "read_csv": read_csv,
-    "read_pdf": read_pdf,
-    "read_json": read_json,
-    "read_docx": read_docx,
-    "read_image": read_image,
-
-    "load_dataset": load_dataset,
-    "get_dataset_head": get_dataset_head,
-    "get_dataset_shape": get_dataset_shape,
-    "get_dataset_description": get_dataset_description,
-    "get_dataset_info": get_dataset_info,
-
-    "ask_human_input": ask_human_input,
+    **base_known_actions(),
     "run_shell_command": run_shell_command,
     "run_stata_do_file": run_stata_do_file,
 
@@ -66,27 +46,8 @@ known_actions = {
     "orchestrator_stop_container": orchestrator_stop_container,
 }
 
-def build_file_description(available_files, file_path):
-    return "".join(
-        f"{i}. {os.path.join(file_path, name)}: {desc}\n"
-        for i, (name, desc) in enumerate(available_files.items(), start=1)
-    )
-
-def _configure_file_logging(study_path: str):
-    for handler in list(logger.handlers):
-        if isinstance(handler, logging.FileHandler):
-            logger.removeHandler(handler)
-            handler.close()
-    log_file_full_path = os.path.join(study_path, 'agent_execute.log')
-    os.makedirs(os.path.dirname(log_file_full_path), exist_ok=True)
-    file_handler = logging.FileHandler(log_file_full_path, mode='a')
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(logging.DEBUG)
-    logger.addHandler(file_handler)
-    logger.info(f"File logging configured to: '{log_file_full_path}'.")
-
 def run_execute_with_human_confirm(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates"):
-    _configure_file_logging(study_path)
+    configure_file_logging(logger, study_path, "execute_agent.log")
     logger.info(f"[agent] stepwise orchestrator run WITH confirmation for: {study_path}")
 
     schema_path = os.path.join(templates_dir, "execute_schema.json")

@@ -10,7 +10,7 @@ STUDY ?= ./case_studies/case_study_3
 .PHONY: check-deps install-dev test test-extractor test-generator test-all design-easy execute-easy
 
 check-deps:
-	$(PYTHON) check_deps.py $(REQ)
+	$(PYTHON) core/check_deps.py $(REQ)
 
 install-deps:
 	pip install -r requirements-dev.txt
@@ -52,6 +52,8 @@ design-easy: check-deps
 	python -m generator --stage design --tier easy --study-path $(STUDY) --templates-dir ./templates
 execute-easy: check-deps check-docker
 	python -m generator --stage execute --tier easy --study-path $(STUDY)
+
+generate: design-easy execute-easy
 
 # interpreter module
 interpret-easy: check-deps

@@ -14,10 +14,7 @@ except Exception:
     docker = None
     BuildError = Exception  # fallback for typing
 
-# =======================
 # Planning data structures
-# =======================
-
 @dataclass
 class PlanStep:
     name: str
@@ -32,10 +29,7 @@ class ExecutionPlan:
     steps: List[PlanStep]
     success_criteria: List[str] = field(default_factory=list)
 
-# =======================
 # Helpers & constants
-# =======================
-
 DEFAULT_IMAGE_NAME = "replication-exec"
 DEFAULT_CONTAINER_NAME = "replication-runner"
 
@@ -71,10 +65,7 @@ def _read_spec(study_path: str) -> Dict:
 def shq(s: str) -> str:
     return "'" + s.replace("'", "'\"'\"'") + "'"
 
-# =======================
 # Planner
-# =======================
-
 def plan_from_replication_info(replication_info: Dict) -> ExecutionPlan:
     """Create: prepare-env → run declared entry file (no fallback)."""
     claim_id = (
@@ -107,10 +98,7 @@ def plan_from_replication_info(replication_info: Dict) -> ExecutionPlan:
         ],
     )
 
-# =======================
-# Dockerfile / Image / Container ops (direct impl)
-# =======================
-
+# Dockerfile / Image / Container ops
 def orchestrator_generate_dockerfile(study_path: str) -> str:
     """
     Create _runtime/Dockerfile from replication_info.json
@@ -278,10 +266,7 @@ def orchestrator_stop_container(study_path: str) -> str:
         pass
     return json.dumps({"ok": True})
 
-# =======================
 # Container exec helpers
-# =======================
-
 def _container_path_exists(container_name: str, path: str) -> bool:
     cli = _require_docker()
     c = cli.containers.get(container_name)
@@ -342,10 +327,7 @@ def _exec_file(container_name: str, study_path: str, container_path: str, lang: 
         "artifacts": arts,
     }
 
-# =======================
 # Plan, Preview, Execute
-# =======================
-
 def orchestrator_plan(study_path: str) -> str:
     """
     Return the computed ExecutionPlan (as JSON string) from replication_info.json

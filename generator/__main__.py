@@ -14,7 +14,7 @@ def main():
     if args.stage == "design" and args.tier == "easy":
         # Use your LLM agent in design_react/agent.py
         # It already configures its own file logging via _configure_file_logging().
-        from generator.design_react.agent import run_design
+        from generator.design_agent import run_design
         # Optional: still create a top-level log to mirror execute behavior:
         _ = setup_logger(os.path.join(args.study_path, "_logs", "design_easy.log"))
         # run the agent that generates the plan / prereg JSON
@@ -22,7 +22,7 @@ def main():
 
     elif args.stage == "execute" and args.tier == "easy":
         # Agent-driven, step-by-step with human confirmation before executing
-        from generator.execute_react.agent import run_execute_with_human_confirm
+        from generator.execute_agent import run_execute_with_human_confirm
         _ = setup_logger(os.path.join(args.study_path, "_logs", "execute_easy.log"))
         run_execute_with_human_confirm(
             study_path=args.study_path,
