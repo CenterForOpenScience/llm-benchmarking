@@ -8,27 +8,17 @@ import sys
 import tiktoken
 import copy
 
-from constants import API_KEY, INTERPRET_CONSTANTS
+from core.constants import API_KEY, INTERPRET_CONSTANTS
 from openai import OpenAI
 
 from info_extractor.file_utils import read_txt, read_csv, read_json, read_pdf, read_docx
-from generator.execute_react.execute_tools import (
-    load_dataset, get_dataset_head, get_dataset_shape, get_dataset_description, get_dataset_info
-)
-from generator.execute_react.execute_tools import (
-    read_image, list_files_in_folder, ask_human_input
-)
 
-from core.agent import run_react_loop, save_output
 from core.prompts import PREAMBLE, INTERPRET, EXAMPLE
+from core.agent import run_react_loop, save_output
+from core.actions import base_known_actions
+from core.utils import get_logger, configure_file_logging, build_file_description  
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(formatter)
-console_handler.setLevel(logging.INFO)
-logger.addHandler(console_handler)
+logger, formatter = get_logger("interpreter")
 
 client = OpenAI(api_key=API_KEY)
 
@@ -95,47 +85,14 @@ def read_log(file_path: str, model_name: str = "gpt-4o"):
 
 system_prompt = "\n\n".join([PREAMBLE, INTERPRET, EXAMPLE])
 
-# Map action names to their functions (KEEP NAME: known_actions) --------
+# Map action names to their functions
 known_actions = {
-    "list_files_in_folder": list_files_in_folder,
-    "read_txt": read_txt,
-    "read_csv": read_csv,
-    "read_pdf": read_pdf,
-    "read_json": read_json,
-    "read_docx": read_docx,
-    "read_log": read_log,  # ← special interpret tool
-    "read_image": read_image,
-
-    "load_dataset": load_dataset,
-    "get_dataset_head": get_dataset_head,
-    "get_dataset_shape": get_dataset_shape,
-    "get_dataset_description": get_dataset_description,
-    "get_dataset_info": get_dataset_info,
-
-    "ask_human_input": ask_human_input,
+    **base_known_actions(),
+    "read_log": read_log
 }
 
-def build_file_description(available_files, file_path):
-    return "".join(
-        f"{i}. {os.path.join(file_path, name)}: {desc}\n"
-        for i, (name, desc) in enumerate(available_files.items(), start=1)
-    )
-
-def _configure_file_logging(study_path: str):
-    for h in list(logger.handlers):
-        if isinstance(h, logging.FileHandler):
-            logger.removeHandler(h)
-            h.close()
-    log_file_full_path = os.path.join(study_path, 'interpret.log')
-    os.makedirs(os.path.dirname(log_file_full_path), exist_ok=True)
-    fh = logging.FileHandler(log_file_full_path, mode='a')
-    fh.setFormatter(formatter)
-    fh.setLevel(logging.DEBUG)
-    logger.addHandler(fh)
-    logger.info(f"File logging configured to: '{log_file_full_path}'.")
-
 def run_interpret(study_path, show_prompt=False):
-    _configure_file_logging(study_path)
+    configure_file_logging(logger, study_path, "interpret.log")
     logger.info(f"Starting execution evaluation for study path: {study_path}")
 
     eval_prompt_template = read_txt(INTERPRET_CONSTANTS['prompt_template'])
@@ -160,6 +117,6 @@ def run_interpret(study_path, show_prompt=False):
             ans,
             study_path=study_path,
             filename="interpret_results.json",
-            stage_name="interpret"
-        )
+            stage_name="interpret",
+        ),
     )
