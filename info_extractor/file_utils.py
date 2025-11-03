@@ -15,10 +15,9 @@ import io
 import re
 import docx
 from pathlib import Path
-from logger import get_logger
+from core.utils import get_logger
 
-logger = get_logger()
-
+logger, formatter = get_logger()
 
 def read_txt(file_path):
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
