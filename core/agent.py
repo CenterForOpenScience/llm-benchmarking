@@ -1,14 +1,15 @@
 import os
-import json
 import re
-from openai import OpenAI
-from core.constants import API_KEY, GENERATE_REACT_CONSTANTS
-import logging
 import sys
+import time
+import json
+import logging
+import tiktoken
+from openai import OpenAI
 from core.utils import get_logger
+from core.constants import API_KEY, GENERATE_REACT_CONSTANTS
 
 logger, formatter = get_logger()
-
 client = OpenAI(api_key=API_KEY) 
 
 ACTION_PATTERNS = [
@@ -35,6 +36,9 @@ class Agent:
             self.messages.append({"role": "system", "content": system})
         self.session_state = session_state or {}
 
+        self._tpm_window_start = time.time()
+        self._tpm_tokens = 0  # tokens used since last reset
+
     def __call__(self, message):
         self.messages.append({"role": "user", "content": message})
         result = self.execute()
@@ -42,12 +46,48 @@ class Agent:
         return result
 
     def execute(self):
+    	# simple 30k TPM limiter
+        now = time.time()
+        # reset window every 60s
+        if now - self._tpm_window_start >= 60:
+            self._tpm_window_start = now
+            self._tpm_tokens = 0
+
+        # predict tokens for this call: prompt + a small completion reserve
+        prompt_tokens = self.count_current_tokens()
+        completion_reserve = 1024  # keep it small and simple
+        predicted_total = prompt_tokens + completion_reserve
+
+        if self._tpm_tokens + predicted_total > 30000:
+            # gentle delay (20–30s); then reset counters
+            print("going to sleep...zZZ")
+            time.sleep(25)
+            self._tpm_window_start = time.time()
+            self._tpm_tokens = 0
+
+        # actual call
         completion = client.chat.completions.create(
-                                model="gpt-4o",
-                                temperature=0,
-                                messages=self.messages)
+            model=self.model if hasattr(self, "model") else "gpt-4o",
+            temperature=0,
+            messages=self.messages,
+            max_tokens=completion_reserve,  # optional; keeps outputs bounded
+        )
+
+        # record actual usage if available; else fall back to predicted
+        used = predicted_total
+        try:
+            usage = completion.usage
+            if usage:
+                pt = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None) or 0
+                ct = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", None) or 0
+                tt = getattr(usage, "total_tokens", None)
+                used = tt if tt is not None else (pt + ct)
+        except Exception:
+            pass
+        self._tpm_tokens += used
+
         return completion.choices[0].message.content
-    
+
     def _execute_tool_call(self, known_actions, action, action_input_str):
         """
         Robustly parse tool arguments the LLM may emit as:
@@ -96,6 +136,46 @@ class Agent:
                 print(e)
 
         return observation
+
+    def _get_encoding(self):
+        if tiktoken is None:
+            return None
+        try:
+            return tiktoken.encoding_for_model(self.model)
+        except Exception:
+            try:
+                return tiktoken.get_encoding("cl100k_base")
+            except Exception:
+                return None
+
+    def count_current_tokens(self) -> int:
+        """
+        Rough count of tokens of self.messages (input side only).
+        Uses tiktoken if available; otherwise ~4 chars/token heuristic.
+        """
+        enc = self._get_encoding()
+
+        def cnt(s: str) -> int:
+            if enc:
+                return len(enc.encode(s))
+            return max(1, len(s) // 4)
+
+        total = 0
+        for m in self.messages:
+            role = m.get("role", "")
+            content = m.get("content", "")
+            if isinstance(content, list):
+                # Only count text parts for multimodal messages
+                content = "\n".join(
+                    part.get("text", "")
+                    for part in content
+                    if isinstance(part, dict) and part.get("type") == "text"
+                )
+            elif not isinstance(content, str):
+                content = str(content)
+            total += cnt(role + ": " + content) + 6  # small overhead
+        total += 2
+        return total
 
 def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
 	max_turns: int = 20, session_state=None, on_final=None, log_turns: bool=True):
