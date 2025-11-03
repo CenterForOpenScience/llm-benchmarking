@@ -1,5 +1,4 @@
-# main_agent.py
-
+# generator/design-react.py
 import os
 import json
 import re
@@ -10,211 +9,21 @@ import sys
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG) # Set to DEBUG during development to see everything
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-import codecs
-# log_file_path = 'agent_process.log' # You can change this log file name
-# file_handler = logging.FileHandler(log_file_path, mode='a') # 'a' for append, 'w' for overwrite
-# file_handler.setFormatter(formatter)
-# logger.addHandler(file_handler)
 
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
 console_handler.setLevel(logging.INFO) 
 logger.addHandler(console_handler)
 
-client = OpenAI(api_key=API_KEY) 
 from info_extractor.file_utils import read_txt, read_csv, read_json, read_pdf, read_docx # Keep save_output here if the agent orchestrates saving
 from generator.design_react.design_tools import load_dataset, get_dataset_head, get_dataset_shape, get_dataset_description, get_dataset_info
 from generator.design_react.design_tools import read_image, list_files_in_folder, ask_human_input, write_file
 
-class Agent:
-    def __init__(self, system="", session_state={}):
-        self.system = system
-        self.messages = []
-        if self.system:
-            self.messages.append({"role": "system", "content": system})
-        self.session_state = session_state
+from core.prompts import PREAMBLE, DESIGN, EXAMPLE
+from core.agent import Agent, run_react_loop, save_output
 
-    def __call__(self, message):
-        self.messages.append({"role": "user", "content": message})
-        result = self.execute()
-        self.messages.append({"role": "assistant", "content": result})
-        return result
-
-    def execute(self):
-        completion = client.chat.completions.create(
-                                model="gpt-4o",
-                                temperature=0,
-                                messages=self.messages)
-        return completion.choices[0].message.content
-    
-    def _execute_tool_call(self, known_actions, action, action_input_str):
-        """
-        Executes a tool call by parsing the input string as JSON.
-        """
-        tool_func = known_actions[action]
-        
-        try:
-            # The ONLY parsing step you need. It correctly handles quotes,
-            # escapes, and complex objects. No more codecs.
-            parsed_args = json.loads(action_input_str)
-
-            # Your existing logic for calling the function is good, let's keep it.
-            if isinstance(parsed_args, dict):
-                # For tools expecting keyword arguments, e.g., func(**{"path": "...", "content": "..."})
-                if "dataset" in action:
-                    observation = tool_func(self.session_state, **parsed_args)
-                else:
-                    observation = tool_func(**parsed_args)
-            else:
-                # For tools expecting a single positional argument, e.g., func("my_file.txt")
-                if "dataset" in action:
-                    observation = tool_func(self.session_state, parsed_args)
-                else:
-                    observation = tool_func(parsed_args)
-            
-            return observation
-
-        except json.JSONDecodeError:
-            return f"Error: The tool input was not valid JSON. Please check your formatting. Input received: {action_input_str}"
-        except Exception as e:
-            return f"Error while executing tool '{action}': {e}"
-
-
-# --- Agent System Prompt ---
-agent_prompt = """
-You are an advanced research assistant specialized in replicating some focal claim in a research paper.
-You operate in a loop of Thought, Action, PAUSE, Observation.
-At the end of the loop, you output an Answer in JSON format.
-
-Use Thought to describe your reasoning about the question and what actions you need to take.
-Use Action to run one of the actions available to you - then return PAUSE.
-Observation will be the result of running those actions.
-
-Your available actions are:
-
-1. list_files_in_folder:
-    e.g. list_files_in_folder: "data/study_A/datasets"
-    Description: Lists all files within a specified folder
-    Returns: Names of all files within the specified folder with their names as a single string,
-    with each file separated by a comma.
-
-2.  read_txt:
-    e.g. read_txt: "data/study_X/abstract.txt"
-    Description: Reads the plain text content of a file with .txt or .do (Stata do-file) extensions. This is the default reader if a specific file type is not recognized.
-    Returns: The content of the file as a string.
-
-3.  read_pdf:
-    e.g. read_pdf: "data/study_Y/methods.pdf"
-    Description: Extracts and reads the text content from a PDF (.pdf) file.
-    Returns: The extracted text content of the PDF as a string.
-
-4.  read_json:
-    e.g. read_json: "data/study_Z/config.json"
-    Description: Reads and parses a JSON (.json) file.
-    Returns: The content of the JSON file as a Python dictionary (which will be converted to string representation for observation).
-    
-5. "read_docx": tools.read_docx:
-    e.g. `read_docx: "data/study_Z/protocol.docx"`
-    * Description: Extracts and reads the text content from a Microsoft Word (.docx) file.
-    * Returns: The extracted text content of the file as a string.
-
-6. read_image:
-   e.g read_image: "data/study_T/image.png"
-   Description: Take in an input image of type .png, .jpeg, .jpg, .webp, or .gif and describe in natural language what the image is about.
-   Returns: Textual description of the provided image
-
-7. Dataset Related Tools
-   7a.  load_dataset:
-    * e.g. `load_dataset: "data/study_A/patient_records.csv"` or  `load_dataset: "data/study_A/patient_records.xlsx"`
-    * Description: Loads a dataset from a CSV or Excel file into memory for analysis. This function must be called successfully on a file path before any other `get_dataset_*` tools can be used on it.
-    * Returns: A string confirming that the dataset was loaded successfully, or an error message if it failed.
-
-   7b.  get_dataset_head:    
-    * e.g. `get_dataset_head: "data/study_A/patient_records.csv"`
-    * Description: Retrieves the first 5 rows of a previously loaded CSV dataset. This is useful for quickly inspecting the data's structure, column names, and sample values.
-    * Returns: A string containing the first 'n' rows of the dataset in a comma-separated format.
-
-   7c.  get_dataset_shape:
-    * e.g. `get_dataset_shape: "data/study_A/patient_records.csv"`
-    * Description: Gets the dimensions (number of rows, number of columns) of a previously loaded CSV dataset.
-    * Returns: A string representing a tuple, for example, "(150, 4)", indicating (rows, columns).
-
-   7d.  get_dataset_description:
-    * e.g. `get_dataset_description: "data/study_A/patient_records.csv"`
-    * Description: Calculates descriptive statistics for the numerical columns of a loaded CSV dataset. This includes count, mean, standard deviation, min, max, and percentiles.
-    * Returns: A string containing a summary table of the descriptive statistics.
-
-8.  get_dataset_info:
-    
-    * e.g. `get_dataset_info: "data/study_A/patient_records.csv"`
-    * Description: Provides a concise technical summary of a loaded CSV dataset, including column names, data types (e.g., integer, float), and the number of non-missing values for each column.
-    * Returns: A string containing the full summary information of the dataset.
-    
-9. ask_human_input:
-    * e.g. `ask_human_input: "Need access permission to download data, please download it and give me the path to the downloaded folder"`
-    * Description: Asks a clarifying question to the human user and waits for their text response. Use this tool only when you are stuck, if the instructions are ambiguous, or if you need external information you cannot find in the files.
-    * Returns: The human's raw text response as a string.
-    
-10. write_file:
-    * e.g. `write_file: {"file_path": "path/to/file.txt", "file_content": "This is the first line of the file\nThis is the second line."}
-    * Description: Creates a file at file_path and dump file_content into it. Use this tool when you need to write new code or modify existing code.
-    * Returns: A confirmation if the file is approved and has been created or a rejection/error message.
-    
-Important: When reading a file, you must choose the *specific* reader tool based on the file's extension. If the extension is not listed above, you should use `read_txt` as a fallback. 
-Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
-
-Example Session:
-
-Question: Extract information about the original paper and claim to be replicated from the provided files and fill out this JSON template
-    {
-      "statement": "The main claim made by the original study.",
-      "hypothesis": "A testable hypothesis based on the claim.",
-      "original_coefficient": "Numeric value indicating strength/direction of effect.",
-      "original_p_value": "P-value for testing statistical significance.",
-      "direction": "Positive, negative, or null effect.",
-      "study_type": "Type of study (Experimental, Observational, Meta-Analysis)."
-    }
-You will have access to the following documents:
-1. original_paper.pdf: The pdf file containing the full text of the original paper 
-2. initial_details.txt: A document containing the following details: (1) the focal claim from the original that needs to be replicated.
-
-Thought: The required JSON centers around the main claim. I need to determine what the claim is from initial_detailst.txt. I should use the 'read_txt' tool.
-Action: read_txt: initial_details.txt
-PAUSE
-
-You will be called again with this:
-
-Observation:[CLAIM]
-The relationship between violence and election fraud follows an inverted U-shape: fraud increases with violence up to a certain level, then decreases.
-
-You then output:
-
-Thought: I now know about the claim to be replicated. I need to look for additional information about the claim from the full paper. I should use the 'read_pdf' tool.
-Action: read_pdf: original.pdf
-PAUSE
-
-You will be called again with this:
-Observation: [FULL PAPER PDF redacted here]
-
-You then output:
-Answer: {
-    "statement": "The relationship between violence and election fraud follows an inverted U-shape: fraud increases with violence up to a certain level, then decreases.",
-    "hypothesis": [
-      "H1: The linear association between violence and election fraud will be positive.",
-      "H* (SCORE focal test): The quadratic association between violence and election fraud will be negative."
-    ],
-    "original_coefficients": {
-        "linear_term": 8.477,
-        "squared_term": -13.748
-    },
-    "original_p_value": {
-        "linear_term": "<0.05",
-        "squared_term": "<0.01"
-    },
-    "direction": "Inverted U-shape effect",
-    "study_type": "Observational"
-  }
-""".strip()
+system_prompt = "\n\n".join([PREAMBLE, DESIGN, EXAMPLE])
+action_re = re.compile(r'^Action: (\w+): (.*)$', re.MULTILINE) # Use re.MULTILINE for multiline parsing
 
 # Map action names to their functions
 known_actions = {
@@ -233,119 +42,6 @@ known_actions = {
     "ask_human_input": ask_human_input,
     "write_file": write_file
 }
-
-action_re = re.compile(r'^Action: (\w+): (.*)$', re.MULTILINE) # Use re.MULTILINE for multiline parsing
-def save_output(extracted_json, study_path):
-    final_output = {
-        **extracted_json
-    }
-    output_path = os.path.join(study_path, "replication_info_react.json")
-    extracted_json = final_output
-    with open(output_path, 'w') as f:
-        json.dump(extracted_json, f, indent=2)
-
-    logger.info(f"Interpret stage output saved to {output_path}")
-    
-def query_agent(question: str, max_turns: int = 20, study_path_for_saving=None):
-    """
-    Main function to query the agent and orchestrate the extraction process.
-    """
-    i = 0
-    bot = Agent(agent_prompt, session_state = {"analyzers": {}})
-    next_prompt = question
-
-    final_extracted_data = {} # To accumulate results
-    
-    MAX_DISPLAY_PROMPT_LEN = 2000
-
-    while i < max_turns:
-        i += 1
-        logger.info(f"\n--- Turn {i} ---")
-        # print(f"Agent input: {next_prompt}")
-        display_prompt = next_prompt
-        if len(display_prompt) > MAX_DISPLAY_PROMPT_LEN:
-            display_prompt = display_prompt[:MAX_DISPLAY_PROMPT_LEN] + "\n... (truncated for display)"
-        logger.info(f"\n***Agent input: {display_prompt}")
-
-        result = bot(next_prompt) # Get LLM's thought/action/answer
-        logger.info(f"\n***Agent output:\n{result}")
-
-        # Check if the LLM provided a final answer
-        if "Answer:" in result:
-            try:
-                answer_match = re.search(r'Answer:\s*(\{.*?\})\s*$', result, re.DOTALL)
-                if answer_match:
-                    json_answer_str = answer_match.group(1).strip()
-                else:
-                    json_answer_str = result.split("Answer:", 1)[1].strip()
-                    if json_answer_str.strip().startswith('{') and json_answer_str.strip().endswith('}'):
-                            pass # Looks like valid JSON, proceed
-                    else:
-                        logger.warning(f"Warning: Answer found but doesn't look like clean JSON: {json_answer_str[:200]}...")
-                        # Try to find the JSON part more aggressively
-                        json_start = json_answer_str.find('{')
-                        json_end = json_answer_str.rfind('}')
-                        if json_start != -1 and json_end != -1 and json_end > json_start:
-                            json_answer_str = json_answer_str[json_start : json_end + 1]
-                        else:
-                            raise ValueError("Could not find a valid JSON structure after 'Answer:'")
-                json_start = json_answer_str.find('{')
-                json_end = json_answer_str.rfind('}')
-                if json_start == -1 or json_end == -1 or json_end < json_start:
-                    raise ValueError("Could not find a valid JSON object (missing curly braces) after cleaning.")
-
-                final_answer = json.loads(json_answer_str[json_start : json_end + 1])
-                logger.info("\n--- Final Answer ---")
-                logger.info(json.dumps(final_answer, indent=2))
-                # Agent decides when to save the output now
-                if study_path_for_saving:
-                    save_output(final_answer, study_path_for_saving)
-                logger.info("Process completed")
-                return final_answer
-            except json.JSONDecodeError as e:
-                logger.error(f"Error parsing final JSON answer: {e}")
-                logger.error(f"Raw answer: {json_answer_str}")
-                return {"error": "Failed to parse final answer JSON"}
-            except Exception as e:
-                logger.error(f"An error occurred processing final answer: {e}")
-                return {"error": str(e)}
-        else:
-            # actions_matches = [
-            #     action_re.match(line)
-            #     for line in result.split('\n')
-            #     if action_re.match(line)
-            # ]
-            # print(actions_matches)
-            
-            action_re = re.compile(r"Action: (\w+): (.*)")
-
-            # 2. Search the ENTIRE result string, not line by line
-            match = action_re.search(result)
-
-
-            if match:
-                # There is an action to run
-                # match = actions_matches[0]
-                action, action_input_str = match.groups()
-
-                logger.info(f" -- Running Action: {action} with input: {action_input_str}")
-
-                if action not in known_actions:
-                    logger.error(f"Unknown action: {action}: {action_input_str}") 
-                    raise Exception(f"Unknown action: {action}: {action_input_str}")
-
-                observation = bot._execute_tool_call(known_actions, action, action_input_str)
-
-                # print(f"Observation: {observation}")
-                next_prompt = f"Observation: {observation}"
-            else:
-                logger.warning("Agent did not propose an action. Terminating.")
-                # If the agent doesn't provide an action or an answer, something is wrong or it's stuck.
-                return {"error": "Agent did not provide a recognized action or final answer."}
-
-    print("Max turns reached. Agent terminated without a final answer.")
-    return {"error": "Max turns reached without a final answer."}
-
 
 def build_file_description(available_files, file_path):
     desc = ""
@@ -380,9 +76,7 @@ def _configure_file_logging(study_path: str):
     file_handler.setFormatter(formatter) # Use the globally defined formatter
     file_handler.setLevel(logging.DEBUG) # File logs everything (DEBUG level)
     logger.addHandler(file_handler)
-
     logger.info(f"File logging configured to: '{log_file_full_path}'.")
-
 
 def run_design(study_path, show_prompt=False):
     _configure_file_logging(study_path)
@@ -390,8 +84,7 @@ def run_design(study_path, show_prompt=False):
     logger.info(f"Starting extraction for study path: {study_path}")
     template =  read_json(GENERATE_REACT_CONSTANTS['json_template'])
         
-    
-    query_question = f"""
+    question = f"""
     You will have access to the following documents:
     {build_file_description(GENERATE_REACT_CONSTANTS['files'], study_path)}
     
@@ -411,8 +104,10 @@ def run_design(study_path, show_prompt=False):
     ".
     """.strip()
     
-    
-    query_agent(
-        query_question,
-        study_path_for_saving=study_path,
+    return run_react_loop(
+    	system_prompt,
+    	known_actions,
+    	question,
+    	session_state={"analyzers": {}},
+    	on_final=lambda ans: save_output(ans, study_path)
     )
