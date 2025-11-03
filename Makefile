@@ -5,7 +5,7 @@ PYTHON ?= python3
 # libs we need before running anything
 REQ := pytest pytest_cov openai dotenv pymupdf pyreadr pandas numpy docker docx
 
-STUDY ?= ./case_studies/case_study_1
+STUDY ?= ./case_studies/case_study_3
 
 .PHONY: check-deps install-dev test test-extractor test-generator test-all design-easy execute-easy
 
@@ -55,7 +55,10 @@ execute-easy: check-deps check-docker
 
 # interpreter module
 interpret-easy: check-deps
-	python -m interpreter --tier easy --study-path $(STUDY)$
+	python -m interpreter --tier easy --study-path $(STUDY)
+
+# full pipeline (extract -> design -> execute -> interpret)
+pipeline-easy: extract-stage1 design-easy execute-easy interpret-easy
 
 # test suite
 test: check-deps
