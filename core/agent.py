@@ -2,18 +2,12 @@ import os
 import json
 import re
 from openai import OpenAI
-from constants import API_KEY, GENERATE_REACT_CONSTANTS
+from core.constants import API_KEY, GENERATE_REACT_CONSTANTS
 import logging
 import sys
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG) # Set to DEBUG during development to see everything
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-import codecs
+from core.utils import get_logger
 
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(formatter)
-console_handler.setLevel(logging.INFO) 
-logger.addHandler(console_handler)
+logger, formatter = get_logger()
 
 client = OpenAI(api_key=API_KEY) 
 
