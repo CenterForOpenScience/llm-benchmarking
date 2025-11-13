@@ -69,13 +69,13 @@ def shq(s: str) -> str:
 def plan_from_replication_info(replication_info: Dict) -> ExecutionPlan:
     """Create: prepare-env → run declared entry file (no fallback)."""
     claim_id = (
-        replication_info.get("original_study", {})
+        replication_info.get("replication_study", {})
         .get("metadata", {})
         .get("original_paper_id", "study")
     )
     plan_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", claim_id)
 
-    codebase = replication_info.get("original_study", {}).get("codebase", {}).get("files", {})
+    codebase = replication_info.get("replication_study", {}).get("codebase", {}).get("files", {})
     if not codebase:
         raise ValueError("replication_info.original_study.codebase.files is empty; no entry script to run.")
 
@@ -98,6 +98,14 @@ def plan_from_replication_info(replication_info: Dict) -> ExecutionPlan:
         ],
     )
 
+def _get_docker_specs(spec: Dict) -> Dict:
+    # Try top-level first (future-proof)
+    d = spec.get("docker_specs")
+    if d:
+        return d
+    # Fallback: nested under replication_study
+    return spec.get("replication_study", {}).get("docker_specs", {}) or {}
+
 # Dockerfile / Image / Container ops
 def orchestrator_generate_dockerfile(study_path: str) -> str:
     """
@@ -105,11 +113,11 @@ def orchestrator_generate_dockerfile(study_path: str) -> str:
     Returns JSON string.
     """
     spec = _read_spec(study_path)
-    dspec = spec.get("docker_specs", {}) or {}
+    dspec = _get_docker_specs(spec)
 
     base = dspec.get("base_image")
     if not base:
-        raise ValueError("docker_specs.base_image is required in replication_info.json")
+        raise ValueError(f"docker_specs.base_image is required in {study_path}replication_info.json")
 
     r_pkgs = (dspec.get("packages", {}) or {}).get("r", []) or []
     other  = (dspec.get("packages", {}) or {}).get("other", []) or []

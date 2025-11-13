@@ -133,7 +133,7 @@ class Agent:
                 else:
                     observation = known_actions[action](parsed)
             except Exception as e:
-                print(e)
+                observation = f"ERROR in {action}: {e!s}"
 
         return observation
 
@@ -254,7 +254,7 @@ def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
     print("Max turns reached. Agent terminated without a final answer.")
     return {"error": "Max turns reached without a final answer."}
 
-def save_output(extracted_json, study_path, filename: str = "replication_info_react.json", stage_name: str = "design"):
+def save_output(extracted_json, study_path, filename: str = "replication_info.json", stage_name: str = "design"):
     os.makedirs(study_path, exist_ok=True)
     out_path = os.path.join(study_path, filename)
     with open(out_path, "w") as f:
