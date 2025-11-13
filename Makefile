@@ -5,7 +5,7 @@ PYTHON ?= python3
 # libs we need before running anything
 REQ := pytest pytest_cov openai dotenv pymupdf pyreadr pandas numpy docker docx
 
-STUDY ?= ./case_studies/case_study_3
+STUDY ?= ./data/processed/1
 
 .PHONY: check-deps install-dev test test-extractor test-generator test-all design-easy execute-easy
 
@@ -42,7 +42,6 @@ extract-results: check-deps
 
 evaluate-execute: check-deps
 	python -m validator.cli.evaluate_execute_cli  --study_path $(STUDY)
-
 
 evaluate-interpret: check-deps
 	python -m validator.cli.evaluate_interpret_cli  --study_path $(STUDY) --reference_report_path $(STUDY_HUMAN_REPORT)
