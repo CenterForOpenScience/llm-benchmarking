@@ -11,14 +11,14 @@ import time
 import re
 from openai import OpenAI
 from openai.types.beta.threads import TextContentBlock
-from logger import get_logger
+from core.utils import get_logger
 
 from info_extractor.file_utils import read_file_contents, save_output, save_prompt_log
 from info_extractor.prompt_builder import build_prompt, build_context_and_message
-from constants import API_KEY, TEMPLATE_PATHS, FILE_SELECTION_RULES
+from core.constants import API_KEY, TEMPLATE_PATHS, FILE_SELECTION_RULES
 
 client = OpenAI(api_key=API_KEY)
-logger = get_logger()
+logger, formatter = get_logger()
 
 
 def run_stage_1(study_path, difficulty, show_prompt=False):

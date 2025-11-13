@@ -3,7 +3,7 @@ import argparse
 import os
 import re
 import sys
-from logger import get_logger
+from core.utils import get_logger
 from .extractor import run_extraction
 
 def main():
@@ -23,7 +23,7 @@ def main():
     log_file_name = f"{case_name}_{args.stage}_extractor.log"
     os.environ["LOG_FILE"] = log_file_name
 
-    logger = get_logger()
+    logger, formatter = get_logger()
     logger.info(
         f"Running extraction for {args.study_path} at {args.difficulty} difficulty, stage={args.stage}"
     )
