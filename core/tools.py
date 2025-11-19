@@ -31,7 +31,7 @@ class DataFrameAnalyzer:
     def _load_data(self) -> Optional[pd.DataFrame]:
         """
         Private method to load data from the file_path.
-        Handles both .csv and .xlsx files and potential errors.
+        Handles both .csv, .xlsx, and .dta files and potential errors.
         """
         # Get the file extension from the file path
         _, file_extension = os.path.splitext(self.file_path)
@@ -45,6 +45,8 @@ class DataFrameAnalyzer:
             elif file_extension in ['.xlsx', '.xls']:
                 # You might need to install openpyxl: pip install openpyxl
                 return pd.read_excel(self.file_path)
+            elif file_extension == '.dta':
+                return pd.read_stata(self.file_path)
             else:
                 print(f"Error: Unsupported file type '{file_extension}'.")
                 return None
