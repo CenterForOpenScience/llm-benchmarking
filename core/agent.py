@@ -8,7 +8,6 @@ import tiktoken
 from openai import OpenAI
 from core.utils import get_logger
 from core.constants import API_KEY, GENERATE_REACT_CONSTANTS
-from json_repair import repair_json
 
 logger, formatter = get_logger()
 client = OpenAI(api_key=API_KEY) 
@@ -98,7 +97,8 @@ class Agent:
         try:
             # The ONLY parsing step you need. It correctly handles quotes,
             # escapes, and complex objects. No more codecs.
-            parsed_args = json.loads(repair_json(action_input_str))
+            # parsed_args = json.loads(repair_json(action_input_str))
+            parsed_args =  json.loads(action_input_str.strip())
             
             print(f"DEBUG: Parsed args for '{action}': {parsed_args}, Type: {type(parsed_args)}")
 
