@@ -66,7 +66,7 @@ Follow these Actions IN ORDER. You MUST preview and get human approval before ex
 
 1) Action: orchestrator_generate_dockerfile: "{study_path}"
 2) Action: orchestrator_build_image: "{study_path}"
-3) Action: orchestrator_run_container: "{{\\"study_path\\": \\"{study_path}\\", \\"mem_limit\\": null, \\"cpus\\": null, \\"read_only\\": false, \\"network_disabled\\": false}}"
+3) Action: orchestrator_run_container: "{{\"study_path\": \"{study_path}\", \"mem_limit\": null, \"cpus\": null, \"read_only\": false, \"network_disabled\": false}}"
 4) Action: orchestrator_plan: "{study_path}"
 5) Action: orchestrator_preview_entry: "{study_path}"
 

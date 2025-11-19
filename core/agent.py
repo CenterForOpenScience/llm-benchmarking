@@ -8,6 +8,7 @@ import tiktoken
 from openai import OpenAI
 from core.utils import get_logger
 from core.constants import API_KEY, GENERATE_REACT_CONSTANTS
+from json_repair import repair_json
 
 logger, formatter = get_logger()
 client = OpenAI(api_key=API_KEY) 
@@ -90,52 +91,38 @@ class Agent:
 
     def _execute_tool_call(self, known_actions, action, action_input_str):
         """
-        Robustly parse tool arguments the LLM may emit as:
-          - a dict JSON string:        '{"k":"v"}'
-          - a JSON-encoded JSON string: "\"{\\\"k\\\":\\\"v\\\"}\""
-          - a raw string (path, etc.)
-        Backwards-compatible: if parsing fails, we pass the original string like before.
+        Executes a tool call by parsing the input string as JSON.
         """
-        s = (action_input_str or "").strip()
-
-        # Strip common code-fence wrapping without being strict
-        if s.startswith("```") and s.endswith("```"):
-            s = s.strip("`").strip()
-
-        parsed = None
-
-        # First attempt: parse JSON once
+        tool_func = known_actions[action]
+        
         try:
-            tmp = json.loads(s)
-            # If the first parse yields a string (JSON-encoded JSON), try a second pass
-            if isinstance(tmp, str):
-                try:
-                    parsed = json.loads(tmp)
-                except Exception:
-                    parsed = tmp  # leave as string if inner parse fails
-            else:
-                parsed = tmp
-        except json.JSONDecodeError:
-            parsed = s  # not JSON → treat as raw string (legacy behavior)
+            # The ONLY parsing step you need. It correctly handles quotes,
+            # escapes, and complex objects. No more codecs.
+            parsed_args = json.loads(repair_json(action_input_str))
+            
+            print(f"DEBUG: Parsed args for '{action}': {parsed_args}, Type: {type(parsed_args)}")
 
-        observation = None
-        if isinstance(parsed, dict):
-            # Dict -> kwargs (preserve your dataset-session_state special case)
-            if "dataset" in action:
-                observation = known_actions[action](self.session_state, **parsed)
-            else:
-                observation = known_actions[action](**parsed)
-        else:
-            # String -> single positional arg (legacy behavior)
-            try:
+            # Your existing logic for calling the function is good, let's keep it.
+            if isinstance(parsed_args, dict):
+                # For tools expecting keyword arguments, e.g., func(**{"path": "...", "content": "..."})
                 if "dataset" in action:
-                    observation = known_actions[action](self.session_state, parsed)
+                    observation = tool_func(self.session_state, **parsed_args)
                 else:
-                    observation = known_actions[action](parsed)
-            except Exception as e:
-                observation = f"ERROR in {action}: {e!s}"
+                    observation = tool_func(**parsed_args)
+            else:
+                # For tools expecting a single positional argument, e.g., func("my_file.txt")
+                if "dataset" in action:
+                    observation = tool_func(self.session_state, parsed_args)
+                else:
+                    observation = tool_func(parsed_args)
+            
+            return observation
 
-        return observation
+        except json.JSONDecodeError:
+            return f"Error: The tool input was not valid JSON. Please check your formatting. Input received: {action_input_str}"
+        except Exception as e:
+            return f"Error while executing tool '{action}': {e}"
+
 
     def _get_encoding(self):
         if tiktoken is None:

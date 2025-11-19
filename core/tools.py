@@ -246,7 +246,7 @@ def write_file(file_path: str, file_content: str) -> str:
     # Check the user's response
     if user_response.lower().strip() != 'yes':
         print("❌ User denied execution.")
-        return "Command execution denied by the user."
+        return f"Command execution denied by the user:\n{user_response}"
 
     try:
         # Ensure the parent directory of the full path exists

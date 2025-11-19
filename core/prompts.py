@@ -130,7 +130,7 @@ DESIGN = """
     
 10. write_file:
     * e.g. `write_file: {"file_path": "path/to/file.txt", "file_content": "This is the first line of the file\nThis is the second line."}
-    * Description: Creates a file at file_path and dump file_content into it. Use this tool when you need to write new code or modify existing code.
+    * Description: Creates a file at file_path and dump file_content into it. Use this tool when you need to write new code or modify existing code. You MUST always escape newlines within string values, especially for the file_content argument.
     * Returns: A confirmation if the file is approved and has been created or a rejection/error message.
     
 Important: When reading a file, you must choose the *specific* reader tool based on the file's extension. If the extension is not listed above, you should use `read_txt` as a fallback. 

@@ -38,10 +38,18 @@ def run_design(study_path, show_prompt=False):
     If you find issues with the provided data, follow-up with a human supervisor to ask for a different data source until appropriate data is given.
     
     Once you have determined the provided data are good for replication, explore the code to help fill out fields related to the codebase. This code will operate directly on the data files given to you.
-    If there are potential issues with the provided code such as a data file path that is different from the data files you have looked at, YOU MUST RESOLVE THEM and rewrite the code to a new file.
+    Find potential issues with the provided code such as a data file path that is different from the data files you have looked at. Additionally, the environment WILL ONLY support execution for .py or .R files. YOU MUST RESOLVE ALL IDENTIFIED ISSUES (e.g., rewrite .do codes into .py codes, etc.) and rewrite the code to a new file.
+    If your code reads in any data file, ASSUME that the data will be in this directory: "/app/data"
     
-    After all issues have been resolved, finish by complete by filling out the required JSON with all the updated/final information to prepare for replication execution.        
-    ".
+    After all issues have been resolved, finish by complete by filling out the required JSON with all the updated/final information to prepare for replication execution.
+    Rememeber, every response needs to have the the following one of the two formats:
+    ----- FORMAT 1 (For when you need to call actions to help accomplish the given task) -------
+    Thought: [Your thinking/planning process for completing the task based on interactions so far]
+    Action: [call next action to help you solve the task]
+    PAUSE
+    ----- FORMAT 2 (For when you are ready to give a final response)-------
+    Thought: [Your thinking/planning process for completing the task based on interactions so far]
+    Answer: [Execute necessary next action to help you solve the task]
     """.strip()
     
     return run_react_loop(
