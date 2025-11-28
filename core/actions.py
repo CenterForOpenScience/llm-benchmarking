@@ -10,6 +10,7 @@ from core.tools import (
     get_dataset_shape,
     get_dataset_description,
     get_dataset_info,
+    read_and_summarize_pdf,
 )
 
 def base_known_actions() -> dict:
@@ -22,7 +23,8 @@ def base_known_actions() -> dict:
 
         "read_txt": read_txt,
         "read_csv": read_csv,
-        "read_pdf": read_pdf,
+        #"read_pdf": read_pdf,
+        "read_pdf": read_and_summarize_pdf,
         "read_json": read_json,
         "read_docx": read_docx,
 

@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, Tuple
 import io # Add this import at the top of your file
 from pathlib import Path
 
+from pypdf import PdfReader
 
 client = OpenAI(api_key=API_KEY)
 
@@ -265,3 +266,70 @@ def write_file(file_path: str, file_content: str) -> str:
         error_message = f"❌ Error writing file to {full_path}: {e}"
         print(error_message)
         return error_message
+
+def read_and_summarize_pdf(file_path: str) -> str:
+    """
+    Reads a PDF file. If the PDF is short (<= 15 pages), it returns the full text.
+    If the PDF is long (> 15 pages), it splits the text into chunks and uses the
+    LLM to summarize each chunk, returning a consolidated summary to save context window.
+
+    Args:
+        file_path (str): Path to the PDF file.
+
+    Returns:
+        str: Full text or a consolidated summary of the PDF.
+    """
+    if not os.path.exists(file_path):
+        return f"Error: File '{file_path}' not found."
+
+    try:
+        reader = PdfReader(file_path)
+        number_of_pages = len(reader.pages)
+        
+        # Extract all text first
+        full_text = ""
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                full_text += text + "\n"
+        
+        # THRESHOLD: If 15 pages or less, just return the text as is.
+        if number_of_pages <= 15:
+            print(f"PDF is short ({number_of_pages} pages). Returning full text.")
+            return f"--- START OF PDF CONTENT ({number_of_pages} pages) ---\n{full_text}\n--- END OF PDF CONTENT ---"
+
+        # LOGIC FOR LONG PDFS
+        print(f"PDF is long ({number_of_pages} pages). Summarizing content to prevent overflow...")
+        
+        # Split text into chunks of roughly 12,000 characters (approx 3-4k tokens)
+        chunk_size = 12000
+        chunks = [full_text[i:i+chunk_size] for i in range(0, len(full_text), chunk_size)]
+        
+        summaries = []
+        total_chunks = len(chunks)
+        
+        for i, chunk in enumerate(chunks):
+            print(f"Summarizing chunk {i+1}/{total_chunks}...")
+            completion = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "You are a helpful research assistant. Summarize the following text from a technical paper/document. Capture key methodologies, specific metrics, results, and conclusions. Do not lose specific data points."
+                    },
+                    {
+                        "role": "user", 
+                        "content": chunk
+                    }
+                ]
+            )
+            summaries.append(completion.choices[0].message.content)
+            
+        consolidated_summary = "\n\n".join(summaries)
+        
+        return (f"--- PDF SUMMARY (Document was {number_of_pages} pages long) ---\n"
+                f"The document was too long to read directly, so here is a detailed summary of all sections:\n\n"
+                f"{consolidated_summary}")
+
+    except Exception as e:
+        return f"Error reading or summarizing PDF: {e}"

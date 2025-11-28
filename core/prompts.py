@@ -78,7 +78,7 @@ DESIGN = """
 
 3.  read_pdf:
     e.g. read_pdf: "data/study_Y/methods.pdf"
-    Description: Extracts and reads the text content from a PDF (.pdf) file.
+    Description: Extracts and reads the text content from a PDF (.pdf) file. INTELLIGENT HANDLING: If the PDF is > 15 pages, this tool automatically chunks and summarizes it to capture key methodologies, metrics, and results. If <= 15 pages, it returns the full text.
     Returns: The extracted text content of the PDF as a string.
 
 4.  read_json:
@@ -151,7 +151,7 @@ EXECUTE = """
 
 3.  read_pdf:
     e.g. read_pdf: "data/study_Y/methods.pdf"
-    Description: Extracts and reads the text content from a PDF (.pdf) file.
+    Description: Extracts and reads the text content from a PDF (.pdf) file. INTELLIGENT HANDLING: If the PDF is > 15 pages, this tool automatically chunks and summarizes it to capture key methodologies, metrics, and results. If <= 15 pages, it returns the full text.
     Returns: The extracted text content of the PDF as a string.
 
 4.  read_json:
@@ -262,7 +262,7 @@ Your available actions are:
 
 3.  read_pdf:
     e.g. read_pdf: "data/study_Y/methods.pdf"
-    Description: Extracts and reads the text content from a PDF (.pdf) file.
+    Description: Extracts and reads the text content from a PDF (.pdf) file. INTELLIGENT HANDLING: If the PDF is > 15 pages, this tool automatically chunks and summarizes it to capture key methodologies, metrics, and results. If <= 15 pages, it returns the full text.
     Returns: The extracted text content of the PDF as a string.
 
 4.  read_json:
