@@ -16,6 +16,7 @@ import re
 import docx
 from pathlib import Path
 from core.utils import get_logger
+from core.tools import read_and_summarize_pdf
 
 logger, formatter = get_logger()
 
@@ -59,11 +60,10 @@ def read_csv(file_path):
         return df.to_string(index=False)
     except Exception as e:
         return f"[CSV read error: {e}]"
-    
-    
+
 FILE_READERS = {
     ".txt": read_txt,
-    ".pdf": read_pdf,
+    ".pdf": read_and_summarize_pdf,
     ".json": read_json,
     ".csv": read_csv,
 }
