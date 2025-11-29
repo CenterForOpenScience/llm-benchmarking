@@ -2,9 +2,8 @@
 
 import os
 import json
-import re
 import logging
-import sys
+from typing import Dict, Any
 
 from core.constants import GENERATE_EXECUTE_REACT_CONSTANTS
 from core.actions import base_known_actions
@@ -46,54 +45,65 @@ known_actions = {
     "orchestrator_stop_container": orchestrator_stop_container,
 }
 
-def run_execute_with_human_confirm(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates"):
+def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates"):
     configure_file_logging(logger, study_path, "execute_agent.log")
-    logger.info(f"[agent] stepwise orchestrator run WITH confirmation for: {study_path}")
+    logger.info(f"[agent] dynamic orchestrator run loop for: {study_path}")
 
     schema_path = os.path.join(templates_dir, "execute_schema.json")
     prev_files = GENERATE_EXECUTE_REACT_CONSTANTS.get("files", {}).copy()
     prev_template = GENERATE_EXECUTE_REACT_CONSTANTS.get("json_template")
 
     try:
+        # Update available files context
         GENERATE_EXECUTE_REACT_CONSTANTS["files"] = {
-            "replication_info.json": "Spec with docker base image, packages, volumes, and declared code files.",
-            "execution_result.json": "Raw execution output from the run (plan, steps, stdout/stderr, artifacts)."
+            "replication_info.json": "Configuration for Docker base image, packages, and code entry point. MODIFY THIS if Docker build fails.",
+            "execution_result.json": "Output generated after running 'orchestrator_execute_entry'. Contains stdout/stderr. Read this to debug build errors.",
+            "_runtime/Dockerfile": "The generated Dockerfile.",
         }
         GENERATE_EXECUTE_REACT_CONSTANTS["json_template"] = schema_path
 
+        # NEW PROMPT: Goal-Oriented Loop instead of Linear Steps
         instruction = f"""
-Follow these Actions IN ORDER. You MUST preview and get human approval before executing:
+Your goal is to successfully execute the replication study inside a Docker container.
+You are operating in a DEBUG LOOP. You must assess the result of every action. 
 
-1) Action: orchestrator_generate_dockerfile: "{study_path}"
-2) Action: orchestrator_build_image: "{study_path}"
-3) Action: orchestrator_run_container: "{{\"study_path\": \"{study_path}\", \"mem_limit\": null, \"cpus\": null, \"read_only\": false, \"network_disabled\": false}}"
-4) Action: orchestrator_plan: "{study_path}"
-5) Action: orchestrator_preview_entry: "{study_path}"
+If an action fails (e.g., Docker build error, Missing Dependency, Code crash), you MUST:
+1. Analyze the error message in the Observation.
+2. Use `write_file` to FIX the issue (e.g., edit `replication_info.json` to add packages, or edit the code files).
+3. RETRY the failed step.
 
-You will receive a JSON that includes "command_pretty" (the exact command).
-Now ask the human to approve:
+**Phases of Execution:**
 
-6) Action: ask_human_input: "About to execute inside the container: {{command_pretty}}. Approve to execute? (yes/no)"
+PHASE 1: BUILD ENVIRONMENT
+1. `orchestrator_generate_dockerfile`: Creates _runtime/Dockerfile from replication_info.json.
+2. `orchestrator_build_image`: Builds the image.
+   * IF BUILD FAILS: Read the error log. It usually means a missing system package or R/Python library. Edit `replication_info.json` to add the missing dependency, regenerate the Dockerfile, and rebuild.
 
-If and only if the human answers exactly "yes" (case-insensitive), continue:
+PHASE 2: PREPARE RUNTIME
+3. `orchestrator_run_container`: Starts the container.
+4. `orchestrator_plan` & `orchestrator_preview_entry`: Verify what will run.
 
-7) Action: orchestrator_execute_entry: "{study_path}"
+PHASE 3: HUMAN APPROVAL (Strict Check)
+5. Before running the actual analysis code, you MUST Ask the human:
+   Action: ask_human_input: "Ready to execute command: <COMMAND>. Approve? (yes/no)"
+   * If they say "no", stop the container and fill the output JSON with status "cancelled".
+   * If they say "yes", proceed to Phase 4.
 
-Then stop the container:
+PHASE 4: EXECUTE & DEBUG
+6. `orchestrator_execute_entry`: Runs the code.
+   * IF EXECUTION FAILS (exit_code != 0): 
+     - Read the `stderr` in the observation.
+     - Identify if it is a code error or missing library.
+     - Use `write_file` to fix the script or `replication_info.json`.
+     - If you changed dependencies, you must go back to Phase 1 (Rebuild).
+     - If you only changed code, you can retry `orchestrator_execute_entry`.
 
-8) Action: orchestrator_stop_container: "{study_path}"
+PHASE 5: FINALIZE
+7. `orchestrator_stop_container`: Cleanup.
+8. Parse `execution_result.json` and output the Answer in the required JSON schema.
 
-After step 7, {os.path.join(study_path, "execution_result.json")} will exist.
-Use that (stdout/stderr, artifacts) to fill this schema:
-{json.dumps(read_json(schema_path))}
-
-FINAL OUTPUT FORMAT:
-Answer: {{...}}   # a single JSON object conforming to the schema
-
-If the human does NOT approve, still stop the container (step 8) and then output the schema with:
-- execution_summary explaining that execution was cancelled by the human,
-- code_executed showing the planned command with status "Not executed (cancelled)",
-- results as empty/NA where appropriate.
+Current Study Path: "{study_path}"
+Start by generating the Dockerfile.
 """.strip()
 
         if show_prompt:
@@ -115,32 +125,3 @@ If the human does NOT approve, still stop the container (step 8) and then output
         GENERATE_EXECUTE_REACT_CONSTANTS["files"] = prev_files
         if prev_template:
             GENERATE_EXECUTE_REACT_CONSTANTS["json_template"] = prev_template
-
-def run_execute(study_path, show_prompt=False):
-    _configure_file_logging(study_path)
-    logger.info(f"Starting extraction for study path: {study_path}")
-    template = read_json(GENERATE_EXECUTE_REACT_CONSTANTS['json_template'])
-
-    question = f"""Question: You will have access to the following documents:
-{build_file_description(GENERATE_EXECUTE_REACT_CONSTANTS['files'], study_path)}
-
-Based on the provided documents, your goal is to execute the replication study.
-
-Assume that you are working in an environment that supports Python and Stata.
-You can use the available tools and documents given to you for the execution.
-Once finished, inspect any outputs/logs and fill out this structured report:
-{json.dumps(template)}
-""".strip()
-
-    return run_react_loop(
-        system_prompt,
-        known_actions,
-        question,
-        session_state={"analyzers": {}},
-        on_final=lambda ans: save_output(
-            ans,
-            study_path=study_path,
-            filename="execution_results.json",
-            stage_name="execute"
-        )
-    )
