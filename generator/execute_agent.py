@@ -100,10 +100,20 @@ PHASE 4: EXECUTE & DEBUG
 
 PHASE 5: FINALIZE
 7. `orchestrator_stop_container`: Cleanup.
-8. Parse `execution_result.json` and output the Answer in the required JSON schema.
+8. Parse `execution_result.json` and output the Answer in the following required JSON schema.
+{json.dumps(read_json(schema_path))}
 
 Current Study Path: "{study_path}"
 Start by generating the Dockerfile.
+
+Remember, every response needs to have one of the two following formats:
+----- FORMAT 1 (For when you need to call actions to help accomplish the given task) -------
+Thought: [Your thinking/planning process for completing the task based on interactions so far]
+Action: [call next action to help you solve the task]
+PAUSE
+----- FORMAT 2 (For when you are ready to give a final response)-------
+Thought: [Your thinking/planning process for completing the task based on interactions so far]
+Answer: [Execute necessary next action to help you solve the task]
 """.strip()
 
         if show_prompt:

@@ -3,6 +3,7 @@ from openai import OpenAI
 import os
 import json
 import pandas as pd
+import pyreadr
 from core.constants import API_KEY
 from typing import Dict, Any, Optional, Tuple
 import io # Add this import at the top of your file
@@ -48,6 +49,8 @@ class DataFrameAnalyzer:
                 return pd.read_excel(self.file_path)
             elif file_extension == '.dta':
                 return pd.read_stata(self.file_path)
+            elif file_extension.lower() == '.rds':
+                return pyreadr.read_r(self.file_path)[None]
             else:
                 print(f"Error: Unsupported file type '{file_extension}'.")
                 return None

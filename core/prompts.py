@@ -130,7 +130,7 @@ DESIGN = """
     
 10. write_file:
     * e.g. `write_file: {"file_path": "path/to/file.txt", "file_content": "This is the first line of the file\nThis is the second line."}
-    * Description: Creates a file at file_path and dump file_content into it. Use this tool when you need to write new code or modify existing code. You MUST always escape newlines within string values, especially for the file_content argument. Do not use line break when you call the tool.
+    * Description: Creates a file at file_path and dump file_content into it. Use this tool when you need to write new code or modify existing code. Do not use line break when you call the tool. If you provide an exisiting file_path, it will overide everything with the content you provided in file_content.
     * Returns: A confirmation if the file is approved and has been created or a rejection/error message.
     
 Important: When reading a file, you must choose the *specific* reader tool based on the file's extension. If the extension is not listed above, you should use `read_txt` as a fallback. 
@@ -242,6 +242,11 @@ Use `ask_human_input` to show the command and ask: "Approve to execute? (yes/no)
 18. orchestrator_stop_container:
     * e.g. orchestrator_stop_container: "<STUDY_PATH>"
     * Description: Stops and removes the container (idempotent).
+    
+19. write_file:
+    * e.g. `write_file: {"file_path": "path/to/file.txt", "file_content": "This is the first line of the file\nThis is the second line."}
+    * Description: Creates a file at file_path and dump file_content into it. Use this tool when you need to write new code or modify existing code. Do not use line break when you call the tool. If you provide an exisiting file_path, it will overide everything with the content you provided in file_content so rememer to also copy the original content that you did not modify.
+    * Returns: A confirmation if the file is approved and has been created or a rejection/error message.
 
 Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
 """.strip()

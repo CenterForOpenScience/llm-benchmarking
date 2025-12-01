@@ -22,9 +22,9 @@ def main():
 
     elif args.stage == "execute" and args.tier == "easy":
         # Agent-driven, step-by-step with human confirmation before executing
-        from generator.execute_agent import run_execute_with_human_confirm
+        from generator.execute_agent import run_execute
         _ = setup_logger(os.path.join(args.study_path, "_logs", "execute_easy.log"))
-        run_execute_with_human_confirm(
+        run_execute(
             study_path=args.study_path,
             show_prompt=args.show_prompt,
             templates_dir=args.templates_dir,
