@@ -6,7 +6,7 @@ import re
 from docx import Document
 from openai import OpenAI
 
-from constants import API_KEY, TEMPLATE_PATHS
+from core.constants import API_KEY, TEMPLATE_PATHS
 from info_extractor.file_utils import read_json, read_txt
 
 
@@ -48,11 +48,10 @@ def save_prompt_log(study_path, prompt):
         if match:
             case_name = match.group()
             
-    log_dir = "logs"
-    # log_dir = os.path.join(study_path, "logs")
+    log_dir = os.path.join(study_path, "llm_eval")
     os.makedirs(log_dir, exist_ok=True)
 
-    log_file = os.path.join(log_dir, f"{case_name}_validator_ehri_log.txt")
+    log_file = os.path.join(log_dir, f"extract_llm_eval.log")
 
     with open(log_file, "w", encoding="utf-8") as f:
         f.write("=== GENERATED PROMPT ===\n")
@@ -76,9 +75,10 @@ def generate_evaluation_json(eval_prompt_template, expected_schema, extracted_js
 
 
 def save_json(data, path):
-    with open(os.path.join(path, "llm_eval.json"), 'w') as f:
+    save_path = os.path.join(path, "llm_eval", "extract_llm_eval.json")
+    with open(save_path, 'w') as f:
         json.dump(data, f, indent=2)
-        print(f"extract_and_evaluate_from_human_rep.py output saved to {path}")
+        print(f"extract_and_evaluate_from_human_rep.py output saved to {save_path}")
 
 
 def extract_from_human_replication_study(extracted_json_path, expected_json_path, output_path):
@@ -90,6 +90,6 @@ def extract_from_human_replication_study(extracted_json_path, expected_json_path
     extracted_json = read_json(extracted_json_path)
     expected_json = read_json(expected_json_path)
     
-    log_path = os.path.dirname(output_path)
+    log_path = output_path
     evaluated_json = generate_evaluation_json(eval_prompt_template, expected_schema, extracted_json, expected_json, client, log_path)
     save_json(evaluated_json, output_path)

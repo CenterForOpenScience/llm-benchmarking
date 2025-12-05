@@ -165,7 +165,7 @@ class Agent:
         return total
 
 def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
-	max_turns: int = 20, session_state=None, on_final=None, log_turns: bool=True):
+	max_turns: int = 30, session_state=None, on_final=None, log_turns: bool=True):
 
     bot = Agent(system_prompt, session_state=session_state or {})    
     next_prompt = question

@@ -4,7 +4,7 @@ import os
 import json
 import re
 from openai import OpenAI
-from constants import API_KEY, EVALUATE_GENERATE_EXECUTE_CONSTANTS
+from core.constants import API_KEY, EVALUATE_GENERATE_EXECUTE_CONSTANTS
 import logging
 import sys
 import tiktoken
@@ -21,12 +21,12 @@ logger.addHandler(console_handler)
 
 client = OpenAI(api_key=API_KEY) 
 from info_extractor.file_utils import read_txt, read_csv, read_json, read_pdf, read_docx # Keep save_output here if the agent orchestrates saving
-from generator.execute_react.execute_tools import load_dataset, get_dataset_head, get_dataset_shape, get_dataset_description, get_dataset_info
-from generator.execute_react.execute_tools import read_image, list_files_in_folder, ask_human_input
+from core.tools import load_dataset, get_dataset_head, get_dataset_shape, get_dataset_description, get_dataset_info
+from core.tools import read_image, list_files_in_folder, ask_human_input
 
 MAX_TOKENS = 20000
 
-def count_tokens_in_messages(messages, model_name="gpt-4"):
+def count_tokens_in_messages(messages, model_name="gpt-4o"):
     """Counts the number of tokens in a list of messages for a given model."""
     encoding = tiktoken.encoding_for_model(model_name)
     num_tokens = 0
@@ -40,7 +40,7 @@ def count_tokens_in_messages(messages, model_name="gpt-4"):
     num_tokens += 2  # every reply is primed with <im_start>assistant
     return num_tokens
 
-def read_log(file_path, model_name="gpt-4"):
+def read_log(file_path, model_name="gpt-4o"):
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         full_log =  f.read()
     encoding = tiktoken.encoding_for_model(model_name)
@@ -108,7 +108,7 @@ class Agent:
             self.messages.append({"role": "system", "content": system})
         self.session_state = session_state
         
-    def count_tokens_in_messages(self, model_name="gpt-4"):
+    def count_tokens_in_messages(self, model_name="gpt-4o"):
         """Counts the number of tokens in a list of messages for a given model."""
         encoding = tiktoken.encoding_for_model(model_name)
         num_tokens = 0
@@ -356,6 +356,9 @@ Answer: {
     "direction": "Inverted U-shape effect",
     "study_type": "Observational"
   }
+
+Remember that at the end of each response, you must decide whether to run ONE out of allowed actions or output a final Answer. 
+That is, your message must end with either "Action: [Your next action]" Or "Answer: [Your final answer]"
 """.strip()
 
 # Map action names to their functions
@@ -382,7 +385,7 @@ def save_output(extracted_json, study_path):
         "stage": "execute",
         **extracted_json
     }
-    output_path = os.path.join(study_path, "execution_evaluation_results.json")
+    output_path = os.path.join(study_path,"llm_eval", "execute_llm_eval.json")
     extracted_json = final_output
     with open(output_path, 'w') as f:
         json.dump(extracted_json, f, indent=2)

@@ -6,7 +6,7 @@ import re
 from docx import Document
 from openai import OpenAI
 
-from constants import API_KEY, EVALUATE_INTERPRET_CONSTANTS
+from core.constants import API_KEY, EVALUATE_INTERPRET_CONSTANTS
 from info_extractor.file_utils import read_json, read_txt, read_pdf
 
 
@@ -65,9 +65,10 @@ def generate_evaluation_json(eval_prompt_template, expected_schema, extracted_js
 
 
 def save_json(data, path):
-    with open(os.path.join(path, "interpret_llm_eval.json"), 'w') as f:
+    save_path = os.path.join(path, "llm_eval", "interpret_llm_eval.json")
+    with open(save_path, 'w') as f:
         json.dump(data, f, indent=2)
-        print(f"Interpret Evaluation output saved to {path}")
+        print(f"Interpret Evaluation output saved to {save_path}")
 
 
 def extract_from_human_replication_study(reference_report_path, study_path):

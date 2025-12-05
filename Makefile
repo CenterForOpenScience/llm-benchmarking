@@ -27,25 +27,6 @@ extract-stage1: check-deps
 extract-stage2: check-deps
 	python -m info_extractor --stage stage_2 --difficulty easy --study-path $(STUDY)
 
-# validator module
-validate-info: check-deps
-	python -m validator.cli.validate_info_extractor --study_dir $(STUDY) --results_file info_extractor_validation_results.json --show-mismatches
-
-extract-human-info: check-deps
-	python -m validator.cli.extract_human_replication_info --preregistration $(STUDY)/prereg.docx --score_report $(STUDY)/report.pdf --output_path $(STUDY)/replication_info_expected.json
-
-evaluate-human-info: check-deps
-	python -m validator.cli.evaluate_extracted_info --extracted_json_path $(STUDY)/replication_info.json --expected_json_path $(STUDY)/replication_info_expected.json --output_path $(STUDY)
-	
-extract-results: check-deps
-	python -m validator.cli.extract_replication_results --study_path $(STUDY)
-
-evaluate-execute: check-deps
-	python -m validator.cli.evaluate_execute_cli  --study_path $(STUDY)
-
-evaluate-interpret: check-deps
-	python -m validator.cli.evaluate_interpret_cli  --study_path $(STUDY) --reference_report_path $(STUDY_HUMAN_REPORT)
-
 # generator module
 design-easy: check-deps
 	python -m generator --stage design --tier easy --study-path $(STUDY) --templates-dir ./templates
@@ -60,6 +41,21 @@ interpret-easy: check-deps
 
 # full pipeline (extract -> design -> execute -> interpret)
 pipeline-easy: extract-stage1 design-easy execute-easy interpret-easy
+
+
+# validator module
+evaluate-extract: check-deps
+	python -m validator.cli.evaluate_extracted_info --extracted_json_path $(STUDY)/post_registration.json --expected_json_path $(STUDY)/expected_post_registration.json --output_path $(STUDY)
+evaluate-design: check-deps	
+	python -m validator.cli.evaluate_design_cli --extracted_json_path $(STUDY)/replication_info.json --reference_doc_path $(STUDY)/human_preregistration.pdf --output_path $(STUDY)
+evaluate-execute: check-deps
+	python -m validator.cli.evaluate_execute_cli  --study_path $(STUDY)
+evaluate-interpret: check-deps
+	python -m validator.cli.evaluate_interpret_cli  --study_path $(STUDY) --reference_report_path $(STUDY)/human_report.pdf
+evaluate-pipeline-easy: evaluate-extract evaluate-design evaluate-execute evaluate-interpret
+
+# Evaluate all stages
+evaluate-pipeline: evaluate-extract evaluate-design evaluate-execute evaluate-interpret
 
 # test suite
 test: check-deps

@@ -113,9 +113,9 @@ EVALUATE_GENERATE_EXECUTE_CONSTANTS = {
     },
     "agent_files": {
         "post_registration.json": "A structured document with key extracted information about the original paper and the claim to be replicated.",
-        "design.log": "The entire process of the design stage, where the agent interacts with the environment to investigate data and replication code to fill out a structured document plan for the replication.",
+        "agent_design.log": "The entire process of the design stage, where the agent interacts with the environment to investigate data and replication code to fill out a structured document plan for the replication.",
         "replication_info.json": "Final structured report of the design stage by the agent.",
-        "execute.log": "The entire proces of the execute stage, where the agent interacts with the environment to execute the plan from the design stage.",
+        "agent_execute.log": "The entire proces of the execute stage, where the agent interacts with the environment to execute the plan from the design stage.",
         "execution_results.json": "Final strcuterd report of the execution stage by the agent."
     },
     "json_template": "templates/evaluate_execute_schema.json"

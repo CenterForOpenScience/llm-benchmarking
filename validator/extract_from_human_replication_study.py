@@ -14,7 +14,7 @@ import re
 from docx import Document
 from openai import OpenAI
 
-from constants import API_KEY, TEMPLATE_PATHS
+from core.constants import API_KEY, TEMPLATE_PATHS
 from info_extractor.file_utils import read_json
 
 
@@ -95,9 +95,10 @@ def generate_expected_json(preregistration, score_report, expected_schema, clien
 
 
 def save_json(data, path):
-    with open(path, 'w') as f:
+    save_path = os.path.join(path, "llm_eval", "design_llm_eval.json")
+    with open(save_path, 'w') as f:
         json.dump(data, f, indent=2)
-        print(f"extract_from_human_replication_study.py output saved to {path}")
+        print(f"extract_from_human_replication_study.py output saved to {save_path}")
 
 
 def extract_from_human_replication_study(preregistration_path, score_report_path, output_path):
