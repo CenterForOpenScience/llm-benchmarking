@@ -13,13 +13,13 @@ from core.agent import Agent, run_react_loop, save_output
 from core.utils import build_file_description, configure_file_logging, get_logger
 from core.actions import base_known_actions
 
-logger, formatter = get_logger("design")
+logger, formatter = get_logger()
 system_prompt = "\n\n".join([PREAMBLE, DESIGN, EXAMPLE])
 action_re = re.compile(r'^Action: (\w+): (.*)$', re.MULTILINE) # Use re.MULTILINE for multiline parsing
 known_actions = base_known_actions()
 
 def run_design(study_path, show_prompt=False):
-    configure_file_logging(logger, study_path, "agent_design.log")
+    configure_file_logging(logger, study_path, "_logs/agent_design.log")
     # Load json template
     logger.info(f"Starting extraction for study path: {study_path}")
     template =  read_json(GENERATE_REACT_CONSTANTS['json_template'])

@@ -26,7 +26,7 @@ from generator.orchestrator_tool import (
     orchestrator_stop_container,
 )
 
-logger, formatter = get_logger("execute")
+logger, formatter = get_logger()
 system_prompt = "\n\n".join([PREAMBLE, EXECUTE, EXAMPLE])
 
 # Map action names to their functions
@@ -46,7 +46,7 @@ known_actions = {
 }
 
 def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates"):
-    configure_file_logging(logger, study_path, "execute_agent.log")
+    configure_file_logging(logger, study_path, "_logs/execute_agent.log")
     logger.info(f"[agent] dynamic orchestrator run loop for: {study_path}")
 
     schema_path = os.path.join(templates_dir, "execute_schema.json")
