@@ -45,8 +45,8 @@ known_actions = {
     "orchestrator_stop_container": orchestrator_stop_container,
 }
 
-def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates"):
-    configure_file_logging(logger, study_path, "_logs/execute_agent.log")
+def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates", tier="easy"):
+    configure_file_logging(logger, study_path, os.path.join("_logs", f"execute_{tier}.log"))
     logger.info(f"[agent] dynamic orchestrator run loop for: {study_path}")
 
     schema_path = os.path.join(templates_dir, "execute_schema.json")

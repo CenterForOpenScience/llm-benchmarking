@@ -18,8 +18,8 @@ system_prompt = "\n\n".join([PREAMBLE, DESIGN, EXAMPLE])
 action_re = re.compile(r'^Action: (\w+): (.*)$', re.MULTILINE) # Use re.MULTILINE for multiline parsing
 known_actions = base_known_actions()
 
-def run_design(study_path, show_prompt=False):
-    configure_file_logging(logger, study_path, "_logs/agent_design.log")
+def run_design(study_path, show_prompt=False, tier="easy"):
+    configure_file_logging(logger, study_path, os.path.join("_logs", f"design_{tier}.log"))
     # Load json template
     logger.info(f"Starting extraction for study path: {study_path}")
     template =  read_json(GENERATE_REACT_CONSTANTS['json_template'])
