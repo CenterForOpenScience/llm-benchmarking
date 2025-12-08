@@ -52,10 +52,11 @@ def discover_interpretable_files(study_path: str):
                     rel_path = os.path.join(rel_dir, fname)
 
                 # Avoid double-listing things already in INTERPRET_CONSTANTS if you want
-                auto_files[rel_path] = (
-                    f"Auto-discovered {ext} file in the study directory. "
-                    f"May contain information relevant for interpreting the replication."
-                )
+                if "interpret" not in rel_path:
+                    auto_files[rel_path] = (
+                        f"Auto-discovered {ext} file in the study directory. "
+                        f"May contain information relevant for interpreting the replication."
+                    )
 
     return auto_files
 
@@ -133,6 +134,7 @@ def run_interpret(study_path, show_prompt=False, tier="easy"):
 
     auto_files_map = discover_interpretable_files(study_path)
     auto_files_for_evaluator = build_file_description(auto_files_map, study_path) if auto_files_map else ""
+    logger.info(f"ADDITIONAL FILES FOUND: {auto_files_for_evaluator}")
 
 
     variables = {

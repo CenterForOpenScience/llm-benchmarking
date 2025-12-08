@@ -69,7 +69,7 @@ You are operating in a DEBUG LOOP. You must assess the result of every action.
 
 If an action fails (e.g., Docker build error, Missing Dependency, Code crash), you MUST:
 1. Analyze the error message in the Observation.
-2. Use `write_file` to FIX the issue (e.g., edit `replication_info.json` to add packages, or edit the code files).
+2. Use `write_file` to FIX the issue (e.g., rewrite `replication_info.json` to add packages, or rewrite the code files). Remember that write_file will overwrite any existing content in the provided file_path if existing. When you use the tool, the provided path file_path to the tool MUST be the study path given to you. But to access other files within the file_content argument, you MUST use the container's directories "app/data". 
 3. RETRY the failed step.
 
 **Phases of Execution:**

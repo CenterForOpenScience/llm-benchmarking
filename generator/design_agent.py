@@ -38,9 +38,14 @@ def run_design(study_path, show_prompt=False, tier="easy"):
     If you find issues with the provided data, follow-up with a human supervisor to ask for a different data source until appropriate data is given.
     
     Once you have determined the provided data are good for replication, explore the code to help fill out fields related to the codebase. This code will operate directly on the data files given to you.
-    Find potential issues with the provided code such as a data file path that is different from the data files you have looked at. Additionally, the environment WILL ONLY support execution for .py files. YOU MUST RESOLVE ALL IDENTIFIED ISSUES (e.g., rewrite .do codes into .py codes, etc.) and rewrite the code to a new file.
+    Find potential issues with the provided code such as a data file path that is different from the data files you have looked at.
+    - If the code reads any data file, the file path must be in this directory "/app/data".
+    - If the code dumps content or produce additional content, the file must also be in this directory "/app/data".
+    
+    Additionally, the environment WILL ONLY support execution for .py and .R files. YOU MUST RESOLVE ALL IDENTIFIED ISSUES (e.g., rewrite .do codes into .py codes, etc.) and rewrite the code to a new file.
     If your code reads in any data file, ASSUME that the data will be in this directory: "/app/data".
-    If you rewrite the original code fil, ensure that ALL IMPORTANT EXECUTABLE lines are preserved in your rewritten code.
+    If you code produce any addtional files, the code must save the files in this directory: "/app/data".
+    If you rewrite the original code fil, ensure that ALL IMPORTANT EXECUTABLE lines are preserved in your rewritten code. Your code file must be saved under replication_data folder.
     
     After all issues have been resolved, finish by complete by filling out the required JSON with all the updated/final information to prepare for replication execution.
     Rememeber, every response needs to have the the following one of the two formats:
