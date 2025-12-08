@@ -46,9 +46,11 @@ def check_long_logs(full_doc_content: str, model_name: str = "gpt-4o"):
     print(f"Document has > 20000 tokens. Summarizing content to prevent overflow...")
 
     # Chunk + summarize
-    lines = full_doc_content.splitlines(keepends=True)
-    chunk_size = 800  # lines per chunk (tweakable)
-    chunks = ["".join(lines[i:i+chunk_size]) for i in range(0, len(lines), chunk_size)]
+    # lines = full_doc_content.splitlines(keepends=True)
+    # chunk_size = 800  # lines per chunk (tweakable)
+    # chunks = ["".join(lines[i:i+chunk_size]) for i in range(0, len(lines), chunk_size)]
+    chunk_size = 12000
+    chunks = [full_doc_content[i:i+chunk_size] for i in range(0, len(full_doc_content), chunk_size)]
 
     sys_prompt = (
         "You are an effective file reader. Summarize the provided log chunk. "

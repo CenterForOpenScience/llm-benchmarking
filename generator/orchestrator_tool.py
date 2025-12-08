@@ -6,6 +6,7 @@ import platform as _pyplat
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
+from info_extractor.file_utils import check_long_logs
 
 try:
     from docker.errors import BuildError, APIError
@@ -404,8 +405,8 @@ def orchestrator_execute_entry(study_path: str) -> str:
             "name": step.name,
             "ok": ran.get("ok", False),
             "exit_code": ran.get("exit_code"),
-            "stdout": ran.get("stdout"),
-            "stderr": ran.get("stderr"),
+            "stdout": check_long_logs(ran.get("stdout")),
+            "stderr": check_long_logs(ran.get("stderr")),
             "artifacts": ran.get("artifacts", []),
             "entry": step.entry,
             "resolved_path": found,
