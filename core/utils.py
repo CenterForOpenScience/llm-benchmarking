@@ -58,10 +58,9 @@ def configure_file_logging(logger: logging.Logger, study_path: str, log_file_nam
                 h.close()
             except Exception:
                 pass
-
-    os.makedirs(study_path, exist_ok=True)
-    log_file_full_path = os.path.join(study_path, log_file_name)
-
+    log_path = os.path.join(study_path, "_log")
+    os.makedirs(log_path, exist_ok=True)
+    log_file_full_path = os.path.join(log_path, log_file_name)
     fh = logging.FileHandler(log_file_full_path, mode="a", encoding="utf-8")
     fh.setLevel(logging.DEBUG)
     # Reuse the same human-friendly format

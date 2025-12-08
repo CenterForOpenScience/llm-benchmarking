@@ -13,9 +13,10 @@ from openai import OpenAI
 from openai.types.beta.threads import TextContentBlock
 from core.utils import get_logger
 
-from info_extractor.file_utils import read_file_contents, save_output, save_prompt_log
+from info_extractor.file_utils import read_file_contents, save_output
 from info_extractor.prompt_builder import build_prompt, build_context_and_message
 from core.constants import API_KEY, TEMPLATE_PATHS, FILE_SELECTION_RULES
+from core.utils import configure_file_logging
 
 client = OpenAI(api_key=API_KEY)
 logger, formatter = get_logger()
@@ -25,6 +26,7 @@ def run_stage_1(study_path, difficulty, show_prompt=False):
     """
     Extract original study information and save to post_registration.json
     """
+    configure_file_logging(logger, study_path, f"extract.log")
     logger.info("Running Stage 1: original study extraction")
     # Load post-registration template
     with open(TEMPLATE_PATHS['post_registration_template']) as f:
@@ -46,14 +48,14 @@ def run_stage_1(study_path, difficulty, show_prompt=False):
         study_path, template, file_context, stage="stage_1"
     )
     prompt = build_prompt(template, instructions, stage="stage_1")
+    
+    # if show_prompt:
+    print("=== GENERATED PROMPT (Stage 1) ===")
+    # print(prompt)
+    logger.info(f"=== GENERATED PROMPT (Stage 1) ===\n{prompt}")
+    logger.info(f"\n\n=== GENERATED MESSAGE (Stage 1) ===\n{full_message}")
 
-    if show_prompt:
-        print("=== GENERATED PROMPT (Stage 1) ===")
-        print(prompt)
-        logger.info(f"=== GENERATED PROMPT (Stage 1) ===\n{prompt}")
-        logger.info(f"\n\n=== GENERATED MESSAGE (Stage 1) ===\n{full_message}")
-
-    save_prompt_log(study_path, "stage_1", prompt, full_message)
+    # save_prompt_log(study_path, "stage_1", prompt, full_message)
 
     assistant = client.beta.assistants.create(
         name=f"Extractor-stage-1-{difficulty}",

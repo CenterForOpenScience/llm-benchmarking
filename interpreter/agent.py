@@ -123,7 +123,7 @@ known_actions = {
 }
 
 def run_interpret(study_path, show_prompt=False, tier="easy"):
-    configure_file_logging(logger, study_path, f"_logs/interpret_{tier}.log")
+    configure_file_logging(logger, study_path, f"interpret_{tier}.log")
     logger.info(f"Starting execution evaluation for study path: {study_path}")
 
     eval_prompt_template = read_txt(INTERPRET_CONSTANTS['prompt_template'])

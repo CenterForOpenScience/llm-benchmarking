@@ -19,7 +19,7 @@ action_re = re.compile(r'^Action: (\w+): (.*)$', re.MULTILINE) # Use re.MULTILIN
 known_actions = base_known_actions()
 
 def run_design(study_path, show_prompt=False, tier="easy"):
-    configure_file_logging(logger, study_path, os.path.join("_logs", f"design_{tier}.log"))
+    configure_file_logging(logger, study_path, f"design_{tier}.log")
     # Load json template
     logger.info(f"Starting extraction for study path: {study_path}")
     template =  read_json(GENERATE_REACT_CONSTANTS['json_template'])
@@ -38,9 +38,9 @@ def run_design(study_path, show_prompt=False, tier="easy"):
     If you find issues with the provided data, follow-up with a human supervisor to ask for a different data source until appropriate data is given.
     
     Once you have determined the provided data are good for replication, explore the code to help fill out fields related to the codebase. This code will operate directly on the data files given to you.
-    Find potential issues with the provided code such as a data file path that is different from the data files you have looked at. Additionally, the environment WILL ONLY support execution for .py or .R files. YOU MUST RESOLVE ALL IDENTIFIED ISSUES (e.g., rewrite .do codes into .py codes, etc.) and rewrite the code to a new file.
+    Find potential issues with the provided code such as a data file path that is different from the data files you have looked at. Additionally, the environment WILL ONLY support execution for .py files. YOU MUST RESOLVE ALL IDENTIFIED ISSUES (e.g., rewrite .do codes into .py codes, etc.) and rewrite the code to a new file.
     If your code reads in any data file, ASSUME that the data will be in this directory: "/app/data".
-    If you rewrite the original code fil, ensure that ALL ORIGINAL EXECUTABLE lines are preserved in your rewritten code.
+    If you rewrite the original code fil, ensure that ALL IMPORTANT EXECUTABLE lines are preserved in your rewritten code.
     
     After all issues have been resolved, finish by complete by filling out the required JSON with all the updated/final information to prepare for replication execution.
     Rememeber, every response needs to have the the following one of the two formats:

@@ -46,7 +46,7 @@ known_actions = {
 }
 
 def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates", tier="easy"):
-    configure_file_logging(logger, study_path, os.path.join("_logs", f"execute_{tier}.log"))
+    configure_file_logging(logger, study_path, f"execute_{tier}.log")
     logger.info(f"[agent] dynamic orchestrator run loop for: {study_path}")
 
     schema_path = os.path.join(templates_dir, "execute_schema.json")

@@ -17,12 +17,70 @@ import docx
 from pathlib import Path
 from core.utils import get_logger
 from core.tools import read_and_summarize_pdf
+import tiktoken
 
 logger, formatter = get_logger()
 
+from openai import OpenAI
+from core.constants import API_KEY
+client = OpenAI(api_key=API_KEY)
+
 def read_txt(file_path):
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        return f.read()
+        file_content =  f.read()
+    return check_long_logs(file_content)
+    
+def check_long_logs(full_doc_content: str, model_name: str = "gpt-4o"):
+    """
+    Tool: read a potentially very long log. If too big, chunk and summarize progressively.
+    Returns a string (full text or summarized).
+    """
+    def _count_tokens(text: str, model_name="gpt-4o"):
+        enc = tiktoken.encoding_for_model(model_name if model_name else "gpt-4")
+        return len(enc.encode(text))
+    
+    MAX_TOKENS = 20000
+    if _count_tokens(full_doc_content, model_name=model_name) <= MAX_TOKENS:
+        return full_doc_content
+    
+    print(f"Document has > 20000 tokens. Summarizing content to prevent overflow...")
+
+    # Chunk + summarize
+    lines = full_doc_content.splitlines(keepends=True)
+    chunk_size = 800  # lines per chunk (tweakable)
+    chunks = ["".join(lines[i:i+chunk_size]) for i in range(0, len(lines), chunk_size)]
+
+    sys_prompt = (
+        "You are an effective file reader. Summarize the provided log chunk. "
+        "Focus on errors, exceptions, warnings, commands executed, and results."
+    )
+
+    running_summary = "No logs read yet."
+    for idx, chunk in enumerate(chunks, 1):
+        print(f"Summarizing {idx}/{len(chunks)} chunks")
+        user_content = (
+            f"--- EXISTING SUMMARY (Context from previous {idx-1} chunks) ---\n"
+            f"{running_summary}\n\n"
+            f"--- NEW LOG CHUNK ({idx}/{len(chunks)}) ---\n"
+            f"{chunk}"
+            f"Return the existing summary verbatim with the summary of the new log chunk"
+        )
+        messages = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": user_content}
+        ]
+        try:
+            out = client.chat.completions.create(
+                model="gpt-4o",
+                temperature=0,
+                messages=messages
+            )
+            running_summary.append(out.choices[0].message.content)
+        except Exception as e:
+            running_summary += f"\n[Error processing chunk {idx}: {e}]"
+
+
+    return running_summary
 
 
 def read_pdf(file_path):
@@ -37,7 +95,8 @@ def read_docx(file_path: str) -> str:
         doc = docx.Document(file_path)
         # Extract text from each paragraph and join with a newline
         full_text = [para.text for para in doc.paragraphs]
-        return '\n'.join(full_text)
+        full_text = '\n'.join(full_text)
+        return check_long_logs(full_text)
     except FileNotFoundError:
         return f"Error: The file at {file_path} was not found."
     except Exception as e:
@@ -49,7 +108,8 @@ def read_json(file_path):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return json.dumps(data, indent=2)
+        json_str =  json.dumps(data, indent=2)
+        return check_long_logs(json_str)
     except Exception as e:
         return f"[JSON read error: {e}]"
 
