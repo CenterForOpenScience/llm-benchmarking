@@ -18,7 +18,7 @@ from core.agent import run_react_loop, save_output
 from core.actions import base_known_actions
 from core.utils import get_logger, configure_file_logging, build_file_description  
 
-logger, formatter = get_logger("interpreter")
+logger, formatter = get_logger()
 
 client = OpenAI(api_key=API_KEY)
 
@@ -27,6 +27,37 @@ MAX_TOKENS = 20000
 def _count_tokens(text: str, model_name="gpt-4o"):
     enc = tiktoken.encoding_for_model(model_name if model_name else "gpt-4")
     return len(enc.encode(text))
+
+def discover_interpretable_files(study_path: str):
+    """
+    Walks the study_path directory to discover new files that might usefule to interpetation
+    """
+    interpretable_exts = {".txt", ".docx", ".log"}
+    auto_files = {}
+
+    for root, dirs, files in os.walk(study_path):
+        # Skip obviously unhelpful dirs
+        basename = os.path.basename(root)
+        if basename in {".git", "__pycache__"}:
+            continue
+
+        rel_dir = os.path.relpath(root, study_path)
+        for fname in files:
+            ext = os.path.splitext(fname)[1].lower()
+            if ext in interpretable_exts:
+                # Build a path relative to study_path so tools can use it
+                if rel_dir == ".":
+                    rel_path = fname
+                else:
+                    rel_path = os.path.join(rel_dir, fname)
+
+                # Avoid double-listing things already in INTERPRET_CONSTANTS if you want
+                auto_files[rel_path] = (
+                    f"Auto-discovered {ext} file in the study directory. "
+                    f"May contain information relevant for interpreting the replication."
+                )
+
+    return auto_files
 
 def read_log(file_path: str, model_name: str = "gpt-4o"):
     """
@@ -91,8 +122,8 @@ known_actions = {
     "read_log": read_log
 }
 
-def run_interpret(study_path, show_prompt=False):
-    configure_file_logging(logger, study_path, "interpret.log")
+def run_interpret(study_path, show_prompt=False, tier="easy"):
+    configure_file_logging(logger, study_path, f"_logs/interpret_{tier}.log")
     logger.info(f"Starting execution evaluation for study path: {study_path}")
 
     eval_prompt_template = read_txt(INTERPRET_CONSTANTS['prompt_template'])
@@ -100,13 +131,34 @@ def run_interpret(study_path, show_prompt=False):
     claim_docs_for_evaluator = build_file_description(INTERPRET_CONSTANTS['claim_files'], study_path)
     agent_docs_for_evaluator = build_file_description(INTERPRET_CONSTANTS['agent_files'], study_path)
 
+    auto_files_map = discover_interpretable_files(study_path)
+    auto_files_for_evaluator = build_file_description(auto_files_map, study_path) if auto_files_map else ""
+
+
     variables = {
         'interpret_json_schema': json_schema,
         'claim_docs_for_evaluator': claim_docs_for_evaluator,
         'agent_docs_for_evaluator': agent_docs_for_evaluator,
     }
 
-    question = "Question: " + eval_prompt_template.format(**variables)
+    base_question = eval_prompt_template.format(**variables)
+
+    print(f"\n\nfiles for interpreter: {auto_files_for_evaluator} \n\n")
+    extra_instructions = ""
+    if auto_files_for_evaluator:
+        extra_instructions = f"""        
+In addition to the documents listed above, the following files were automatically discovered
+in the study directory and may contain useful information (logs, reports, outputs, datasets, etc.):
+
+{auto_files_for_evaluator}
+
+You should consider exploring these files when needed, using the available tools such as
+`list_files_in_folder`, `read_log`, `read_txt`, `read_pdf`, `read_docx`, `read_json`,
+`read_image`, and the dataset tools (`load_dataset`, `get_dataset_head`, `get_dataset_info`, etc.).
+Only inspect what you think is necessary to complete the interpretation.
+""".rstrip()
+
+    question = "Question: " + base_question + extra_instructions
 
     return run_react_loop(
         system_prompt,

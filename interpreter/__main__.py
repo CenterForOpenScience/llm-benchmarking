@@ -10,12 +10,9 @@ def main():
     args = p.parse_args()
 
     if args.tier == "easy":
-        # Use your LLM agent in design_react/agent.py
-        # It already configures its own file logging via _configure_file_logging().
         from interpreter.agent import run_interpret
         # run the agent that generates the plan / prereg JSON
-        run_interpret(args.study_path, show_prompt=args.show_prompt)
-
+        run_interpret(args.study_path, show_prompt=args.show_prompt, tier=args.tier)
     else:
         sys.exit(f"Stage/tier not implemented yet: {args.stage}/{args.tier}")
 
