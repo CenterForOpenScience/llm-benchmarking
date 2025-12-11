@@ -17,6 +17,7 @@ from info_extractor.file_utils import read_file_contents, save_output
 from info_extractor.prompt_builder import build_prompt, build_context_and_message
 from core.constants import API_KEY, TEMPLATE_PATHS, FILE_SELECTION_RULES
 from core.utils import configure_file_logging
+from core.agent import update_metadata
 
 client = OpenAI(api_key=API_KEY)
 logger, formatter = get_logger()
@@ -26,6 +27,7 @@ def run_stage_1(study_path, difficulty, show_prompt=False):
     """
     Extract original study information and save to post_registration.json
     """
+    start_time = time.time()
     configure_file_logging(logger, study_path, f"extract.log")
     logger.info("Running Stage 1: original study extraction")
     # Load post-registration template
@@ -85,7 +87,19 @@ def run_stage_1(study_path, difficulty, show_prompt=False):
         if run_status.status == "completed":
             break
         time.sleep(2)
-
+    # metric collection
+    duration = time.time() - start_time
+    usage = run_status.usage
+    metric_data = {
+        "total_time_seconds": round(duration, 2),
+        "total_tokens": usage.total_tokens if usage else 0,
+        "prompt_tokens": usage.prompt_tokens if usage else 0,
+        "completion_tokens": usage.completion_tokens if usage else 0,
+        # Extractor isn't loop-based in the same way, but we can log '1' turn
+        "total_turns": 1 
+    }
+    update_metadata(study_path, "extract_stage_1", metric_data)
+    
     messages = client.beta.threads.messages.list(thread_id=run.thread_id)
     reply = next((msg for msg in messages.data if msg.role == "assistant"), None)
 
