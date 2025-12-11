@@ -28,6 +28,31 @@ def _extract_action(text: str):
             return m.group(1), m.group(2).strip()
     return None
 
+def update_metadata(study_path: str, stage: str, data: dict):
+    """
+    Updates metadata.json in the study_path with metrics for a specific stage.
+    """
+    meta_path = os.path.join(study_path, "metadata.json")
+    
+    # Load existing or create new
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r") as f:
+                metadata = json.load(f)
+        except json.JSONDecodeError:
+            metadata = {}
+    else:
+        metadata = {}
+
+    # Update the specific stage
+    metadata[stage] = data
+
+    # Write back
+    with open(meta_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+    
+    logger.info(f"Updated metadata for {stage} in {meta_path}")
+
 class Agent:
     def __init__(self, system="", session_state=None):
         self.system = system
@@ -40,13 +65,13 @@ class Agent:
         self._tpm_tokens = 0  # tokens used since last reset
 
     def __call__(self, message):
-        self.messages.append({"role": "user", "content": message})
-        result = self.execute()
-        self.messages.append({"role": "assistant", "content": result})
-        return result
+        content, usage = self.execute(message)
+        return content, usage
 
-    def execute(self):
-    	# simple 30k TPM limiter
+    def execute(self, message=None):
+        if message:
+            self.messages.append({"role": "user", "content": message})
+        # simple 30k TPM limiter
         now = time.time()
         # reset window every 60s
         if now - self._tpm_window_start >= 60:
@@ -73,20 +98,23 @@ class Agent:
             max_tokens=completion_reserve,  # optional; keeps outputs bounded
         )
 
-        # record actual usage if available; else fall back to predicted
-        used = predicted_total
+        usage_stats = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         try:
             usage = completion.usage
             if usage:
-                pt = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None) or 0
-                ct = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", None) or 0
-                tt = getattr(usage, "total_tokens", None)
-                used = tt if tt is not None else (pt + ct)
+                usage_stats["prompt_tokens"] = usage.prompt_tokens
+                usage_stats["completion_tokens"] = usage.completion_tokens
+                usage_stats["total_tokens"] = usage.total_tokens
         except Exception:
-            pass
-        self._tpm_tokens += used
+            # Fallback to predicted if API doesn't return usage
+            usage_stats["total_tokens"] = predicted_total
 
-        return completion.choices[0].message.content
+        self._tpm_tokens += usage_stats["total_tokens"]
+        
+        result_content = completion.choices[0].message.content
+        self.messages.append({"role": "assistant", "content": result_content})
+
+        return result_content, usage_stats
 
     def _execute_tool_call(self, known_actions, action, action_input_str):
         """
@@ -165,80 +193,153 @@ class Agent:
         return total
 
 def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
-	max_turns: int = 30, session_state=None, on_final=None, log_turns: bool=True):
-
+                   max_turns: int = 30, session_state=None, on_final=None, log_turns: bool=True,
+                   study_path: str = None, stage_name: str = None, checkpoint_map: dict = None):
+    
     bot = Agent(system_prompt, session_state=session_state or {})    
     next_prompt = question
+    
+    start_time = time.time()
+    total_tokens_used = 0
+    turn_metrics = [] 
+    
+    # Checkpoint logic
+    current_checkpoint = "0. Initialization"
+    checkpoint_stats = {} 
+
     for i in range(max_turns):
+        turn_start = time.time()
+        
         if log_turns:
-        	disp = next_prompt if len(next_prompt) <= 2000 else next_prompt[:2000] + "\n... (truncated)"
-        	logger.info(f"\n--- Turn {i+1} ---")
-        	logger.info(f"\n***Agent input: {disp}")
-        result = bot(next_prompt)
+            disp = next_prompt if len(next_prompt) <= 2000 else next_prompt[:2000] + "\n... (truncated)"
+            logger.info(f"\n--- Turn {i+1} ---")
+            logger.info(f"***Agent input: {disp}")
+
+        result, usage = bot(next_prompt)
+        total_tokens_used += usage.get("total_tokens", 0)
+        turn_tokens = usage.get("total_tokens", 0)
+
         if log_turns:
-        	logger.info(f"\n***Agent output:\n{result}")
-        # Check if the LLM provided a final answer
+            logger.info(f"***Agent output:\n{result}")
+
+        action = None
+        is_final = False
+        
+        # Check for Final Answer
         if "Answer:" in result:
+            is_final = True
+            current_checkpoint = "8. Final Output & Parsing"
+        else:
+            matched = _extract_action(result)            
+            if matched:
+                action, action_input_str = matched
+                
+                # update checkpoint if action is specific
+                if checkpoint_map and action in checkpoint_map:
+                    current_checkpoint = checkpoint_map[action]
+                elif not checkpoint_map:
+                    current_checkpoint = "Running Action"
+
+        # Handle Success/final answer
+        if is_final:
+            turn_duration = time.time() - turn_start
+            
+            # Add final turn stats
+            stats = checkpoint_stats.get(current_checkpoint, {"time": 0.0, "tokens": 0, "turns": 0})
+            stats["time"] += turn_duration
+            stats["tokens"] += turn_tokens
+            stats["turns"] += 1
+            checkpoint_stats[current_checkpoint] = stats
+            
             try:
                 answer_match = re.search(r'Answer:\s*(\{.*?\})\s*$', result, re.DOTALL)
                 if answer_match:
                     json_answer_str = answer_match.group(1).strip()
                 else:
                     json_answer_str = result.split("Answer:", 1)[1].strip()
-                    if json_answer_str.strip().startswith('{') and json_answer_str.strip().endswith('}'):
-                            pass # Looks like valid JSON, proceed
-                    else:
-                        logger.warning(f"Warning: Answer found but doesn't look like clean JSON: {json_answer_str[:200]}...")
-                        # Try to find the JSON part more aggressively
-                        json_start = json_answer_str.find('{')
-                        json_end = json_answer_str.rfind('}')
-                        if json_start != -1 and json_end != -1 and json_end > json_start:
-                            json_answer_str = json_answer_str[json_start : json_end + 1]
-                        else:
-                            raise ValueError("Could not find a valid JSON structure after 'Answer:'")
+                    # (Insert your robust JSON cleaning logic here if needed)
+
                 json_start = json_answer_str.find('{')
                 json_end = json_answer_str.rfind('}')
-                if json_start == -1 or json_end == -1 or json_end < json_start:
-                    raise ValueError("Could not find a valid JSON object (missing curly braces) after cleaning.")
+                if json_start != -1 and json_end != -1:
+                    json_answer_str = json_answer_str[json_start : json_end + 1]
 
-                final_answer = json.loads(json_answer_str[json_start : json_end + 1])
-                logger.info("\n--- Final Answer ---")
-                logger.info(json.dumps(final_answer, indent=2))
-                if on_final: # save the output on final answer
-                	on_final(final_answer)
-                logger.info("Process completed")
+                final_answer = json.loads(json_answer_str)
+                logger.info("\n--- Final Answer Found ---")
+                
+                if on_final: 
+                    on_final(final_answer)
+
+                #  save metrics on success
+                if study_path and stage_name:
+                    total_time = time.time() - start_time
+                    metric_data = {
+                        "status": "Success",
+                        "total_time_seconds": round(total_time, 2),
+                        "total_tokens": total_tokens_used,
+                        "total_turns": i + 1,
+                        "checkpoint_stats": checkpoint_stats,
+                        "turn_history": turn_metrics
+                    }
+                    update_metadata(study_path, stage_name, metric_data)
+
                 return final_answer
-            except json.JSONDecodeError as e:
-                logger.error(f"Error parsing final JSON answer: {e}")
-                logger.error(f"Raw answer: {json_answer_str}")
-                return {"error": "Failed to parse final answer JSON"}
+
             except Exception as e:
-                logger.error(f"An error occurred processing final answer: {e}")
+                logger.error(f"Error parsing final answer: {e}")
                 return {"error": str(e)}
+
+        # Handle Action
+        elif action:
+            logger.info(f" -- Running Action: {action} [Checkpoint: {current_checkpoint}]")
+
+            if action not in known_actions:
+                update_metadata(study_path, stage_name, {
+                    "error": f"Unknown action: {action}",
+                    "partial_turns": turn_metrics
+                })
+                raise Exception(f"Unknown action: {action}")
+
+            observation = bot._execute_tool_call(known_actions, action, action_input_str)
+            next_prompt = f"Observation: {observation}"
+            
         else:
-            matched = _extract_action(result)            
-            if matched:
-                action, action_input_str = matched
-                logger.info(f" -- Running Action: {action} with input: {action_input_str}")
+            if i == 0:
+                next_prompt = "Reminder: Follow the Thought -> Action format."
+                continue
+            return {"error": "Agent did not provide a recognized action."}
 
-                if action not in known_actions:
-                    logger.error(f"Unknown action: {action}: {action_input_str}") 
-                    raise Exception(f"Unknown action: {action}: {action_input_str}")
+        # Record Turn Metrics
+        turn_duration = time.time() - turn_start
+        
+        # Aggregate Checkpoint Stats
+        if current_checkpoint not in checkpoint_stats:
+            checkpoint_stats[current_checkpoint] = {"time": 0.0, "tokens": 0, "turns": 0}
+        
+        checkpoint_stats[current_checkpoint]["time"] += turn_duration
+        checkpoint_stats[current_checkpoint]["tokens"] += turn_tokens
+        checkpoint_stats[current_checkpoint]["turns"] += 1
 
-                observation = bot._execute_tool_call(known_actions, action, action_input_str)
-                next_prompt = f"Observation: {observation}"
-            else:
-                if i == 0:
-                	print("\n\n\nAgent did not produce parseable respoonse\n\n\n")
-                	next_prompt = ("Reminder: Follow the Thought → Action → PAUSE → Observation loop. "
-                                   "Do not answer directly. Propose your first Action now.")
-                	continue
-                logger.warning("Agent did not propose an action. Terminating.")
+        turn_metrics.append({
+            "turn": i + 1,
+            "action": action if action else "None",
+            "checkpoint": current_checkpoint,
+            "duration_seconds": round(turn_duration, 2),
+            "tokens": turn_tokens
+        })
 
-                # If the agent doesn't provide an action or an answer, something is wrong or it's stuck.
-                return {"error": "Agent did not provide a recognized action or final answer."}
-
-    print("Max turns reached. Agent terminated without a final answer.")
+    # If loop finishes without answer
+    logger.warning("Max turns reached.")
+    if study_path and stage_name:
+        update_metadata(study_path, stage_name, {
+            "status": "Failed - Max Turns Reached",
+            "total_time_seconds": round(time.time() - start_time, 2),
+            "total_tokens": total_tokens_used,
+            "total_turns": max_turns,
+            "checkpoint_stats": checkpoint_stats,
+            "turn_history": turn_metrics
+        })
+        
     return {"error": "Max turns reached without a final answer."}
 
 def save_output(extracted_json, study_path, filename: str = "replication_info.json", stage_name: str = "design"):

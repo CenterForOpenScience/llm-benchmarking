@@ -45,6 +45,26 @@ known_actions = {
     "orchestrator_stop_container": orchestrator_stop_container,
 }
 
+CHECKPOINT_MAP = {
+    # PHASE 1
+    "orchestrator_generate_dockerfile": "1. Generate Dockerfile",
+    "orchestrator_build_image":         "2. Build Image",
+    
+    # PHASE 2
+    "orchestrator_run_container":       "3. Start Container",
+    "orchestrator_plan":                "4. Plan & Preview",
+    "orchestrator_preview_entry":       "4. Plan & Preview",
+    
+    # PHASE 3
+    "ask_human_input":                  "5. Human Approval",
+    
+    # PHASE 4
+    "orchestrator_execute_entry":       "6. Execute Code",
+    
+    # PHASE 5
+    "orchestrator_stop_container":      "7. Stop Container"
+}
+
 def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates", tier="easy"):
     configure_file_logging(logger, study_path, f"execute_{tier}.log")
     logger.info(f"[agent] dynamic orchestrator run loop for: {study_path}")
@@ -124,6 +144,9 @@ Answer: [Execute necessary next action to help you solve the task]
             known_actions,
             instruction,
             session_state={"analyzers": {}},
+            study_path=study_path,
+            stage_name="generate-execute",
+            checkpoint_map=CHECKPOINT_MAP,
             on_final=lambda ans: save_output(
                 ans,
                 study_path=study_path,

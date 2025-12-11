@@ -63,5 +63,7 @@ def run_design(study_path, show_prompt=False, tier="easy"):
     	known_actions,
     	question,
     	session_state={"analyzers": {}},
+    	study_path=study_path,
+        stage_name="generate-design",
     	on_final=lambda ans: save_output(ans, study_path)
     )
