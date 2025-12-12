@@ -13,13 +13,26 @@ logger, formatter = get_logger()
 client = OpenAI(api_key=API_KEY) 
 
 ACTION_PATTERNS = [
-    # Single-line Action
-    re.compile(r'(?mi)^\s*Action:\s*([a-z0-9_]+)\s*:\s*(.+)$'),
-    # Code-fenced arguments (``` or ```json)
+    # 1) Code-fenced arguments (preferred; captures multiline safely)
     re.compile(r'(?mis)^\s*Action:\s*([a-z0-9_]+)\s*:\s*```(?:json)?\s*(.*?)\s*```'),
-    # Bolded "Action:" some models produce
-    re.compile(r'(?mis)\*\*Action:\*\*\s*([a-z0-9_]+)\s*:\s*(.+?)\s*(?:\n|$)')
+
+    # 2) Multiline JSON object right after Action: (non-fenced)
+    re.compile(r'(?mis)^\s*Action:\s*([a-z0-9_]+)\s*:\s*(\{.*?\})\s*(?:\n|$)'),
+
+    # 3) Bolded "Action:" some models produce
+    re.compile(r'(?mis)^\s*\*\*Action:\*\*\s*([a-z0-9_]+)\s*:\s*(.+?)\s*(?:\n|$)'),
+
+    # 4) Single-line Action (last!)
+    re.compile(r'(?mi)^\s*Action:\s*([a-z0-9_]+)\s*:\s*(.+)$'),
 ]
+
+DICT_ONLY_ACTIONS = {
+    "write_file",
+    "edit_file",
+    "read_file",   # this is kwargs-based in our system
+    "read_json",
+    # add others that require kwargs
+}
 
 def _extract_action(text: str):
     for pat in ACTION_PATTERNS:
@@ -117,40 +130,32 @@ class Agent:
         return result_content, usage_stats
 
     def _execute_tool_call(self, known_actions, action, action_input_str):
-        """
-        Executes a tool call by parsing the input string as JSON.
-        """
         tool_func = known_actions[action]
-        
+
         try:
-            # The ONLY parsing step you need. It correctly handles quotes,
-            # escapes, and complex objects. No more codecs.
-            # parsed_args = json.loads(repair_json(action_input_str))
-            parsed_args =  json.loads(action_input_str.strip())
-            
+            parsed_args = json.loads(action_input_str.strip())
             print(f"DEBUG: Parsed args for '{action}': {parsed_args}, Type: {type(parsed_args)}")
 
-            # Your existing logic for calling the function is good, let's keep it.
             if isinstance(parsed_args, dict):
-                # For tools expecting keyword arguments, e.g., func(**{"path": "...", "content": "..."})
                 if "dataset" in action:
-                    observation = tool_func(self.session_state, **parsed_args)
-                else:
-                    observation = tool_func(**parsed_args)
+                    return tool_func(self.session_state, **parsed_args)
+                return tool_func(**parsed_args)
+
             else:
-                # For tools expecting a single positional argument, e.g., func("my_file.txt")
                 if "dataset" in action:
-                    observation = tool_func(self.session_state, parsed_args)
-                else:
-                    observation = tool_func(parsed_args)
-            
-            return observation
+                    return tool_func(self.session_state, parsed_args)
+                return tool_func(parsed_args)
 
-        except json.JSONDecodeError:
-            # Fallback: treat as raw string argument
+        except json.JSONDecodeError as e:
+            if action in DICT_ONLY_ACTIONS:
+                return (
+                f"Error: Tool '{action}' requires JSON object args.\n"
+                f"JSON parse error: {e}\n"
+                f"Got: {action_input_str.strip()[:500]}"
+                )
+
+            # Raw-string fallback only for single-string tools
             raw = action_input_str.strip()
-
-            # remove surrounding quotes if model added them
             if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")):
                 raw = raw[1:-1]
 
@@ -158,11 +163,8 @@ class Agent:
                 if "dataset" in action:
                     return tool_func(self.session_state, raw)
                 return tool_func(raw)
-            except Exception as e:
-                return f"Error while executing tool '{action}' with raw string arg: {e}"
-        except Exception as e:
-            return f"Error while executing tool '{action}': {e}"
-
+            except Exception as e2:
+                return f"Error while executing tool '{action}' with raw string arg: {e2}"
 
     def _get_encoding(self):
         if tiktoken is None:
