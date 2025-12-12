@@ -200,8 +200,12 @@ def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
     next_prompt = question
     
     start_time = time.time()
+
     total_tokens_used = 0
-    turn_metrics = [] 
+    total_prompt_tokens_used = 0
+    total_completion_tokens_used = 0
+
+    turn_metrics = []
     
     # Checkpoint logic
     current_checkpoint = "0. Initialization"
@@ -215,9 +219,15 @@ def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
             logger.info(f"\n--- Turn {i+1} ---")
             logger.info(f"***Agent input: {disp}")
 
-        result, usage = bot(next_prompt)
-        total_tokens_used += usage.get("total_tokens", 0)
-        turn_tokens = usage.get("total_tokens", 0)
+            result, usage = bot(next_prompt)
+
+            turn_prompt = usage.get("prompt_tokens", 0)
+            turn_completion = usage.get("completion_tokens", 0)
+            turn_total = usage.get("total_tokens", 0)
+
+            total_prompt_tokens_used += turn_prompt
+            total_completion_tokens_used += turn_completion
+            total_tokens_used += turn_total
 
         if log_turns:
             logger.info(f"***Agent output:\n{result}")
@@ -277,6 +287,8 @@ def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
                         "status": "Success",
                         "total_time_seconds": round(total_time, 2),
                         "total_tokens": total_tokens_used,
+                        "prompt_tokens": total_prompt_tokens_used,
+                        "completion_tokens": total_completion_tokens_used,
                         "total_turns": i + 1,
                         "checkpoint_stats": checkpoint_stats,
                         "turn_history": turn_metrics
@@ -314,10 +326,11 @@ def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
         
         # Aggregate Checkpoint Stats
         if current_checkpoint not in checkpoint_stats:
-            checkpoint_stats[current_checkpoint] = {"time": 0.0, "tokens": 0, "turns": 0}
-        
+            checkpoint_stats[current_checkpoint] = {"time": 0.0,"tokens": 0,"prompt_tokens": 0,"completion_tokens": 0,"turns": 0,}        
         checkpoint_stats[current_checkpoint]["time"] += turn_duration
-        checkpoint_stats[current_checkpoint]["tokens"] += turn_tokens
+        checkpoint_stats[current_checkpoint]["tokens"] += turn_total
+        checkpoint_stats[current_checkpoint]["prompt_tokens"] += turn_prompt
+        checkpoint_stats[current_checkpoint]["completion_tokens"] += turn_completion
         checkpoint_stats[current_checkpoint]["turns"] += 1
 
         turn_metrics.append({
@@ -325,7 +338,9 @@ def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
             "action": action if action else "None",
             "checkpoint": current_checkpoint,
             "duration_seconds": round(turn_duration, 2),
-            "tokens": turn_tokens
+            "prompt_tokens": turn_prompt,
+            "completion_tokens": turn_completion,
+            "total_tokens": turn_total,
         })
 
     # If loop finishes without answer
@@ -335,6 +350,8 @@ def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
             "status": "Failed - Max Turns Reached",
             "total_time_seconds": round(time.time() - start_time, 2),
             "total_tokens": total_tokens_used,
+            "prompt_tokens": total_prompt_tokens_used,
+            "completion_tokens": total_completion_tokens_used,
             "total_turns": max_turns,
             "checkpoint_stats": checkpoint_stats,
             "turn_history": turn_metrics
