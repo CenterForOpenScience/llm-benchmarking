@@ -4,6 +4,8 @@ from core.tools import (
     list_files_in_folder,
     ask_human_input,
     read_image,
+    read_file,
+    edit_file,
     write_file,
     load_dataset,
     get_dataset_head,
@@ -37,5 +39,9 @@ def base_known_actions() -> dict:
         "get_dataset_info": get_dataset_info,
 
         "ask_human_input": ask_human_input,
+        
+        # file manipulating 
+        "read_file": read_file,
+        "edit_file": edit_file,
         "write_file": write_file,
     }

@@ -45,7 +45,11 @@ def run_design(study_path, show_prompt=False, tier="easy"):
     Additionally, the environment WILL ONLY support execution for .py and .R files. YOU MUST RESOLVE ALL IDENTIFIED ISSUES (e.g., rewrite .do codes into .py codes, etc.) and rewrite the code to a new file.
     If your code reads in any data file, ASSUME that the data will be in this directory: "/app/data".
     If you code produce any addtional files, the code must save the files in this directory: "/app/data".
-    If you rewrite the original code fil, ensure that ALL IMPORTANT EXECUTABLE lines are preserved in your rewritten code. Your code file must be saved under replication_data folder.
+
+    File operations policy:
+    - To modify existing files: ALWAYS call read_file first, then use edit_file for targeted changes.
+    - write_file is for creating new files. It will refuse to overwrite unless overwrite=True.
+    - Only use write_file(overwrite=True) when you intend to replace the entire file contents.
     
     After all issues have been resolved, finish by complete by filling out the required JSON with all the updated/final information to prepare for replication execution.
     Rememeber, every response needs to have the the following one of the two formats:

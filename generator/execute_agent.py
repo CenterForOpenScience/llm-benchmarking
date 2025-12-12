@@ -87,6 +87,11 @@ def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str =
 Your goal is to successfully execute the replication study inside a Docker container.
 You are operating in a DEBUG LOOP. You must assess the result of every action. 
 
+File operations policy:
+ - To modify existing files: ALWAYS call read_file first, then use edit_file for targeted changes.
+ - write_file is for creating new files. It will refuse to overwrite unless overwrite=True.
+ - Only use write_file(overwrite=True) when you intend to replace the entire file contents.
+
 If an action fails (e.g., Docker build error, Missing Dependency, Code crash), you MUST:
 1. Analyze the error message in the Observation.
 2. Use `write_file` to FIX the issue (e.g., rewrite `replication_info.json` to add packages, or rewrite the code files). Remember that write_file will overwrite any existing content in the provided file_path if existing. When you use the tool, the provided path file_path to the tool MUST be the study path given to you. But to access other files within the file_content argument, you MUST use the container's directories "app/data". 

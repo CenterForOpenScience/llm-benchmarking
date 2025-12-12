@@ -8,6 +8,7 @@ from core.constants import API_KEY
 from typing import Dict, Any, Optional, Tuple
 import io # Add this import at the top of your file
 from pathlib import Path
+import difflib
 
 from pypdf import PdfReader
 
@@ -225,43 +226,39 @@ def list_files_in_folder(folder_path: str) -> str:
     file_info = f"Folder path: {folder_path}\n"
     file_info += f"All files: {', '.join(file_names)}"
     return file_info
+from pathlib import Path
 
-def write_file(file_path: str, file_content: str) -> str:
+def write_file(file_path: str, file_content: str, overwrite: bool = False) -> str:
     """
-    Create a file at file_path and dump file_content into it.
-
-    Use this tool when you need to write new code or modify existing code.
-
-    Args:
-        file_path (str): Path to where new file will be created
-
-    Returns:
-        str: A confirmation if the file is approved and has been created or a rejection message.
+    Create a NEW file (default) or overwrite an existing file only if overwrite=True.
     """
-     # Determine the full, absolute path for user confirmation
     full_path = Path.cwd() / file_path
 
-    # Print a clear message to the user indicating the agent needs help
-    print("\n🤔 [AGENT ASKS TO WRITE A NEW FILE 🤔")
+    file_exists = full_path.exists()
+
+    print("\n📝 [AGENT ASKS TO WRITE FILE] 📝")
     print(f"FULL PATH: {full_path}")
+    print(f"EXISTS ALREADY?: {file_exists}")
+    print(f"OVERWRITE FLAG?: {overwrite}")
     print(f"FILE CONTENT:\n---\n{file_content}\n---")
 
-    # Get input from the user
-    user_response = input("Do you approve? (yes/no): ")
+    if file_exists and not overwrite:
+        msg = (
+            "❌ Refusing to overwrite an existing file. "
+            "Use edit_file(...) for targeted edits, or call write_file(..., overwrite=True)."
+        )
+        print(msg)
+        return msg
 
-    # Check the user's response
-    if user_response.lower().strip() != 'yes':
+    user_response = input("Do you approve? (yes/no): ")
+    if user_response.lower().strip() != "yes":
         print("❌ User denied execution.")
         return f"Command execution denied by the user:\n{user_response}"
 
     try:
-        # Ensure the parent directory of the full path exists
         full_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write the content to the specified full path
-        with open(full_path, 'w', encoding='utf-8') as f:
+        with open(full_path, "w", encoding="utf-8") as f:
             f.write(file_content)
-            
         success_message = f"✅ Successfully wrote content to {full_path}"
         print(success_message)
         return success_message
@@ -269,6 +266,141 @@ def write_file(file_path: str, file_content: str) -> str:
         error_message = f"❌ Error writing file to {full_path}: {e}"
         print(error_message)
         return error_message
+
+
+def read_file(file_path: str, max_chars: int = 20000) -> str:
+    """
+    Read a text file (truncated) so the agent can make targeted edits.
+    """
+    full_path = Path.cwd() / file_path
+
+    if not full_path.exists():
+        return f"Error: File not found: {full_path}"
+    if full_path.is_dir():
+        return f"Error: Path is a directory: {full_path}"
+
+    try:
+        content = full_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        content = full_path.read_text(encoding="latin-1")
+
+    if len(content) > max_chars:
+        return content[:max_chars] + f"\n\n... [TRUNCATED {len(content)-max_chars} chars] ..."
+    return content
+
+
+
+def edit_file(
+    file_path: str,
+    edit_type: str,
+    *,
+    old_text: str = None,
+    new_text: str = None,
+    start_marker: str = None,
+    end_marker: str = None,
+    anchor: str = None,
+    insert_text: str = None,
+    count: int = 1,
+) -> str:
+    """
+    Targeted edits WITHOUT overwriting the whole file.
+    Shows a unified diff and requires approval.
+
+    edit_type:
+      - "replace"
+      - "replace_between" (markers kept; content between replaced)
+      - "insert_after"
+      - "insert_before"
+      - "append"
+      - "prepend"
+    """
+    full_path = Path.cwd() / file_path
+
+    if not full_path.exists():
+        return f"Error: File not found: {full_path}"
+    if full_path.is_dir():
+        return f"Error: Path is a directory: {full_path}"
+
+    try:
+        original = full_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        original = full_path.read_text(encoding="latin-1")
+
+    edited = original
+
+    if edit_type == "replace":
+        if old_text is None or new_text is None:
+            return "Error: replace requires old_text and new_text."
+        if old_text not in edited:
+            return "Error: old_text not found."
+        edited = edited.replace(old_text, new_text, count)
+
+    elif edit_type == "replace_between":
+        if start_marker is None or end_marker is None or new_text is None:
+            return "Error: replace_between requires start_marker, end_marker, and new_text."
+        s = edited.find(start_marker)
+        if s == -1:
+            return "Error: start_marker not found."
+        e = edited.find(end_marker, s + len(start_marker))
+        if e == -1:
+            return "Error: end_marker not found (after start_marker)."
+        between_start = s + len(start_marker)
+        between_end = e
+        edited = edited[:between_start] + new_text + edited[between_end:]
+
+    elif edit_type in ("insert_after", "insert_before"):
+        if anchor is None or insert_text is None:
+            return f"Error: {edit_type} requires anchor and insert_text."
+        idx = edited.find(anchor)
+        if idx == -1:
+            return "Error: anchor not found."
+        insert_at = idx + len(anchor) if edit_type == "insert_after" else idx
+        edited = edited[:insert_at] + insert_text + edited[insert_at:]
+
+    elif edit_type == "append":
+        if insert_text is None:
+            return "Error: append requires insert_text."
+        if edited and not edited.endswith("\n"):
+            edited += "\n"
+        edited += insert_text
+
+    elif edit_type == "prepend":
+        if insert_text is None:
+            return "Error: prepend requires insert_text."
+        edited = insert_text + ("" if insert_text.endswith("\n") else "\n") + edited
+
+    else:
+        return f"Error: Unknown edit_type '{edit_type}'."
+
+    if edited == original:
+        return "No changes made."
+
+    diff = "\n".join(
+        difflib.unified_diff(
+            original.splitlines(),
+            edited.splitlines(),
+            fromfile=str(full_path) + " (before)",
+            tofile=str(full_path) + " (after)",
+            lineterm="",
+        )
+    )
+
+    print("\n✍️ [AGENT PROPOSES A FILE EDIT] ✍️")
+    print(f"FULL PATH: {full_path}")
+    print(f"DIFF:\n---\n{diff}\n---")
+
+    user_response = input("Do you approve this edit? (yes/no): ")
+    if user_response.lower().strip() != "yes":
+        print("❌ User denied edit.")
+        return f"Edit denied by the user:\n{user_response}"
+
+    try:
+        full_path.write_text(edited, encoding="utf-8")
+        msg = f"✅ Successfully edited {full_path}"
+        print(msg)
+        return msg
+    except Exception as e:
+        return f"❌ Error writing edited file to {full_path}: {e}"
 
 def read_and_summarize_pdf(file_path: str) -> str:
     """
