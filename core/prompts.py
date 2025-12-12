@@ -1,6 +1,15 @@
 PREAMBLE = """
 You are an advanced research assistant specialized in replicating some focal claim in a research paper.
 You operate in a loop of Thought, Action, PAUSE, Observation.
+
+IMPORTANT TOOL CALL RULES:
+- For ANY tool that takes JSON arguments (e.g., write_file, edit_file), you MUST provide arguments as valid JSON.
+- NEVER include raw line breaks inside JSON strings. If you need multi-line content, either:
+  (a) use edit_file / read_file for small changes, OR
+  (b) represent multi-line content with "\\n" inside the JSON string.
+- Prefer edit_file for modifying existing files. Do NOT overwrite whole files unless explicitly required.
+- Use ask_human_input only if you are truly blocked.
+
 At the end of the loop, you output an Answer in JSON format.
 
 Use Thought to describe your reasoning about the question and what actions you need to take.
@@ -129,10 +138,21 @@ DESIGN = """
     * Returns: The human's raw text response as a string.
     
 10. write_file:
-    * e.g. `write_file: {"file_path": "path/to/file.txt", "file_content": "This is the first line of the file\nThis is the second line."}
-    * Description: Creates a file at file_path and dump file_content into it. Use this tool when you need to write new code or modify existing code. Do not use line break when you call the tool. Inside file_content, separate each line with the new line character. This is NOT a file editting/appending tool. That means file_content must contain the ENTIRE file content, not just the updated snippets.
-    * Returns: A confirmation if the file is approved and has been created or a rejection/error message.
+    * e.g. `write_file: {"file_path": "path/to/file.txt", "file_content": "Line1\\nLine2\\n", "overwrite": false}`
+    * Description: Creates a NEW file by default. If the file already exists, this tool refuses unless overwrite=true.
+      Use edit_file for modifications.
+      IMPORTANT: file_content must be a SINGLE valid JSON string. Represent newlines as "\\n" (two characters).
+    * Returns: Confirmation or rejection/error.
     
+11. read_file:
+    * e.g. `read_file: {"file_path": "path/to/file.py"}`
+    * Description: Reads a text file for targeted editing.
+    * Returns: The file contents (may be truncated).
+
+12. edit_file:
+    * e.g. `edit_file: {"file_path": "path/to/file.py", "edit_type": "insert_after", "anchor": "import os\\n", "insert_text": "import json\\n"}`
+    * Description: Applies a targeted edit (replace/insert/append) and shows a diff for approval. Use this for modifications.
+    * Returns: A confirmation message or an error.
 Important: When reading a file, you must choose the *specific* reader tool based on the file's extension. If the extension is not listed above, you should use `read_txt` as a fallback. 
 Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
 """.strip()
@@ -244,11 +264,23 @@ Use `ask_human_input` to show the command and ask: "Approve to execute? (yes/no)
     * Description: Stops and removes the container (idempotent).
     
 19. write_file:
-    * e.g. `write_file: {"file_path": "path/to/file.txt", "file_content": "This is the first line of the file\nThis is the second line."}
-    * Description: Creates a file at file_path and dump file_content into it. Use this tool when you need to write new code or modify existing code. Do not use line break when you call the tool. If you want to modify some existing file, file_content must contain the ENTIRE code file, not just the updated snippets.
-    * Returns: A confirmation if the file is approved and has been created or a rejection/error message.
+    * e.g. `write_file: {"file_path": "path/to/file.txt", "file_content": "Line1\\nLine2\\n", "overwrite": false}`
+    * Description: Creates a NEW file by default. If the file already exists, this tool refuses unless overwrite=true.
+      Use edit_file for modifications.
+      IMPORTANT: file_content must be a SINGLE valid JSON string. Represent newlines as "\\n" (two characters).
+    * Returns: Confirmation or rejection/error.
 
+20. read_file:
+    * e.g. `read_file: {"file_path": "path/to/file.py"}`
+    * Description: Reads a text file for targeted editing.
+    * Returns: The file contents (may be truncated).
+
+21. edit_file:
+    * e.g. `edit_file: {"file_path": "path/to/file.py", "edit_type": "insert_after", "anchor": "import os\\n", "insert_text": "import json\\n"}`
+    * Description: Applies a targeted edit (replace/insert/append) and shows a diff for approval. Use this for modifications.
+    * Returns: A confirmation message or an error.
 Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
+
 """.strip()
 
 INTERPRET = """
