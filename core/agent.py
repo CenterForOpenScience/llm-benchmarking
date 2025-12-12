@@ -147,7 +147,19 @@ class Agent:
             return observation
 
         except json.JSONDecodeError:
-            return f"Error: The tool input was not valid JSON. Please check your formatting. Input received: {action_input_str}"
+            # Fallback: treat as raw string argument
+            raw = action_input_str.strip()
+
+            # remove surrounding quotes if model added them
+            if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")):
+                raw = raw[1:-1]
+
+            try:
+                if "dataset" in action:
+                    return tool_func(self.session_state, raw)
+                return tool_func(raw)
+            except Exception as e:
+                return f"Error while executing tool '{action}' with raw string arg: {e}"
         except Exception as e:
             return f"Error while executing tool '{action}': {e}"
 
@@ -254,10 +266,17 @@ def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
         if is_final:
             turn_duration = time.time() - turn_start
             
-            # Add final turn stats
-            stats = checkpoint_stats.get(current_checkpoint, {"time": 0.0, "tokens": 0, "turns": 0})
+            stats = checkpoint_stats.get(current_checkpoint, {
+                "time": 0.0,
+                "tokens": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "turns": 0
+            })
             stats["time"] += turn_duration
-            stats["tokens"] += turn_tokens
+            stats["tokens"] += turn_total
+            stats["prompt_tokens"] += turn_prompt
+            stats["completion_tokens"] += turn_completion
             stats["turns"] += 1
             checkpoint_stats[current_checkpoint] = stats
             
