@@ -1,8 +1,3 @@
-"""
-evaluate_extracted_info.py
-Extract and evaluate from human replication study at the same time. 
-"""
-
 import argparse
 import json
 

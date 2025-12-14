@@ -1,0 +1,58 @@
+import json
+
+
+def summarize_eval_execute(eval_data):
+    eval_scores = {}
+    for sub_stage, sub_stage_eval_data in eval_data.items():
+        eval_scores[f"execute_{sub_stage}"] = {
+            "aspect_scores": {}
+        }
+        sub_stage_scores = []
+        for aspect in sub_stage_eval_data:
+            aspect_scores = []
+            for rubric_id, rubric_info in sub_stage_eval_data[aspect].items():
+                aspect_scores.append(rubric_info['score'])
+            aspect_avg = sum(aspect_scores)/len(aspect_scores)
+            eval_scores[f"execute_{sub_stage}"]["aspect_scores"][aspect] = aspect_avg
+            sub_stage_scores.append(aspect_avg)
+        eval_scores[f"execute_{sub_stage}"]["avg_score"] = sum(sub_stage_scores)/len(sub_stage_scores)
+    return eval_scores
+
+def summarize_eval_scores(study_path):
+    stages = ["extract", "design", "execute", "interpret"]
+    eval_summary = {}
+    for stage in stages:
+        with open(f"{study_path}/llm_eval/{stage}_llm_eval.json") as f:
+            eval_json = json.load(f)
+        if stage == "execute":
+            eval_data = {
+                "design": eval_json["evaluate_design"],
+                "execute": eval_json["execute"] 
+            }
+            eval_summary.update(summarize_eval_execute(eval_data))
+        else:
+            aspect_dict = {}
+            stage_scores = []
+            eval_summary[stage] = {
+                "aspect_scores": {}
+            }
+            for eval_field, eval_info in eval_json.items():
+                aspect = eval_field.split(".")[0]
+                if aspect not in aspect_dict:
+                    aspect_dict[aspect] = [eval_info['score'], 3]
+                else:
+                    aspect_dict[aspect][0] += eval_info['score']
+                    aspect_dict[aspect][1] += 3
+                aspect_avg = aspect_dict[aspect][0]/aspect_dict[aspect][1]
+                eval_summary[stage]["aspect_scores"][aspect] = aspect_avg
+                stage_scores.append(aspect_avg)
+                
+            eval_summary[stage]["avg_score"] = sum(stage_scores)/len(stage_scores)
+    
+    with open(f"{study_path}/llm_eval/eval_summary.json", "w") as fout:
+        json.dump(eval_summary, fout, indent =2)
+            
+            
+        
+            
+            
