@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from info_extractor.file_utils import check_long_logs
+import tiktoken
 
 try:
     from docker.errors import BuildError, APIError
@@ -363,6 +364,7 @@ def orchestrator_preview_entry(study_path: str) -> str:
         elif l == "bash": cmd = ["bash", found]
         else:
              return json.dumps({"ok": False, "error": f"Unsupported lang: {step.lang}"})
+        
 
         return json.dumps({
             "ok": True,
@@ -401,12 +403,29 @@ def orchestrator_execute_entry(study_path: str) -> str:
         ran = _exec_file(DEFAULT_CONTAINER_NAME, study_path, found, step.lang)
         
         # We append the step details regardless of success so agent can see stderr
+        
+        def _check_long_std(text: str, model_name="gpt-4o"):
+            enc = tiktoken.encoding_for_model(model_name if model_name else "gpt-4")
+            MAX_TOKENS = 20000
+            tokens = enc.encode(text)
+            
+            if len(tokens) <= MAX_TOKENS:
+                return text
+            else:
+                warning_message = """
+                ----------- WARNING MESSAGE ------------
+                Your code produces too long stdout and stderr. Below shows the first 20000 tokens of the ouput stream.
+                If this output stream does not contain the relevant information for your task, you should try again, rewrite your code so that it only outputs the relevant information.
+                ----------- TRUNCATED OUTPUT STREAM ------------
+                """
+                return f"{warning_message}\n{enc.decode(tokens[:MAX_TOKENS])}"
+        
         results["steps"].append({
             "name": step.name,
             "ok": ran.get("ok", False),
             "exit_code": ran.get("exit_code"),
-            "stdout": check_long_logs(ran.get("stdout")),
-            "stderr": check_long_logs(ran.get("stderr")),
+            "stdout": _check_long_std(ran.get("stdout")),
+            "stderr": _check_long_std(ran.get("stderr")),
             "artifacts": ran.get("artifacts", []),
             "entry": step.entry,
             "resolved_path": found,
