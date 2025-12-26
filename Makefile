@@ -5,7 +5,7 @@ PYTHON ?= python3
 # libs we need before running anything
 REQ := pytest pytest_cov openai dotenv pymupdf pyreadr pandas numpy docker docx
 
-STUDY ?= ./data/processed/1
+STUDY ?= ./data/original/1
 CODE_MODE ?= python
 
 .PHONY: check-deps install-dev test test-extractor test-generator test-all design-easy execute-easy
