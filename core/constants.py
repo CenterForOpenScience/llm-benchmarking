@@ -13,6 +13,11 @@ load_dotenv()
 
 API_KEY = os.getenv("API_KEY")
 
+# Run configuration:
+# - "native": run original-language code (R/.do/etc.), no Python translation
+# - "python": translate all non-Python scripts to Python and run Python
+CODE_MODE_CHOICES = ["native", "python"]
+DEFAULT_CODE_MODE = os.getenv("CODE_MODE", "python")
 
 TEMPLATE_PATHS = {
     "post_registration_template": "templates/post_registration_schema.json",

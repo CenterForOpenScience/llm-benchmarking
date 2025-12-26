@@ -8,7 +8,7 @@ from typing import Dict, Any
 from core.constants import GENERATE_EXECUTE_REACT_CONSTANTS
 from core.actions import base_known_actions
 from core.agent import run_react_loop, save_output
-from core.prompts import PREAMBLE, EXECUTE, EXAMPLE
+from core.prompts import PREAMBLE, EXECUTE, EXAMPLE, EXECUTE_CODE_MODE_POLICY
 from core.utils import build_file_description, configure_file_logging, get_logger
 from info_extractor.file_utils import read_json
 
@@ -65,8 +65,24 @@ CHECKPOINT_MAP = {
     "orchestrator_stop_container":      "7. Stop Container"
 }
 
-def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates", tier="easy"):
-    configure_file_logging(logger, study_path, f"execute_{tier}.log")
+def _on_final(ans: dict):
+    # Canonical output
+    save_output(
+        ans,
+        study_path=study_path,
+        filename="execution_results.json",
+        stage_name="execute",
+    )
+    # Mode-specific copy for side-by-side comparisons
+    save_output(
+        ans,
+        study_path=study_path,
+        filename=f"execution_results__{code_mode}.json",
+        stage_name="execute",
+    )
+
+def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates", tier="easy", code_mode: str = "python"):
+    configure_file_logging(logger, study_path, f"execute_{tier}__{code_mode}.log")
     logger.info(f"[agent] dynamic orchestrator run loop for: {study_path}")
 
     schema_path = os.path.join(templates_dir, "execute_schema.json")
@@ -82,10 +98,13 @@ def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str =
         }
         GENERATE_EXECUTE_REACT_CONSTANTS["json_template"] = schema_path
 
-        # NEW PROMPT: Goal-Oriented Loop instead of Linear Steps
+        code_policy = EXECUTE_CODE_MODE_POLICY.get(code_mode, EXECUTE_CODE_MODE_POLICY["python"])
+
         instruction = f"""
 Your goal is to successfully execute the replication study inside a Docker container.
 You are operating in a DEBUG LOOP. You must assess the result of every action. 
+
+{code_policy}
 
 File operations policy:
  - To modify existing files: ALWAYS call read_file first, then use edit_file for targeted changes.

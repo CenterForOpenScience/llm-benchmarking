@@ -6,6 +6,7 @@ PYTHON ?= python3
 REQ := pytest pytest_cov openai dotenv pymupdf pyreadr pandas numpy docker docx
 
 STUDY ?= ./data/processed/1
+CODE_MODE ?= python
 
 .PHONY: check-deps install-dev test test-extractor test-generator test-all design-easy execute-easy
 
@@ -29,9 +30,9 @@ extract-stage2: check-deps
 
 # generator module
 design-easy: check-deps
-	python -m generator --stage design --tier easy --study-path $(STUDY) --templates-dir ./templates
+	python -m generator --stage design --tier easy --study-path $(STUDY) --templates-dir ./templates --code-mode $(CODE_MODE)
 execute-easy: check-deps check-docker
-	python -m generator --stage execute --tier easy --study-path $(STUDY)
+	python -m generator --stage execute --tier easy --study-path $(STUDY) --code-mode $(CODE_MODE)
 
 generate: design-easy execute-easy
 
@@ -41,7 +42,6 @@ interpret-easy: check-deps
 
 # full pipeline (extract -> design -> execute -> interpret)
 pipeline-easy: extract-stage1 design-easy execute-easy interpret-easy
-
 
 # validator module
 evaluate-extract: check-deps

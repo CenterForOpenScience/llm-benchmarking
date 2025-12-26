@@ -1,5 +1,6 @@
 # unified CLI
 import argparse, os, sys
+from core.constants import DEFAULT_CODE_MODE, CODE_MODE_CHOICES
 
 def main():
     p = argparse.ArgumentParser("generate")
@@ -8,12 +9,17 @@ def main():
     p.add_argument("--study-path", required=True)
     p.add_argument("--templates-dir", default="./templates")
     p.add_argument("--show-prompt", action="store_true", default=False)
+    p.add_argument("--code-mode",choices=CODE_MODE_CHOICES,default=DEFAULT_CODE_MODE,help="Code execution mode: 'native' (run original language) or 'python' (translate all to Python and run Python).",)
     args = p.parse_args()
 
     if args.stage == "design" and args.tier == "easy":
         from generator.design_agent import run_design
         # run the agent that generates the plan / prereg JSON
-        run_design(args.study_path, show_prompt=args.show_prompt, tier=args.tier)
+        run_design(args.study_path,
+        	show_prompt=args.show_prompt,
+        	tier=args.tier,
+        	code_mode=args.code_mode
+        )
 
     elif args.stage == "execute" and args.tier == "easy":
         # Agent-driven, step-by-step with human confirmation before executing
@@ -23,6 +29,7 @@ def main():
             show_prompt=args.show_prompt,
             templates_dir=args.templates_dir,
             tier=args.tier,
+            code_mode=args.code_mode
         )
 
     else:

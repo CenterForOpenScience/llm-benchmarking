@@ -280,8 +280,44 @@ Use `ask_human_input` to show the command and ask: "Approve to execute? (yes/no)
     * Description: Applies a targeted edit (replace/insert/append) and shows a diff for approval. Use this for modifications.
     * Returns: A confirmation message or an error.
 Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
-
 """.strip()
+
+DESIGN_CODE_MODE_POLICY = {
+    "native": """
+RUN POLICY (DESIGN)
+- Do NOT translate code to Python.
+- Run the original language code (R/.do/etc.).
+- Only make minimal fixes needed to run (paths to /app/data, deps, small execution bugs).
+- Identify the correct entrypoint and execution order.
+ """.strip(),
+
+    "python": """
+RUN POLICY (DESIGN)
+- Translate every non-Python analysis script (R/.do/etc.) into Python.
+- Keep originals unchanged; write new files like: <basename>__py.py
+- Ensure all IO uses /app/data.
+- Set the executed entrypoint to the Python rewrite (or a Python wrapper that runs the translated scripts in order).
+- Preserve logic, outputs, and seeds as closely as possible.
+- Make sure that replication_info.json reflects the change
+ """.strip(),
+ }
+
+EXECUTE_CODE_MODE_POLICY = {
+    "native": """
+RUN POLICY (EXECUTE)
+- Do NOT translate code to Python.
+- Execute the original-language entrypoint from replication_info.json.
+- If it fails, debug in the same language or adjust dependencies.
+ """.strip(),
+    "python": """
+RUN POLICY (EXECUTE)
+- Execute using Python.
+- If replication_info.json points to a non-.py entrypoint, create/complete the Python translations (keeping originals unchanged),
+  create a single Python entrypoint, and update replication_info.json to that .py entrypoint.
+- If it fails, fix the Python rewrite / deps (don’t switch back to the original language).
+ """.strip(),
+ }
+
 
 INTERPRET = """
 Your available actions are:
