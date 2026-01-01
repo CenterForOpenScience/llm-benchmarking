@@ -126,8 +126,12 @@ DESIGN = """
     * Description: Calculates descriptive statistics for the numerical columns of a loaded CSV dataset. This includes count, mean, standard deviation, min, max, and percentiles.
     * Returns: A string containing a summary table of the descriptive statistics.
 
-8.  get_dataset_info:
-    
+    7e. get_dataset_columns
+    * e.g. `get_dataset_columns: "data/study_A/patient_records.dta"`
+	* Description: Retrieves the complete list of column names from a previously loaded dataset. This tool is used to inspect the dataset schema and to verify whether specific variables required for analysis or replication are present.
+    * Unlike get_dataset_head or get_dataset_info, this function returns the full set of column names without truncation.
+
+	7f.  get_dataset_info:    
     * e.g. `get_dataset_info: "data/study_A/patient_records.csv"`
     * Description: Provides a concise technical summary of a loaded CSV dataset, including column names, data types (e.g., integer, float), and the number of non-missing values for each column.
     * Returns: A string containing the full summary information of the dataset.

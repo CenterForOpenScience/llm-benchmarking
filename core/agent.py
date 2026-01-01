@@ -207,7 +207,7 @@ class Agent:
         return total
 
 def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
-                   max_turns: int = 30, session_state=None, on_final=None, log_turns: bool=True,
+                   max_turns: int = 50, session_state=None, on_final=None, log_turns: bool=True,
                    study_path: str = None, stage_name: str = None, checkpoint_map: dict = None):
     
     bot = Agent(system_prompt, session_state=session_state or {})    
@@ -229,9 +229,9 @@ def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
         turn_start = time.time()
         
         if log_turns:
-            disp = next_prompt if len(next_prompt) <= 2000 else next_prompt[:2000] + "\n... (truncated)"
+            #disp = next_prompt if len(next_prompt) <= 2000 else next_prompt[:2000] + "\n... (truncated)"
             logger.info(f"\n--- Turn {i+1} ---")
-            logger.info(f"***Agent input: {disp}")
+            logger.info(f"***Agent input: {next_prompt}")
 
             result, usage = bot(next_prompt)
 

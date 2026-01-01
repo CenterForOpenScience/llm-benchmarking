@@ -140,6 +140,12 @@ def get_dataset_description(session_state: Dict[str, Any], file_path: str) -> st
         return "Error: Dataset not loaded. Please call load_dataset() first."
     return str(analyzers[file_path].get_description())
 
+def get_dataset_columns(session_state: Dict[str, Any], file_path: str) -> str:
+    analyzers = session_state["analyzers"]
+    if file_path not in analyzers:
+        return "Error: Dataset not loaded. Please call load_dataset() first."
+    return str(list(analyzers[file_path].df.columns))
+
 def read_image(file_path):
     # Function to encode the image
     def encode_image(image_path):
