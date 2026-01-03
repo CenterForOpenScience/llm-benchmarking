@@ -195,18 +195,16 @@ def ask_human_input(question_to_ask: str) -> str:
     
     return human_response
 
-
 def list_files_in_folder(folder_path: str) -> str:
     """
-    Lists all files within a specified folder and returns their names as a single string,
-    with each file separated by a comma.
+    Recursively lists all files within a specified folder and its subfolders.
 
     Args:
         folder_path: The absolute or relative path to the folder.
 
     Returns:
-        A string containing the names of all files in the folder,
-        each separated by a newline character. If the folder does not exist
+        A string containing the relative paths of all files found,
+        each separated by a newline. If the folder does not exist
         or is not a directory, an error message is returned.
     """
     # Check if the provided path exists
@@ -217,21 +215,25 @@ def list_files_in_folder(folder_path: str) -> str:
     if not os.path.isdir(folder_path):
         return f"Error: Path '{folder_path}' is not a directory."
 
-    file_names = []
-    # Iterate over all entries in the folder
-    for entry in os.listdir(folder_path):
-        # Construct the full path to the entry
-        full_path = os.path.join(folder_path, entry)
-        # Check if the entry is a file (and not a subdirectory)
-        if os.path.isfile(full_path):
-            file_names.append(entry)
+    file_paths = []
 
-    # Sort the file names alphabetically for consistent output
-    file_names.sort()
-    
+    # Walk through all directories and subdirectories
+    for current_root, _, files in os.walk(folder_path):
+        for file in files:
+            full_path = os.path.join(current_root, file)
+            # Store paths relative to the provided folder
+            relative_path = os.path.relpath(full_path, folder_path)
+            file_paths.append(relative_path)
+
+    if not file_paths:
+        return f"Folder path: {folder_path}\nNo files found."
+
+    file_paths.sort()
+
     file_info = f"Folder path: {folder_path}\n"
-    file_info += f"All files: {', '.join(file_names)}"
+    file_info += "All files:\n" + "\n".join(file_paths)
     return file_info
+
 from pathlib import Path
 
 def write_file(file_path: str, file_content: str, overwrite: bool = False) -> str:
