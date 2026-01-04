@@ -78,7 +78,11 @@ def extract_from_human_replication_study(reference_report_path, study_path):
     
     interpret_schema = read_json(EVALUATE_INTERPRET_CONSTANTS['json_template'])
     reported_json = read_json(os.path.join(study_path, EVALUATE_INTERPRET_CONSTANTS['interpret_results']))
-    reference_doc = read_pdf(reference_report_path)
+    reference_doc = ""
+    if reference_report_path.lower().endswith(".pdf"):
+    	reference_doc = read_pdf(reference_report_path)
+    elif reference_report_path.lower().endswith(".docx"):
+    	reference_doc = read_docx(reference_report_path)
     
     log_path = study_path
     evaluated_json = generate_evaluation_json(eval_prompt_template, interpret_schema, reported_json, reference_doc, client, log_path)

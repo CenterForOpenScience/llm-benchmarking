@@ -18,6 +18,18 @@ def summarize_eval_execute(eval_data):
         eval_scores[f"execute_{sub_stage}"]["avg_score"] = sum(sub_stage_scores)/len(sub_stage_scores)
     return eval_scores
 
+def _to_float_or_none(x):
+    if x is None:
+        return None
+    if isinstance(x, (int, float)):
+        return float(x)
+    if isinstance(x, str):
+        s = x.strip()
+        if s.upper() in {"NA", "N/A", ""}:
+            return None
+        return float(s)  # will still raise if it's some other junk
+    return None
+
 def summarize_eval_scores(study_path):
     stages = ["extract", "design", "execute", "interpret"]
     eval_summary = {}
@@ -31,28 +43,27 @@ def summarize_eval_scores(study_path):
             }
             eval_summary.update(summarize_eval_execute(eval_data))
         else:
-            aspect_dict = {}
-            stage_scores = []
-            eval_summary[stage] = {
-                "aspect_scores": {}
-            }
+            aspect_totals = {}
             for eval_field, eval_info in eval_json.items():
                 aspect = eval_field.split(".")[0]
-                if aspect not in aspect_dict:
-                    aspect_dict[aspect] = [eval_info['score'], 3]
-                else:
-                    aspect_dict[aspect][0] += eval_info['score']
-                    aspect_dict[aspect][1] += 3
-                aspect_avg = aspect_dict[aspect][0]/aspect_dict[aspect][1]
+                if aspect not in aspect_totals:
+                    aspect_totals[aspect] = [0.0, 0.0]
+                score = _to_float_or_none(eval_info.get("score"))
+                if score is None:
+                    continue
+                aspect_totals[aspect][0] += score
+                aspect_totals[aspect][1] += 3.0
+
+            eval_summary[stage] = {"aspect_scores": {}}
+            stage_scores = []
+            for aspect, (score_sum, max_sum) in aspect_totals.items():
+                aspect_avg = (score_sum / max_sum) if max_sum else 0.0
                 eval_summary[stage]["aspect_scores"][aspect] = aspect_avg
                 stage_scores.append(aspect_avg)
-                
-            eval_summary[stage]["avg_score"] = sum(stage_scores)/len(stage_scores)
-    
-    with open(f"{study_path}/llm_eval/eval_summary.json", "w") as fout:
-        json.dump(eval_summary, fout, indent =2)
-            
-            
-        
-            
+
+            eval_summary[stage]["avg_score"] = (
+                sum(stage_scores) / len(stage_scores) if stage_scores else 0.0
+            )
+        with open(f"{study_path}/llm_eval/eval_summary.json", "w") as fout:
+            json.dump(eval_summary, fout, indent =2)
             
