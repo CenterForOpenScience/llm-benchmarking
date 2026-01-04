@@ -51,7 +51,7 @@ evaluate-design: check-deps
 evaluate-execute: check-deps
 	python -m validator.cli.evaluate_execute_cli  --study_path $(STUDY)
 evaluate-interpret: check-deps
-	python -m validator.cli.evaluate_interpret_cli  --study_path $(STUDY) --reference_report_path $(STUDY)/human_report.docx
+	python -m validator.cli.evaluate_interpret_cli  --study_path $(STUDY) --reference_report_path $(STUDY)/human_report.pdf
 evaluate-summary: check-deps
 	python -m validator.cli.evaluate_summary_cli --study_path $(STUDY)
 
