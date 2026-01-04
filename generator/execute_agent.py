@@ -124,7 +124,7 @@ PHASE 1: BUILD ENVIRONMENT
    * IF BUILD FAILS: Read the error log. It usually means a missing system package or R/Python library. Edit `replication_info.json` to add the missing dependency, regenerate the Dockerfile, and rebuild.
 
 PHASE 2: PREPARE RUNTIME
-3. `orchestrator_run_container`: Starts the container.
+3. `orchestrator_run_container`: Mounts the code and data and starts the container.
 4. `orchestrator_plan` & `orchestrator_preview_entry`: Verify what will run.
 
 PHASE 3: HUMAN APPROVAL (Strict Check)
