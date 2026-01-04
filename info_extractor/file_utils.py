@@ -26,6 +26,8 @@ from core.constants import API_KEY
 client = OpenAI(api_key=API_KEY)
 
 def read_txt(file_path):
+    if ".txt" not in file_path:
+    	return "not a .txt file"
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
         file_content =  f.read()
     return check_long_logs(file_content)
