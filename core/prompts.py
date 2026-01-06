@@ -312,13 +312,13 @@ RUN POLICY (DESIGN)
 
     "python": """
 RUN POLICY (DESIGN)
-- Translate every non-Python analysis script (R/.do/etc.) into Python.
+- Translate every non-Python analysis script (.R/.do/etc.) into Python.
 - Keep originals unchanged; write new files like: <basename>__py.py
 - Ensure all IO uses /app/data.
 - If the original code is incompatible with the data, rewrite the code so that it is compatible. 
 - Set the executed entrypoint to the Python rewrite (or a Python wrapper that runs the translated scripts in order).
 - Preserve logic, outputs, and seeds as closely as possible.
-- Make sure that replication_info.json reflects the change
+- Make sure that replication_info.json reflects the change. All docker related information must also be compatible with Python execution.
  """.strip(),
  }
 

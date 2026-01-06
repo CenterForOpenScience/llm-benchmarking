@@ -289,7 +289,8 @@ def list_files_in_folder(folder_path: str) -> str:
             full_path = os.path.join(current_root, file)
             # Store paths relative to the provided folder
             relative_path = os.path.relpath(full_path, folder_path)
-            file_paths.append(relative_path)
+            if "human_preregistration" not in relative_path and "human_report" not in relative_path: #avoid cheating
+                file_paths.append(relative_path)
 
     if not file_paths:
         return f"Folder path: {folder_path}\nNo files found."
