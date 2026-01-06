@@ -507,7 +507,8 @@ def _configure_file_logging(study_path: str):
 
     # Construct the log file path within the given study_path
     log_file_name = 'evaluate_execute.log'
-    log_directory = study_path # Assuming study_path is already the directory where you want the log
+    log_directory = os.path.join(study_path, "llm_eval") # Assuming study_path is already the directory where you want the log
+    os.makedirs(log_directory, exist_ok=True)
     log_file_full_path = os.path.join(log_directory, log_file_name)
 
     # Ensure the directory exists before trying to write the log file

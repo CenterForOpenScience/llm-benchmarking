@@ -41,7 +41,9 @@ def build_extract_evaluate_prompt(eval_prompt_template, interpret_schema, report
     return final_prompt
 
 def save_prompt_log(study_path, prompt):
-    log_file = os.path.join(study_path, f"interpret_eval.log")
+    log_dir = os.path.join(study_path,  "llm_eval")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, f"interpret_eval.log")
 
     with open(log_file, "w", encoding="utf-8") as f:
         f.write("=== GENERATED PROMPT ===\n")
