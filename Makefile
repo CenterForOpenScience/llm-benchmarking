@@ -47,11 +47,11 @@ pipeline-easy: extract-stage1 design-easy execute-easy interpret-easy
 evaluate-extract: check-deps
 	python -m validator.cli.evaluate_extracted_info --extracted_json_path $(STUDY)/post_registration.json --expected_json_path $(STUDY)/expected_post_registration.json --output_path $(STUDY)
 evaluate-design: check-deps	
-	python -m validator.cli.evaluate_design_cli --extracted_json_path $(STUDY)/replication_info.json --reference_doc_path $(STUDY)/human_preregistration.pdf --output_path $(STUDY)
+	python -m validator.cli.evaluate_design_cli --extracted_json_path $(STUDY)/replication_info.json --reference_doc_path $(firstword $(wildcard $(STUDY)/human_preregistration.*)) --output_path $(STUDY)
 evaluate-execute: check-deps
 	python -m validator.cli.evaluate_execute_cli  --study_path $(STUDY)
 evaluate-interpret: check-deps
-	python -m validator.cli.evaluate_interpret_cli  --study_path $(STUDY) --reference_report_path $(STUDY)/human_report.pdf
+	python -m validator.cli.evaluate_interpret_cli  --study_path $(STUDY) --reference_report_path $(firstword $(wildcard $(STUDY)/human_report.*))
 evaluate-summary: check-deps
 	python -m validator.cli.evaluate_summary_cli --study_path $(STUDY)
 
