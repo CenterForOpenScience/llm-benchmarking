@@ -165,6 +165,9 @@ class Agent:
                 return tool_func(raw)
             except Exception as e2:
                 return f"Error while executing tool '{action}' with raw string arg: {e2}"
+        
+        except Exception as e3:
+            return f"Error while executing tool '{action}' with raw string arg: {e3}"
 
     def _get_encoding(self):
         if tiktoken is None:

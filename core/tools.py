@@ -98,6 +98,66 @@ class DataFrameAnalyzer:
             return self.df.describe()
         return None
     
+    def get_variable_summary(self, variable_name) -> str:
+        """
+        Rreturns summary statistics for a specific variable.
+        - Numeric: Returns the 5-number summary (Min, Q1, Median, Q3, Max).
+        - Categorical: Returns counts of unique categories (capped at top 20).
+        """
+        
+        # 1. Load the Data
+
+        # 2. Check if variable exists
+        if variable_name not in self.df.columns:
+            available_cols = ", ".join(self.df.columns[:5]) # Show first 5 as hint
+            return f"Error: Variable '{variable_name}' not found. (First few columns: {available_cols}...)"
+
+        series = self.df[variable_name]
+        
+        # 3. Handle Numeric Variables (5-number summary)
+        if pd.api.types.is_numeric_dtype(series):
+            # clean data (drop NAs for accurate stats)
+            clean_series = series.dropna()
+            
+            if clean_series.empty:
+                return f"Variable '{variable_name}' contains only NaN values."
+
+            quartiles = clean_series.quantile([0.25, 0.5, 0.75])
+            
+            summary = (
+                f"--- Numeric Summary for '{variable_name}' ---\n"
+                f"Min:    {clean_series.min()}\n"
+                f"Q1:     {quartiles[0.25]}\n"
+                f"Median: {quartiles[0.5]}\n"
+                f"Q3:     {quartiles[0.75]}\n"
+                f"Max:    {clean_series.max()}\n"
+                f"missing_values: {series.isna().sum()}"
+            )
+            return summary
+
+        # 4. Handle Categorical/Character Variables
+        else:
+            # Get value counts
+            counts = series.value_counts(dropna=False)
+            unique_count = len(counts)
+            
+            # Guardrail: Don't print 10,000 rows if it's high cardinality
+            top_n = 20
+            truncated = unique_count > top_n
+            display_counts = counts.head(top_n)
+            
+            output_lines = [f"--- Categorical Summary for '{variable_name}' ---",
+                            f"Total Unique Categories: {unique_count}"]
+            
+            for cat, count in display_counts.items():
+                output_lines.append(f"- {cat}: {count}")
+                
+            if truncated:
+                output_lines.append(f"... (and {unique_count - top_n} more categories)")
+                
+            return "\n".join(output_lines)
+    
+    
 def load_dataset(session_state: Dict[str, Any], file_path: str) -> str:
     """
     Loads a dataset and stores its analyzer in the session state.
@@ -145,6 +205,12 @@ def get_dataset_columns(session_state: Dict[str, Any], file_path: str) -> str:
     if file_path not in analyzers:
         return "Error: Dataset not loaded. Please call load_dataset() first."
     return str(list(analyzers[file_path].df.columns))
+
+def get_dataset_variable_summary(session_state: Dict[str, Any], file_path: str, variable_name: str) -> str:
+    analyzers = session_state["analyzers"]
+    if file_path not in analyzers:
+        return "Error: Dataset not loaded. Please call load_dataset() first."
+    return str(analyzers[file_path].get_variable_summary(variable_name))
 
 def read_image(file_path):
     # Function to encode the image

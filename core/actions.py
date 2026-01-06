@@ -13,6 +13,7 @@ from core.tools import (
     get_dataset_description,
     get_dataset_info,
     get_dataset_columns,
+    get_dataset_variable_summary,
     read_and_summarize_pdf,
 )
 
@@ -39,6 +40,7 @@ def base_known_actions() -> dict:
         "get_dataset_description": get_dataset_description,
         "get_dataset_info": get_dataset_info,
         "get_dataset_columns": get_dataset_columns,
+         "get_dataset_variable_summary": get_dataset_variable_summary,
 
         "ask_human_input": ask_human_input,
         

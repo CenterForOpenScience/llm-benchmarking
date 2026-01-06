@@ -111,7 +111,7 @@ DESIGN = """
    Description: Take in an input image of type .png, .jpeg, .jpg, .webp, or .gif and describe in natural language what the image is about.
    Returns: Textual description of the provided image
 
-8. Dataset Related Tools
+8. Dataset Related Tools (works with .csv, .xlsx, .dta, and .rds)
    8a.  load_dataset:
     * e.g. `load_dataset: "data/study_A/patient_records.csv"` or  `load_dataset: "data/study_A/patient_records.xlsx"`
     * Description: Loads a dataset from a CSV or Excel file into memory for analysis. This function must be called successfully on a file path before any other `get_dataset_*` tools can be used on it.
@@ -141,6 +141,13 @@ DESIGN = """
     * e.g. `get_dataset_info: "data/study_A/patient_records.csv"`
     * Description: Provides a concise technical summary of a loaded CSV dataset, including column names, data types (e.g., integer, float), and the number of non-missing values for each column.
     * Returns: A string containing the full summary information of the dataset.
+    
+    8g.  get_dataset_variable_summary:
+    * e.g. `get_dataset_variable_summary: {"file_path": "data/study_A/patient_records.csv", "variable_name": "Name of variable that you want to investigate"}`
+    * Description: Calculates descriptive statistics for a given column/variable in a dataset. Returns summary statistics for a specific variable.
+        - Numeric: Returns the 5-number summary (Min, Q1, Median, Q3, Max).
+        - Categorical: Returns counts of unique categories (capped at top 20).
+    * Returns: A string containing a summary table of the descriptive statistics.
     
 9. ask_human_input:
     * e.g. `ask_human_input: "Need access permission to download data, please download it and give me the path to the downloaded folder"`
@@ -200,7 +207,7 @@ EXECUTE = """
    Description: Take in an input image of type .png, .jpeg, .jpg, .webp, or .gif and describe in natural language what the image is about.
    Returns: Textual description of the provided image
 
-8. Dataset Related Tools
+8.  Dataset Related Tools (works with .csv, .xlsx, .dta, and .rds)
    8a.  load_dataset:
     * e.g. `load_dataset: "data/study_A/patient_records.csv"` or  `load_dataset: "data/study_A/patient_records.xlsx"`
     * Description: Loads a dataset from a CSV or Excel file into memory for analysis. This function must be called successfully on a file path before any other `get_dataset_*` tools can be used on it.
@@ -219,6 +226,13 @@ EXECUTE = """
    8d.  get_dataset_description:
     * e.g. `get_dataset_description: "data/study_A/patient_records.csv"`
     * Description: Calculates descriptive statistics for the numerical columns of a loaded CSV dataset. This includes count, mean, standard deviation, min, max, and percentiles.
+    * Returns: A string containing a summary table of the descriptive statistics.
+    
+   8e.  get_dataset_variable_summary:
+    * e.g. `get_dataset_variable_summary: {"file_path": "data/study_A/patient_records.csv", "variable_name": "Name of variable that you want to investigate"}`
+    * Description: Calculates descriptive statistics for a given column/variable in a dataset. Returns summary statistics for a specific variable.
+        - Numeric: Returns the 5-number summary (Min, Q1, Median, Q3, Max).
+        - Categorical: Returns counts of unique categories (capped at top 20).
     * Returns: A string containing a summary table of the descriptive statistics.
 
 9.  get_dataset_info:
