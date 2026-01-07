@@ -282,6 +282,7 @@ def list_files_in_folder(folder_path: str) -> str:
         return f"Error: Path '{folder_path}' is not a directory."
 
     file_paths = []
+    strs2avoid = ["human_preregistration", "human_report", "llm-eval", "expected_post_registration"]
 
     # Walk through all directories and subdirectories
     for current_root, _, files in os.walk(folder_path):
@@ -289,7 +290,7 @@ def list_files_in_folder(folder_path: str) -> str:
             full_path = os.path.join(current_root, file)
             # Store paths relative to the provided folder
             relative_path = os.path.relpath(full_path, folder_path)
-            if "human_preregistration" not in relative_path and "human_report" not in relative_path: #avoid cheating
+            if not any(s in relative_path for s in strs2avoid): #avoid cheating
                 file_paths.append(relative_path)
 
     if not file_paths:
