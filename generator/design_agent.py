@@ -26,7 +26,7 @@ def run_design(study_path, show_prompt: bool = False, tier: str = "easy", code_m
     configure_file_logging(logger, study_path, f"design_{tier}__{code_mode}.log")
     # Load json template
     logger.info(f"Starting extraction for study path: {study_path}")
-    template =  read_json(GENERATE_REACT_CONSTANTS['json_template'])
+    template =  read_json(GENERATE_REACT_CONSTANTS[f'json_template_{code_mode}'])
     code_policy = DESIGN_CODE_MODE_POLICY.get(code_mode, DESIGN_CODE_MODE_POLICY["python"])
     
     system_prompt = build_system_prompt(code_mode)

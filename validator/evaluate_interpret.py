@@ -7,7 +7,7 @@ from docx import Document
 from openai import OpenAI
 
 from core.constants import API_KEY, EVALUATE_INTERPRET_CONSTANTS
-from info_extractor.file_utils import read_json, read_txt, read_pdf
+from info_extractor.file_utils import read_json, read_txt, read_pdf, read_docx
 
 
 def extract_text_from_pdf(pdf_path):

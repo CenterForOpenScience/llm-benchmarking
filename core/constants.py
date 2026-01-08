@@ -95,7 +95,8 @@ GENERATE_REACT_CONSTANTS = {
         "post_registration.json": "A structured document with key extracted information about the original paper and the claim to be replicated.",
         "replication_data": "The folder containing the data that can potentially be used for the replication.",
     },
-    "json_template": "templates/pre_registration_schema.json"
+    "json_template_python": "templates/pre_registration_schema_python.json",
+    "json_template_native": "templates/pre_registration_schema_native.json"
 }
 
 GENERATE_EXECUTE_REACT_CONSTANTS = {
