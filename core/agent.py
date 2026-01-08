@@ -34,6 +34,11 @@ DICT_ONLY_ACTIONS = {
     # add others that require kwargs
 }
 
+REASONING_MODELS = ("o1", "o3")
+
+def is_reasoning_model(model: str) -> bool:
+    return model.startswith(REASONING_MODELS)
+
 def _extract_action(text: str):
     for pat in ACTION_PATTERNS:
         m = pat.search(text)
@@ -67,13 +72,13 @@ def update_metadata(study_path: str, stage: str, data: dict):
     logger.info(f"Updated metadata for {stage} in {meta_path}")
 
 class Agent:
-    def __init__(self, system="", session_state=None):
+    def __init__(self, system="", session_state=None, model="gpt-4o"):
         self.system = system
         self.messages = []
         if self.system:
             self.messages.append({"role": "system", "content": system})
         self.session_state = session_state or {}
-
+        self.model = model
         self._tpm_window_start = time.time()
         self._tpm_tokens = 0  # tokens used since last reset
 
@@ -93,7 +98,7 @@ class Agent:
 
         # predict tokens for this call: prompt + a small completion reserve
         prompt_tokens = self.count_current_tokens()
-        completion_reserve = 1024  # keep it small and simple
+        completion_reserve = 2048  # keep it small and simple
         predicted_total = prompt_tokens + completion_reserve
 
         if self._tpm_tokens + predicted_total > 30000:
@@ -103,13 +108,17 @@ class Agent:
             self._tpm_window_start = time.time()
             self._tpm_tokens = 0
 
+        params = {
+            "model": self.model,
+            "messages": self.messages,
+        }
+        if is_reasoning_model(self.model):
+            params["max_completion_tokens"] = completion_reserve
+        else:
+            params["temperature"] = 0
+            params["max_tokens"] = completion_reserve
         # actual call
-        completion = client.chat.completions.create(
-            model=self.model if hasattr(self, "model") else "gpt-4o",
-            temperature=0,
-            messages=self.messages,
-            max_tokens=completion_reserve,  # optional; keeps outputs bounded
-        )
+        completion = client.chat.completions.create(**params)
 
         usage_stats = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         try:
@@ -211,9 +220,9 @@ class Agent:
 
 def run_react_loop(system_prompt: str, known_actions: dict, question: str, *,
                    max_turns: int = 50, session_state=None, on_final=None, log_turns: bool=True,
-                   study_path: str = None, stage_name: str = None, checkpoint_map: dict = None):
+                   study_path: str = None, stage_name: str = None, checkpoint_map: dict = None, model_name: str=None):
     
-    bot = Agent(system_prompt, session_state=session_state or {})    
+    bot = Agent(system_prompt, model=model_name, session_state=session_state or {})    
     next_prompt = question
     
     start_time = time.time()

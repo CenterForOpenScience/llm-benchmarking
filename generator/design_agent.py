@@ -22,7 +22,7 @@ def build_system_prompt(code_mode: str) -> str:
     # Put the policy in SYSTEM prompt
     return "\n\n".join([PREAMBLE, DESIGN, code_policy, EXAMPLE])
 
-def run_design(study_path, show_prompt: bool = False, tier: str = "easy", code_mode: str = "python"):
+def run_design(study_path, show_prompt: bool = False, tier: str = "easy", code_mode: str = "python", model_name: str = "gpt-4o"):
     configure_file_logging(logger, study_path, f"design_{tier}__{code_mode}.log")
     # Load json template
     logger.info(f"Starting extraction for study path: {study_path}")
@@ -31,7 +31,8 @@ def run_design(study_path, show_prompt: bool = False, tier: str = "easy", code_m
     
     system_prompt = build_system_prompt(code_mode)
     
-    question = f"""
+    question = f"""The goal is to create replication_info.json. 
+    
     You will have access to the following documents:
     {build_file_description(GENERATE_REACT_CONSTANTS['files'], study_path)}
     
@@ -69,7 +70,7 @@ def run_design(study_path, show_prompt: bool = False, tier: str = "easy", code_m
     Thought: [Your thinking/planning process for completing the task based on interactions so far]
     Answer: [Execute necessary next action to help you solve the task]
     """.strip()
-    
+    print(f"model name before running design: {model_name}")
     return run_react_loop(
     	system_prompt,
     	known_actions,
@@ -77,5 +78,6 @@ def run_design(study_path, show_prompt: bool = False, tier: str = "easy", code_m
     	session_state={"analyzers": {}},
     	study_path=study_path,
         stage_name="generate-design",
-    	on_final=lambda ans: save_output(ans, study_path)
+    	on_final=lambda ans: save_output(ans, study_path),
+    	model_name=model_name
     )

@@ -22,13 +22,17 @@ from core.agent import update_metadata
 client = OpenAI(api_key=API_KEY)
 logger, formatter = get_logger()
 
+def is_reasoning_model(model: str) -> bool:
+    return model.startswith(("o1", "o3"))
 
-def run_stage_1(study_path, difficulty, show_prompt=False):
+def run_stage_1(study_path, difficulty, show_prompt=False, model_name: str="gpt-4o"):
     """
     Extract original study information and save to post_registration.json
     """
     start_time = time.time()
     configure_file_logging(logger, study_path, f"extract.log")
+    print(f"\n\nmodel name for extractor stage: {model_name}\n\n")
+
     logger.info("Running Stage 1: original study extraction")
     # Load post-registration template
     with open(TEMPLATE_PATHS['post_registration_template']) as f:
@@ -38,7 +42,6 @@ def run_stage_1(study_path, difficulty, show_prompt=False):
     with open(TEMPLATE_PATHS['info_extractor_instructions']) as f:
         instructions = json.load(f).get(difficulty, {}).get("stage_1", {})
 
-    
     file_context, datasets_original, datasets_replication, code_file_descriptions, original_study_data = read_file_contents(
         study_path, difficulty, FILE_SELECTION_RULES, stage="stage_1"
     )
@@ -50,61 +53,65 @@ def run_stage_1(study_path, difficulty, show_prompt=False):
         study_path, template, file_context, stage="stage_1"
     )
     prompt = build_prompt(template, instructions, stage="stage_1")
-    
-    # if show_prompt:
+
     print("=== GENERATED PROMPT (Stage 1) ===")
-    # print(prompt)
     logger.info(f"=== GENERATED PROMPT (Stage 1) ===\n{prompt}")
     logger.info(f"\n\n=== GENERATED MESSAGE (Stage 1) ===\n{full_message}")
 
-    # save_prompt_log(study_path, "stage_1", prompt, full_message)
-
-    assistant = client.beta.assistants.create(
-        name=f"Extractor-stage-1-{difficulty}",
-        instructions=prompt,
-        model="gpt-4o",
-        tools=[]
-    )
-
-    run = client.beta.threads.create_and_run(
-        assistant_id=assistant.id,
-        thread={
-            "messages": [
-                {
-                    "role": "user",
-                    "content": full_message
-                }
-            ]
-        }
-    )
-
-    # wait until complete
-    while True:
-        run_status = client.beta.threads.runs.retrieve(
-            thread_id=run.thread_id,
-            run_id=run.id
+    if is_reasoning_model(model_name):
+        # ---- Responses API path (o1 / o3) ----
+        response = client.responses.create(
+            model=model_name,
+            input=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": full_message},
+            ],
+            #max_completion_tokens=4000,
         )
-        if run_status.status == "completed":
-            break
-        time.sleep(2)
-    # metric collection
-    duration = time.time() - start_time
-    usage = run_status.usage
-    metric_data = {
-        "total_time_seconds": round(duration, 2),
-        "total_tokens": usage.total_tokens if usage else 0,
-        "prompt_tokens": usage.prompt_tokens if usage else 0,
-        "completion_tokens": usage.completion_tokens if usage else 0,
-        # Extractor isn't loop-based in the same way, but we can log '1' turn
-        "total_turns": 1 
-    }
-    update_metadata(study_path, "extract_stage_1", metric_data)
-    
-    messages = client.beta.threads.messages.list(thread_id=run.thread_id)
-    reply = next((msg for msg in messages.data if msg.role == "assistant"), None)
 
-    extracted_json = None
-    if reply and reply.content:
+        duration = time.time() - start_time
+        usage = response.usage
+        json_text = response.output_text.strip()
+
+    else:
+        # ---- Assistants API path (chat models) ----
+        assistant = client.beta.assistants.create(
+            name=f"Extractor-stage-1-{difficulty}",
+            instructions=prompt,
+            model=model_name,
+            tools=[]
+        )
+
+        run = client.beta.threads.create_and_run(
+            assistant_id=assistant.id,
+            thread={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": full_message
+                    }
+                ]
+            }
+        )
+
+        while True:
+            run_status = client.beta.threads.runs.retrieve(
+                thread_id=run.thread_id,
+                run_id=run.id
+            )
+            if run_status.status == "completed":
+                break
+            time.sleep(2)
+
+        duration = time.time() - start_time
+        usage = run_status.usage
+
+        messages = client.beta.threads.messages.list(thread_id=run.thread_id)
+        reply = next((msg for msg in messages.data if msg.role == "assistant"), None)
+
+        if not reply or not reply.content:
+            raise RuntimeError("No assistant reply found for Stage 1.")
+
         for block in reply.content:
             if isinstance(block, TextContentBlock):
                 json_text = block.text.value.strip()
@@ -112,25 +119,39 @@ def run_stage_1(study_path, difficulty, show_prompt=False):
         else:
             raise ValueError("No TextContentBlock found in assistant reply.")
 
-		# Remove markdown-style code fences if present (e.g., ```json ... ```)																	  
-        if json_text.startswith("```"):
-            match = re.search(r"```(?:json)?\s*(.*?)\s*```", json_text, re.DOTALL)
-            if match:
-                json_text = match.group(1).strip()
+    # metric collection (unchanged logic, model-aware fields)
+    metric_data = {
+        "total_time_seconds": round(duration, 2),
+        "total_tokens": usage.total_tokens if usage else 0,
+        "prompt_tokens": (
+            usage.input_tokens if is_reasoning_model(model_name) else usage.prompt_tokens
+        ) if usage else 0,
+        "completion_tokens": (
+            usage.output_tokens if is_reasoning_model(model_name) else usage.completion_tokens
+        ) if usage else 0,
+        "total_turns": 1
+    }
+    update_metadata(study_path, "extract_stage_1", metric_data)
 
-        try:
-            extracted_json = json.loads(json_text)
-        except json.JSONDecodeError as e:
-            print("Failed to parse JSON:", e)
-            print("Raw text was:", json_text)
-            logger.info(f"\n\n=== RAW TEXT (Stage 1) ===\n{json_text}")
-            extracted_json = None
-    else:
-        print("No assistant reply found for Stage 1.")
+    extracted_json = None
 
-    # Save to post_registration.json
+    # Remove markdown-style code fences if present
+    if json_text.startswith("```"):
+        match = re.search(r"```(?:json)?\s*(.*?)\s*```", json_text, re.DOTALL)
+        if match:
+            json_text = match.group(1).strip()
+
+    try:
+        extracted_json = json.loads(json_text)
+    except json.JSONDecodeError as e:
+        print("Failed to parse JSON:", e)
+        print("Raw text was:", json_text)
+        logger.info(f"\n\n=== RAW TEXT (Stage 1) ===\n{json_text}")
+        extracted_json = None
+
     save_output(extracted_json, study_path, stage="stage_1")
-    return extracted_json  # original study data
+    return extracted_json
+
 
 
 def run_stage_2(study_path, difficulty, show_prompt=False):
@@ -242,10 +263,10 @@ def run_stage_2(study_path, difficulty, show_prompt=False):
     return final_output
 
 
-def run_extraction(study_path, difficulty, stage, show_prompt=False):
+def run_extraction(study_path, difficulty, stage, show_prompt=False, model_name:str="gpt-4o"):
 
     if stage == "stage_1":
-        return run_stage_1(study_path, difficulty, show_prompt)
+        return run_stage_1(study_path, difficulty, show_prompt, model_name)
     elif stage == "stage_2":
         return run_stage_2(study_path, difficulty, show_prompt)
     else:

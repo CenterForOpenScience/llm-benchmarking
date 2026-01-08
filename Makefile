@@ -7,6 +7,7 @@ REQ := pytest pytest_cov openai dotenv pymupdf pyreadr pandas numpy docker docx
 
 STUDY ?= ./data/original/1
 CODE_MODE ?= python
+MODEL ?= gpt-4o
 
 .PHONY: check-deps install-dev test test-extractor test-generator test-all design-easy execute-easy
 
@@ -23,22 +24,22 @@ check-docker:
 
 # extractor
 extract-stage1: check-deps
-	python -m info_extractor --stage stage_1 --difficulty easy --study-path $(STUDY)
+	python -m info_extractor --stage stage_1 --difficulty easy --study-path $(STUDY) --model-name $(MODEL)
 
 extract-stage2: check-deps
 	python -m info_extractor --stage stage_2 --difficulty easy --study-path $(STUDY)
 
 # generator module
 design-easy: check-deps
-	python -m generator --stage design --tier easy --study-path $(STUDY) --templates-dir ./templates --code-mode $(CODE_MODE)
+	python -m generator --stage design --tier easy --study-path $(STUDY) --templates-dir ./templates --code-mode $(CODE_MODE) --model-name $(MODEL)
 execute-easy: check-deps check-docker
-	python -m generator --stage execute --tier easy --study-path $(STUDY) --code-mode $(CODE_MODE)
+	python -m generator --stage execute --tier easy --study-path $(STUDY) --code-mode $(CODE_MODE) --model-name $(MODEL)
 
 generate: design-easy execute-easy
 
 # interpreter module
 interpret-easy: check-deps
-	python -m interpreter --tier easy --study-path $(STUDY)
+	python -m interpreter --tier easy --study-path $(STUDY) --model-name $(MODEL)
 
 # full pipeline (extract -> design -> execute -> interpret)
 pipeline-easy: extract-stage1 design-easy execute-easy interpret-easy

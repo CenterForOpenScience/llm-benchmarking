@@ -27,7 +27,7 @@ def _to_float_or_none(x):
         s = x.strip()
         if s.upper() in {"NA", "N/A", ""}:
             return None
-        return float(s)  # will still raise if it's some other junk
+        return float(s)  # will still raise if it's something else
     return None
 
 def summarize_eval_scores(study_path):

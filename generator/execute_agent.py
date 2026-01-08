@@ -81,7 +81,7 @@ def _on_final(ans: dict):
         stage_name="execute",
     )
 
-def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates", tier="easy", code_mode: str = "python"):
+def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates", tier="easy", code_mode: str = "python", model_name: str="gpt-4o"):
     configure_file_logging(logger, study_path, f"execute_{tier}__{code_mode}.log")
     logger.info(f"[agent] dynamic orchestrator run loop for: {study_path}")
 
@@ -162,7 +162,7 @@ Answer: [Execute necessary next action to help you solve the task]
 
         if show_prompt:
             logger.info("\n\n===== Agent Input (truncated) =====\n" + instruction[:2000])
-
+        print(f"\n\nmodel name for execute agent: {model_name}\n\n")
         return run_react_loop(
             system_prompt,
             known_actions,
@@ -176,7 +176,8 @@ Answer: [Execute necessary next action to help you solve the task]
                 study_path=study_path,
                 filename="execution_results.json",
                 stage_name="execute"
-            )
+            ),
+            model_name=model_name
         )
     finally:
         GENERATE_EXECUTE_REACT_CONSTANTS["files"] = prev_files

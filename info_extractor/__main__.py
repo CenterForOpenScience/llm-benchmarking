@@ -12,6 +12,7 @@ def main():
     parser.add_argument("--difficulty", choices=["easy", "medium", "hard"], required=True)
     parser.add_argument("--study-path", required=True)
     parser.add_argument("--show-prompt", action="store_true", default=False)
+    parser.add_argument("--model-name", help="Please specify the OpenAI model to use.")
     args = parser.parse_args()
 
     case_name = os.path.basename(os.path.normpath(args.study_path))
@@ -34,6 +35,7 @@ def main():
             difficulty=args.difficulty,
             stage=args.stage,
             show_prompt=args.show_prompt,
+            model_name=args.model_name
         )
     except Exception as e:
         logger.exception(f"Fatal error during run_extraction: {e}")

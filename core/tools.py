@@ -282,7 +282,7 @@ def list_files_in_folder(folder_path: str) -> str:
         return f"Error: Path '{folder_path}' is not a directory."
 
     file_paths = []
-    strs2avoid = ["human_preregistration", "human_report", "llm-eval", "expected_post_registration"]
+    strs2avoid = ["human_preregistration", "human_report", "llm_eval", "expected_post_registration"]
 
     # Walk through all directories and subdirectories
     for current_root, _, files in os.walk(folder_path):

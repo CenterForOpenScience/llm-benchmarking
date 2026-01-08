@@ -10,6 +10,7 @@ def main():
     p.add_argument("--templates-dir", default="./templates")
     p.add_argument("--show-prompt", action="store_true", default=False)
     p.add_argument("--code-mode",choices=CODE_MODE_CHOICES,default=DEFAULT_CODE_MODE,help="Code execution mode: 'native' (run original language) or 'python' (translate all to Python and run Python).",)
+    p.add_argument("--model-name", help="Please specify the OpenAI model to be used.")
     args = p.parse_args()
 
     if args.stage == "design" and args.tier == "easy":
@@ -18,7 +19,8 @@ def main():
         run_design(args.study_path,
         	show_prompt=args.show_prompt,
         	tier=args.tier,
-        	code_mode=args.code_mode
+        	code_mode=args.code_mode,
+        	model_name=args.model_name
         )
 
     elif args.stage == "execute" and args.tier == "easy":
@@ -29,7 +31,8 @@ def main():
             show_prompt=args.show_prompt,
             templates_dir=args.templates_dir,
             tier=args.tier,
-            code_mode=args.code_mode
+            code_mode=args.code_mode,
+            model_name=args.model_name
         )
 
     else:

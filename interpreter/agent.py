@@ -123,7 +123,7 @@ known_actions = {
     "read_log": read_log
 }
 
-def run_interpret(study_path, show_prompt=False, tier="easy"):
+def run_interpret(study_path, show_prompt=False, tier="easy", model="gpt-4o"):
     configure_file_logging(logger, study_path, f"interpret_{tier}.log")
     logger.info(f"Starting execution evaluation for study path: {study_path}")
 
@@ -182,4 +182,5 @@ Answer: [Execute necessary next action to help you solve the task]
             filename="interpret_results.json",
             stage_name="interpret",
         ),
+        model_name=model
     )
