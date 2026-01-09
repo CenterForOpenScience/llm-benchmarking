@@ -85,55 +85,70 @@ class Agent:
     def __call__(self, message):
         content, usage = self.execute(message)
         return content, usage
-
+    
     def execute(self, message=None):
         if message:
             self.messages.append({"role": "user", "content": message})
-        # simple 30k TPM limiter
         now = time.time()
-        # reset window every 60s
         if now - self._tpm_window_start >= 60:
             self._tpm_window_start = now
             self._tpm_tokens = 0
 
-        # predict tokens for this call: prompt + a small completion reserve
         prompt_tokens = self.count_current_tokens()
-        completion_reserve = 2048  # keep it small and simple
+        completion_reserve = 2048
         predicted_total = prompt_tokens + completion_reserve
 
         if self._tpm_tokens + predicted_total > 30000:
-            # gentle delay (20–30s); then reset counters
             print("going to sleep...zZZ")
             time.sleep(25)
             self._tpm_window_start = time.time()
             self._tpm_tokens = 0
 
-        params = {
-            "model": self.model,
-            "messages": self.messages,
-        }
-        if is_reasoning_model(self.model):
-            params["max_completion_tokens"] = completion_reserve
-        else:
-            params["temperature"] = 0
-            params["max_tokens"] = completion_reserve
-        # actual call
-        completion = client.chat.completions.create(**params)
+        is_codex = "codex" in self.model
+        is_reasoning = is_reasoning_model(self.model)
 
+        result_content = ""
         usage_stats = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        try:
+
+        if is_codex or is_reasoning:
+            # Responses API (o1 / o3 / codex)
+            response = client.responses.create(
+                model=self.model,
+                input=self.messages,
+            )
+
+            result_content = response.output_text or ""
+
+            usage = response.usage
+            if usage:
+                usage_stats["prompt_tokens"] = getattr(usage, "input_tokens", 0)
+                usage_stats["completion_tokens"] = getattr(usage, "output_tokens", 0)
+                usage_stats["total_tokens"] = (
+                    usage_stats["prompt_tokens"] + usage_stats["completion_tokens"]
+                )
+            else:
+                usage_stats["total_tokens"] = predicted_total
+
+        else:
+            # Chat Completions API (gpt-4o, 4.1)
+            completion = client.chat.completions.create(
+                model=self.model,
+                messages=self.messages,
+                temperature=0,
+                max_tokens=completion_reserve,
+            )
+
+            result_content = completion.choices[0].message.content
+
             usage = completion.usage
             if usage:
                 usage_stats["prompt_tokens"] = usage.prompt_tokens
                 usage_stats["completion_tokens"] = usage.completion_tokens
                 usage_stats["total_tokens"] = usage.total_tokens
-        except Exception:
-            # Fallback to predicted if API doesn't return usage
-            usage_stats["total_tokens"] = predicted_total
+            else:
+                usage_stats["total_tokens"] = predicted_total
 
         self._tpm_tokens += usage_stats["total_tokens"]
-        
-        result_content = completion.choices[0].message.content
         self.messages.append({"role": "assistant", "content": result_content})
 
         return result_content, usage_stats
