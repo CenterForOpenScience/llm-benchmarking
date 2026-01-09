@@ -34,10 +34,37 @@ DICT_ONLY_ACTIONS = {
     # add others that require kwargs
 }
 
-REASONING_MODELS = ("o1", "o3")
+REASONING_MODELS = ("o1", "o3", "gpt-5")
 
 def is_reasoning_model(model: str) -> bool:
     return model.startswith(REASONING_MODELS)
+
+def messages_to_responses_input(messages):
+    """
+    Convert chat-style messages to Responses API input.
+    - system/user/developer -> input_text
+    - assistant -> output_text
+    """
+    output = []
+    for m in messages:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+
+        if not isinstance(content, str):
+            content = str(content)
+
+        part_type = "output_text" if role == "assistant" else "input_text"
+
+        output.append({
+            "role": role,
+            "content": [
+                {
+                    "type": part_type,
+                    "text": content
+                }
+            ]
+        })
+    return output
 
 def _extract_action(text: str):
     for pat in ACTION_PATTERNS:
@@ -114,7 +141,7 @@ class Agent:
             # Responses API (o1 / o3 / codex)
             response = client.responses.create(
                 model=self.model,
-                input=self.messages,
+                input=messages_to_responses_input(self.messages),
             )
 
             result_content = response.output_text or ""
@@ -135,7 +162,7 @@ class Agent:
                 model=self.model,
                 messages=self.messages,
                 temperature=0,
-                max_tokens=completion_reserve,
+                #max_tokens=completion_reserve,
             )
 
             result_content = completion.choices[0].message.content
