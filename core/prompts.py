@@ -312,7 +312,7 @@ RUN POLICY (DESIGN)
 
     "python": """
 RUN POLICY (DESIGN)
-- Translate every non-Python analysis script (.R/.do/etc.) into Python.
+- Translate every non-Python analysis script (.R/.do/etc.) into Python. Any necessary translation must be performed BEFORE filling out the given JSON template.
 - Keep originals unchanged; write new files like: <basename>__py.py
 - Ensure all IO uses /app/data.
 - If the original code is incompatible with the data, rewrite the code so that it is compatible. 
