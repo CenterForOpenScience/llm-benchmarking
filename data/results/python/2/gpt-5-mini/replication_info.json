@@ -1,0 +1,96 @@
+{
+  "script": "replication_data/run_replication.py",
+  "language": "python",
+  "dependencies": ["pandas","numpy","scipy","statsmodels","pyreadr","scikit-learn","matplotlib","seaborn"],
+  "replication_study": {
+    "hypothesis": "Higher use of memorization (student-level MEMOR, standardized) negatively moderates the association between school-average mathematics ability and individual mathematics self-concept (SCMAT): the interaction MEMOR_z \u00d7 school_PVxMATH_z will have a negative coefficient.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "PISA2012.replication.RDS (local copy in ./data/original/2/python/replication_data/ and PISA2012.replication.pkl)",
+      "source_type": "International large-scale student assessment database (PISA replication file; cross-sectional survey data)",
+      "wave_or_subset": "PISA 2012 replication file (full dataset available in ./data/original/2/python/replication_data/). Note: original study used PISA 2003 (post_registration.json).",
+      "sample_size": "480,174 rows in the provided PISA2012 replication file (before applying filters used in analysis script). Final analytic N will be smaller after excluding missing codes (>997), NA values, and schools with n <= 10 per the provided script.",
+      "unit_of_analysis": "Individual students nested within schools (and schools nested within countries)",
+      "access_details": "Local copies available under /app/data: ./data/original/2/python/replication_data/PISA2012.replication.RDS (and .pkl). No further access restrictions in this workspace. Outside this workspace, PISA data typically require registration via OECD; original paper referenced PISA 2003 (post_registration.json).",
+      "qualification": {
+        "explanation": "The available dataset contains the core variables required to operationalize the focal interaction and follow the original analysis workflow implemented in the provided R script (standardize plausible values, compute school averages, create cross-products, fit multilevel models on each plausible value, pool estimates). The replication_data includes SCMAT, PV1MATH..PV5MATH, MEMOR, W_FSTUWT, SCHOOLID, STIDSTD, and CNT (column list confirmed via get_dataset_columns). See dataset columns: ./data/original/2/python/replication_data/PISA2012.replication.RDS and the R script ./data/original/2/python/replication_data/!!CORRECTION!!_Seaton_AmEduResJourn_2010_Blxd_final.R for the analysis steps.",
+        "similarity_to_original": "High fidelity: both original study (post_registration.json) and the replication script use PISA-level data, the same constructs (mathematics self-concept 'SCMAT', plausible values PV1MATH..PV5MATH for math ability, and the memorization scale 'MEMOR'). Post-registration summary documents the original outcome and predictors (post_registration.json, fields 'outcome_variable' and 'independent_variables'); the R script operationalizes those same variables (see ./data/original/2/python/replication_data/!!CORRECTION!!_Seaton_AmEduResJourn_2010_Blxd_final.R). The dataset in this workspace contains those variables (see ./data/original/2/python/replication_data/PISA2012.replication.RDS).",
+        "deviation_from_original": "Key deviation: the original study (post_registration.json) analyzed PISA 2003 data (post_registration.json: 'wave_or_subset': '2003 PISA wave'), whereas the available replication data is a PISA2012 replication file (./data/original/2/python/replication_data/PISA2012.replication.RDS). This produces a different survey wave and potentially different country coverage and cohort composition. Also, the provided dataset contains 480,174 rows prior to filtering, which differs from the original reported sample (post_registration.json: ~265,180 after exclusions). These differences are documented in: original description - ./data/original/2/python/post_registration.json; replication resources - ./data/original/2/python/replication_data/PISA2012.replication.RDS and ./data/original/2/python/replication_data/!!CORRECTION!!_Seaton_AmEduResJourn_2010_Blxd_final.R."
+      },
+      "notes": "The R script filters observations using PISA missing codes (>997) for SCMAT, PVs, and MEMOR and drops schools with n <= 10; it standardizes PVs, SCMAT, and MEMOR and computes school means per plausible value. The R script expects to download an RDS from GitHub but local copies of the RDS and a .pkl exist in the replication_data folder. Ensure all IO uses /app/data in translated Python code. Potential caveats: PISA coding conventions (missing value codes >997) must be respected; the R script writes output files to working directory \u2014 adapted code must save outputs under /app/data. Multilevel model specification in R (lmer with complex random slopes at school and country) may not be identically supported by Python's MixedLM; validate model equivalence or use rpy2 to call lme4 if exact equivalence is needed. Large sample size may require >=16GB RAM for comfortable model fitting."
+    },
+    "planned_method": {
+      "steps": [
+        "Load replication dataset from /app/data/replication_data (use PISA2012.replication.pkl or read RDS via pyreadr). Files: ./data/original/2/python/replication_data/PISA2012.replication.RDS or .pkl.",
+        "Create uniqueSchoolID and uniqueStudentID (uniqueSchoolID = SCHOOLID|CNT; uniqueStudentID = STIDSTD|uniqueSchoolID) following the R script.",
+        "Filter data: remove cases where SCMAT > 997 or SCMAT is NA; remove cases where any PV1MATH..PV5MATH > 997 or NA; remove cases where MEMOR > 997 or MEMOR is NA (consistent with R script).",
+        "Drop schools with n <= 10 students (group_by uniqueSchoolID then filter n()>10).",
+        "Standardize PV1MATH..PV5MATH (z-scores), compute quadratic terms (PVx_z^2), standardize SCMAT (SCMAT_z) and MEMOR (MEMOR_z).",
+        "Compute school-level means for each standardized plausible value: school_PV1MATH_z .. school_PV5MATH_z by grouping on uniqueSchoolID.",
+        "Create cross-product interaction terms CROSS1..CROSS5 = MEMOR_z * school_PVxMATH_z.",
+        "Estimate five multilevel mixed-effects models (one per plausible value). Each model: SCMAT_z ~ PVxMATH_z + PVxMATH_z_sq + school_PVxMATH_z + MEMOR_z + CROSSx + (random slopes and intercepts by uniqueSchoolID and by CNT) and apply student-level weights W_FSTUWT (try to match lmer specification). Use REML=TRUE for consistency. If Python MixedLM cannot handle the exact random-effects structure, consider calling R's lme4 via rpy2 or running R script in an R environment.",
+        "Extract the interaction coefficient (CROSSx) and its standard error and p-value from each model (for x=1..5).",
+        "Pool estimates across plausible values: compute final_crossB as mean of the five interaction coefficients, compute final sampling variance (mean of squared SEs), compute final imputation variance (per PISA manual), compute final standard error and final p-value (use Fisher's method on the five p-values or equivalent pooling method consistent with the R script).",
+        "Report final_crossB, finalSE, finalP (pooled p-value), and produce output files saved to /app/data (e.g., model output summaries and cross_P_results.csv).",
+        "Perform sensitivity checks (e.g., alternative random-effects specifications, use of country fixed effects, alternative missing-data thresholds)."
+      ],
+      "models": "Multilevel linear mixed-effects models (random intercepts and random slopes at school and country levels), estimated separately per plausible value and pooled across five plausible values. Implementation options: Python statsmodels.MixedLM or interfacing to R lme4 via rpy2 if exact lmer functionality is required.",
+      "outcome_variable": "SCMAT_z (standardized mathematics self-concept scale)",
+      "independent_variables": "Primary: PVxMATH_z (student math plausible value, standardized), PVxMATH_z_sq (quadratic), school_PVxMATH_z (school mean of standardized plausible value), MEMOR_z (standardized memorization scale), CROSSx (MEMOR_z * school_PVxMATH_z).",
+      "control_variables": "The focal R script does not include additional fixed-effect control covariates beyond the specified variables; random effects include student-level slopes and country-level random effects. If desired, demographic covariates from the dataset (e.g., ESCS, gender if available) can be added\u2014document any additions.",
+      "tools_software": "Python 3.10; key packages: pandas, numpy, scipy, statsmodels; optional: pyreadr or rpy2 to read RDS or call R's lme4 for exact replication. For plotting and diagnostics: matplotlib, seaborn.",
+      "planned_estimation_and_test": {
+        "estimation": "Target estimate is the pooled interaction coefficient (final_crossB) for MEMOR_z \u00d7 school_PVxMATH_z, reported as an average across five plausible value model estimates (see R script and PISA manual). Also report final standard error (finalSE) computed using PISA pooling rules and pooled p-value (finalP) via Fisher combination, as in provided R script.",
+        "test": "Two-sided tests on the pooled interaction coefficient; p-values for each plausible value's interaction term computed from model t-statistics; pooled p-value computed using Fisher's method consistent with the R script (metaRNASeq or metap in R; in Python use scipy.stats.combine_pvalue with method='fisher')."
+      },
+      "missing_data_handling": "Follow the R script: listwise deletion relative to variables of interest using PISA coding rules: remove responses with SCMAT, MEMOR, or PV1..PV5 codes >997 and remove NA. Remove schools with sample size <=10.",
+      "multiple_testing_policy": "The focal replication is a single pre-registered interaction test (MEMOR \u00d7 school-average ability). If multiple moderators are evaluated, adjust p-values using a correction (e.g., Benjamini\u2013Hochberg FDR or Bonferroni) and report both uncorrected and corrected values. The original study emphasized p < .001 given large N; report exact p-values and use p < .05 as primary significance threshold, but note original used stricter thresholds for emphasis.",
+      "inference_criteria": "Primary inference: directionally negative coefficient for the interaction (expect negative sign). Primary significance threshold: p < .05 for replication claim; also report p < .001 and effect size magnitude. Emphasize sign consistency (negative) and effect size comparable in magnitude to original estimates (report coefficient and standardized effect)."
+    },
+    "codebase": {
+      "files": {
+        "!!CORRECTION!!_Seaton_AmEduResJourn_2010_Blxd_final.R": "R script that operationalizes the replication analysis: imports PISA RDS, creates unique IDs, filters missing codes (>997), standardizes variables, computes school means for each plausible value, builds cross-product terms, fits five multilevel lmer models (one per plausible value), extracts interaction coefficients and SEs, pools across plausible values following PISA manual, and saves results. Located at ./data/original/2/python/replication_data/.",
+        "PISA2012.replication.RDS": "Local copy of the PISA 2012 replication dataset used by the R script; contains variables needed (SCMAT, PV1MATH..PV5MATH, MEMOR, W_FSTUWT, SCHOOLID, STIDSTD, CNT, etc.). Located at ./data/original/2/python/replication_data/. Will be read by translated Python script from /app/data.",
+        "PISA2012.replication.pkl": "Pickle version of the same dataset for faster loading in Python. Use pandas.read_pickle to load within Python replication script; located at ./data/original/2/python/replication_data/.",
+        "post_registration.json": "Contains extracted information about the original study: original outcome (SCMAT), original data (PISA 2003), model descriptions, and numerical summaries. Use as the reference for the original study (./data/original/2/python/post_registration.json).",
+        "initial_details.txt": "Contains the focal claim and numeric focal effect noted in the original materials (./data/original/2/python/initial_details.txt)."
+      },
+      "notes": "Planned change: translate R analysis script to Python (filename suggestion: Seaton_AmEduResJourn_2010_Blxd_final__py.py) that reads data from /app/data, implements the same filtering, standardization, school-mean computations, model-fitting, and pooling steps, and writes outputs to /app/data. Follow the repository/run policy: do not overwrite originals; create new Python file. Potential issue: Python's statsmodels.MixedLM may not support the identical random-effects structure as lme4 (complex nested random slopes). If exact replication of random-effects structure is required, either call R's lme4 via rpy2 or run the provided R script in an R environment. Ensure any created files are saved under /app/data."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=1.4.0",
+          "numpy>=1.22.0",
+          "scipy>=1.7.0",
+          "statsmodels>=0.13.0",
+          "pyreadr>=0.4.5",
+          "scikit-learn>=1.0.0",
+          "matplotlib>=3.4.0",
+          "seaborn>=0.11.0",
+          "rpy2>=3.5.0 (optional, only if calling R/lme4 from Python)"
+        ],
+        "other": [
+          "git",
+          "wget",
+          "make",
+          "R (optional, if running original R script directly)",
+          "R packages (lme4, lmerTest, afex, metap, metaRNASeq) if running R"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "16"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "1) Place the data files under /app/data/replication_data/ (already present). 2) Run the translated Python script Seaton_AmEduResJourn_2010_Blxd_final__py.py which will: read PISA2012.replication.pkl or the RDS via pyreadr from /app/data, create unique IDs, apply PISA missing-code filters (>997) for SCMAT, PV1..PV5, MEMOR, standardize variables, compute school means per PV, create CROSS terms, fit MixedLM models for each plausible value with student weights W_FSTUWT and the random-effects structure mirroring the R script where possible, extract interaction coefficients and SEs, pool estimates per PISA manual to produce final_crossB, finalSE and final pooled p-value (Fisher method), and save results (e.g., model outputs and cross_P_results.csv) to /app/data. 3) If statsmodels cannot match the lmer random effects exactly, run the original R script in R (adjusting file paths to /app/data) or use rpy2 to call lme4 from Python. 4) Produce an output report comparing coefficient sign, magnitude, SE, and p-value against the original reported interaction (see post_registration.json and initial_details.txt).",
+      "comparison_metrics": "Compare (a) pooled interaction coefficient (final_crossB) magnitude and sign to original reported coefficient(s) (post_registration.json lists an interaction of -0.089, p < .001; initial_details.txt lists effect size -0.157), (b) pooled standard error and 95% CI, (c) pooled p-value and significance (report thresholds p<.05 and p<.001), (d) direction consistency (negative vs original negative), (e) effect size comparisons (standardized coefficients) and practical significance."
+    }
+  }
+}
