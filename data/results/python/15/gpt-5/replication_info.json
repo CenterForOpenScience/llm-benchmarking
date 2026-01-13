@@ -1,0 +1,78 @@
+{
+  "replication_study": {
+    "hypothesis": "In Afghanistan\u2019s 2014 election data, the relationship between local violence intensity and the probability of district-level election fraud (measured by the last-digit forensic flag) is inverted U-shaped: the linear term of violence is positive and the quadratic term is negative in a logit regression controlling for election logistics, development, and geography.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "Afghanistan_Election_Violence_2014 (CSV/DTA) in replication_data",
+      "source_type": "Derived election-violence dataset (election returns with forensic fraud flag + conflict events), analogous to the original Afghanistan study",
+      "wave_or_subset": "2014 Afghanistan election data; using violence measures at 5-day (election window) and 60-day (pre-election) windows",
+      "sample_size": "To be determined at runtime from the CSV; code reports N (expected roughly district-level rows)",
+      "unit_of_analysis": "District",
+      "access_details": "Data provided locally in /app/data for replication execution",
+      "qualification": {
+        "explanation": "This dataset covers Afghanistan elections and conflict intensity measures, mirroring the constructs in the 2009-based original study while providing a different temporal sample (2014). It contains necessary variables to test the same model specification on an independent election cycle, enabling a robustness replication.",
+        "similarity_to_original": "Original uses 2009 Afghanistan presidential election with district-level fraud from a last-digit test and violence intensity around the election period (post_registration.json: original_study.data.source; original_study.method.description). The provided 2014 dataset includes analogous variables: fraud (last-digit test flag), violence in the 5-day election window (sigact_5r) and 60-day pre-election window (sigact_60r), and controls (pcx, electric, pcexpend, dist, elevation), as shown in the CSV columns and the Stata .do script relabels and uses them accordingly (Weidmann_Data_Analysis_Final.do; get_dataset_columns on Afghanistan_Election_Violence_2014.csv).",
+        "deviation_from_original": "Original analyses focus on the 2009 cycle with ECC recount validation and 398 districts (post_registration.json: original_study.data.wave_or_subset, sample_size). The replication dataset is from 2014 (file names: Afghanistan_Election_Violence_2014.csv/.dta), representing a later election under similar conditions but a different sample of observations and potentially different conflict patterns. The provided .do script replicates the core logit models but does not include ECC recount linkage; thus, we replicate the primary inverted-U claim using the last-digit fraud indicator rather than the recount validation."
+      },
+      "notes": "Columns present: ['province','district','distid','lat','lon','fraud','elect','votes','pcn','pcno','pcnx','pcx','pop_1314','electric','electricp','tot_expend','pcexpend','elevation','elevationk','dist','sigact_5','sigact_60','sigact_5r','sigact_60r','regcom']. This supports required variables for the models in the .do. Any outputs (tables/figures) will be saved to /app/data. If missing values exist, listwise deletion will be used for model variables."
+    },
+    "planned_method": {
+      "steps": [
+        "Load /app/data/Afghanistan_Election_Violence_2014.csv.",
+        "Verify/construct variables: fraud (binary), sigact_5r, sigact_60r, pcx, electric, pcexpend, dist, elevation, regcom, elect. Create squared violence terms in-model.",
+        "Fit Logit model (one-way clustered SE at regcom): fraud ~ sigact_5r + sigact_5r^2 + pcx + electric + pcexpend + dist + elevation.",
+        "Fit Logit model (two-way clustered SE by regcom and elect) for the same specification.",
+        "Repeat both one-way and two-way clustered models using sigact_60r and its square instead of sigact_5r.",
+        "Compute marginal predicted probabilities across grids: sigact_5r in [0, 0.40] step 0.01; sigact_60r in [0, 3] step 0.075; other covariates set to sample means. Save predictions and plots.",
+        "Export coefficient tables (point estimates, robust SE, p-values) to CSV in /app/data."
+      ],
+      "models": "Logit (GLM Binomial with logit link) with cluster-robust SEs: one-way clustering on regcom and two-way clustering on regcom and elect; quadratic term for violence included via c.violence##c.violence equivalent.",
+      "outcome_variable": "fraud (indicator from the last-digit test of polling station/district returns aggregated to district level)",
+      "independent_variables": "sigact_5r or sigact_60r (violence intensity), their squared terms; controls: pcx (percentage centers closed), electric (electrification), pcexpend (per-capita expenditure), dist (distance to Kabul), elevation (elevation)",
+      "control_variables": "pcx, electric, pcexpend, dist, elevation",
+      "tools_software": "Python (pandas, numpy, statsmodels, matplotlib, seaborn)",
+      "planned_estimation_and_test": {
+        "estimation": "Coefficients for violence (linear) and violence squared (quadratic) in logit models; marginal predicted probabilities over violence grids",
+        "test": "Wald z-tests for coefficients with cluster-robust SEs; focus on sign and significance of quadratic term (expected negative)"
+      },
+      "missing_data_handling": "Listwise deletion for rows with missing values in model variables",
+      "multiple_testing_policy": "Not applicable beyond reporting both 5-day and 60-day windows; no additional correction planned",
+      "inference_criteria": "Primary criterion: coefficient on squared violence is negative and statistically significant (p<0.05). Secondary: turning point within the observed data range and predicted probabilities display an inverted U-shape."
+    },
+    "codebase": {
+      "files": {
+        "weidmann_callen_2014_replication__py.py": "Python translation of Weidmann_Data_Analysis_Final.do. Loads /app/data/Afghanistan_Election_Violence_2014.csv; fits logit models with one-way cluster robust SE (regcom) and two-way cluster robust SE (regcom, elect); outputs coefficient tables (Table2_oneway.csv, Table2_twoway.csv), and prediction grids/plots for 5-day and 60-day windows (margins_5day.csv/.png, margins_60day.csv/.png) to /app/data."
+      },
+      "notes": "All IO paths are under /app/data. The two-way cluster covariance is computed via Cameron-Gelbach-Miller combination using statsmodels\u2019 sandwich covariance utilities if available; otherwise, a custom function computes it from model scores."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=1.5.0",
+          "numpy>=1.23.0",
+          "statsmodels>=0.14.0",
+          "scipy>=1.9.0",
+          "matplotlib>=3.6.0",
+          "seaborn>=0.12.0"
+        ],
+        "other": [
+          "git",
+          "wget"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "1) Place Afghanistan_Election_Violence_2014.csv into /app/data. 2) Run: python weidmann_callen_2014_replication__py.py. 3) Inspect outputs in /app/data: Table2_oneway.csv, Table2_twoway.csv, margins_5day.csv/.png, margins_60day.csv/.png. 4) Compare signs, magnitudes, and p-values for the violence squared terms with the original findings (expect negative and significant).",
+      "comparison_metrics": "Sign and significance of the quadratic violence coefficient; sign of the linear term; location of turning point (\u2212\u03b21/(2\u03b22)); shape of marginal predicted probabilities over violence grids; pseudo R^2 (McFadden) if computed."
+    }
+  }
+}

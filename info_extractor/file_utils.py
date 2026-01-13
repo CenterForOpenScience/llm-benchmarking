@@ -67,7 +67,7 @@ def check_long_logs(full_doc_content: str, model_name: str = "gpt-4o"):
             f"{running_summary}\n\n"
             f"--- NEW LOG CHUNK ({idx}/{len(chunks)}) ---\n"
             f"{chunk}"
-            f"Return the existing summary verbatim with the summary of the new log chunk"
+            f"Only return the summary of the new log chunk."
         )
         messages = [
             {"role": "system", "content": sys_prompt},
@@ -79,7 +79,7 @@ def check_long_logs(full_doc_content: str, model_name: str = "gpt-4o"):
                 temperature=0,
                 messages=messages
             )
-            running_summary.append(out.choices[0].message.content)
+            running_summary += out.choices[0].message.content
         except Exception as e:
             running_summary += f"\n[Error processing chunk {idx}: {e}]"
 

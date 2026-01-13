@@ -1,0 +1,87 @@
+{
+  "replication_study": {
+    "hypothesis": "Among nations, the interaction between cultural tightness and government efficiency is negatively associated with the estimated exponential infection growth rate (country-level slope of log(total COVID-19 cases per million) across the first 30 days after exceeding 1 case per million).",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "gelfand_replication_data.csv (replication compilation)",
+      "source_type": "Administrative database-derived panel (ECDC cases/deaths), merged with cultural tightness index and World Bank governance indicators",
+      "wave_or_subset": "Per-country first 30 days after surpassing 1 case per million (constructed from daily panel); excludes 6 countries (Belgium, France, New Zealand, Norway, Pakistan, Venezuela) per author guidance",
+      "sample_size": "57 countries (each contributing up to 30 daily observations for growth estimation); final regression N\u224857",
+      "unit_of_analysis": "Nation (country-level growth coefficient as the outcome)",
+      "access_details": "Data file provided locally at /app/data/original/19/0112_python_gpt5/replication_data/gelfand_replication_data.csv (derived from OSF: https://osf.io/pc4ef/ per post_registration.json).",
+      "qualification": {
+        "explanation": "The dataset contains daily COVID-19 metrics by country with cultural tightness and government efficiency measures, enabling construction of infection growth rates and testing the interaction effect. It provides a distinct sampling frame from the original fixed calendar window by focusing on the first 30 days post-threshold per country, thereby serving as a close replication with a different temporal slice yet same constructs.",
+        "similarity_to_original": "The original study used ECDC cases/deaths with cultural tightness and World Bank Government Efficiency (post_registration.json: original_study.data.source; wave March 21\u201330, 2020). The provided dataset mirrors these constructs (Analysis_script_v2.do imports gelfand_replication_data.csv and references variables: total_covid_per_million, tightness, efficiency, GDP, Gini, median_age). The analysis estimates exponential growth via log(total cases per million) regressed on time, matching the original modeling approach (post_registration.json.method.models).",
+        "deviation_from_original": "Original window was March 21\u201330, 2020 (post_registration.json.original_study.data.wave_or_subset). The replication computes country-specific growth over the first 30 days after surpassing 1 case per million (Analysis_script_v2.do: keep if total_covid_per_million > 1; by country: time=_n; drop if time>30), thus using a different temporal subset. The script excludes 6 countries per author note (Analysis_script_v2.do comment block), aligning to 57 countries; this differs from the CSV\u2019s initial 63 and also may differ from the original preprint\u2019s 57 via explicit justification. Degrees of freedom may differ from the published model because of this construction."
+      },
+      "notes": "Variables referenced in the .do: country, date (year, month, day), total_covid_per_million, gdp, gini_val, alternative_gini, median_age, efficiency, tightness, obs_count_original. The .do fills missing early dates with tsfill and carries forward totals for zero-case days. The growth coefficient per country is obtained from OLS of log(total cases per million) on time during the first 30 days above the threshold. Final regression uses coeffs1 ~ eff_tight + gdp + gini + median_age + efficiency + tightness, where eff_tight = efficiency * tightness, and gini is constructed by replacing gini_val with alternative_gini when missing. Excluded countries: Belgium, France, New Zealand, Norway, Pakistan, Venezuela."
+    },
+    "planned_method": {
+      "steps": [
+        "Load /app/data/original/19/0112_python_gpt5/replication_data/gelfand_replication_data.csv.",
+        "Drop Belgium, France, New Zealand, Norway, Pakistan, Venezuela per author guidance.",
+        "Parse dates; sort by country and date; forward-fill totals for inserted early dates with zero cases.",
+        "Within each country, keep observations where total_covid_per_million > 1.",
+        "Compute ltotalcases = log(total_covid_per_million).",
+        "Within each country, create a time index (1..T) ordered by date; restrict to first 30 days (time <= 30).",
+        "Construct gini by using gini_val where available, else alternative_gini.",
+        "For each country, estimate OLS: ltotalcases ~ time; store the slope coefficient as the infection growth rate.",
+        "Merge per-country growth coefficients back to a single country-level dataframe with predictors/controls.",
+        "Create interaction eff_tight = efficiency * tightness.",
+        "Run OLS: growth_coeff ~ eff_tight + gdp + gini + median_age + efficiency + tightness (country-level).",
+        "Extract coefficient for eff_tight, standard error, t-statistic, p-value, and confidence interval.",
+        "Perform robustness checks (optional): Winsorize extreme growth coefficients; re-run with/without controls; verify no perfect collinearity.",
+        "Save outputs (estimates and model summary) to /app/data."
+      ],
+      "models": "Country-level OLS using infection growth coefficient as outcome; interaction model with covariates.",
+      "outcome_variable": "Country-specific infection growth coefficient (slope from regressing log(total COVID-19 cases per million) on time over first 30 days after threshold).",
+      "independent_variables": "eff_tight (efficiency * tightness), efficiency, tightness",
+      "control_variables": "gdp (GDP per capita), gini (composite from gini_val or alternative_gini), median_age",
+      "tools_software": "Python 3.10+, pandas, numpy, statsmodels, scipy; dateutil for date parsing.",
+      "planned_estimation_and_test": {
+        "estimation": "OLS regression coefficients, particularly the coefficient on the interaction eff_tight",
+        "test": "t-test for H0: beta_eff_tight = 0 (two-sided), with 95% CI"
+      },
+      "missing_data_handling": "Listwise deletion in the final regression; for Gini, fallback to alternative_gini when gini_val is missing; carry-forward for totals on inserted zero-case dates as in the .do script.",
+      "multiple_testing_policy": "Not applicable for a single focal outcome. If multiple outcomes are later analyzed, apply Holm-Bonferroni across related tests.",
+      "inference_criteria": "Primary criterion: negative and statistically significant coefficient on eff_tight at alpha=0.05; report coefficient magnitude, SE, t, p, and 95% CI; direction must be negative to support hypothesis."
+    },
+    "codebase": {
+      "files": {
+        "Analysis_script_v2.do": "Original Stata script describing the replication pipeline: imports CSV, prepares panel time series per country, computes per-country growth rates, and runs the country-level interaction regression.",
+        "analysis_py.py": "Python translation of the .do script: loads /app/data/original/19/0112_python_gpt5/replication_data/gelfand_replication_data.csv; applies the same filtering and transformations; fits per-country OLS for growth slopes, then runs the final OLS with interaction and controls; writes outputs to /app/data.",
+        "utils_py.py": "Helper functions for per-country regression, date parsing, and robust handling of missing values.",
+        "outputs/": "Directory under /app/data where model summaries (CSV/JSON) and logs will be saved."
+      },
+      "notes": "All IO paths are restricted to /app/data to comply with the environment. No external downloads are required. We must ensure locale/encoding handles country names safely. The Python code will preserve seeds where applicable (although OLS is deterministic). Any non-Python scripts remain unmodified; Python versions are the execution entry point."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=2.0.0",
+          "numpy>=1.24.0",
+          "statsmodels>=0.14.0",
+          "scipy>=1.10.0",
+          "python-dateutil>=2.8.2"
+        ],
+        "other": [
+          "git",
+          "wget"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "2"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "1) Run analysis_py.py. It will load the CSV from /app/data/original/19/0112_python_gpt5/replication_data/gelfand_replication_data.csv, process data, estimate per-country growth, and fit the OLS interaction model. 2) The script saves per-country coefficients to /app/data/estimatedcoefficients.csv and the final regression summary to /app/data/interaction_model_summary.txt and interaction_model_coefficients.csv. 3) Inspect the coefficient and p-value for eff_tight.",
+      "comparison_metrics": "Compare the interaction coefficient\u2019s sign and significance to the original (negative, significant). Report coefficient magnitude, SE, t, p, 95% CI. Optionally compare R^2 and robustness across model variants."
+    }
+  }
+}
