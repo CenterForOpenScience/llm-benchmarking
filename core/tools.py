@@ -478,7 +478,19 @@ def edit_file(
     except Exception as e:
         return f"❌ Error writing edited file to {full_path}: {e}"
 
-def read_and_summarize_pdf(file_path: str) -> str:
+data_summarizer_prompt = (
+"You are a careful technical paper summarizer. "
+"Summarize this chunk while preserving dataset names, code/data availability clues, "
+"repository/archive mentions, DOIs, accession numbers, and any described download procedures."
+)
+
+normal_summarization_prompt = (
+"You are a helpful research assistant."
+"Summarize the following text from a technical paper/document. Capture key methodologies, specific metrics, results, and conclusions. Do not lose specific data points."
+)
+
+
+def read_and_summarize_pdf(file_path: str, summarizer_model: str="gpt-4o", for_data: bool=False) -> str:
     """
     Reads a PDF file. If the PDF is short (<= 15 pages), it returns the full text.
     If the PDF is long (> 15 pages), it splits the text into chunks and uses the
@@ -518,20 +530,18 @@ def read_and_summarize_pdf(file_path: str) -> str:
         
         summaries = []
         total_chunks = len(chunks)
-        
+        prompt = data_summarizer_prompt if for_data else normal_summarization_prompt
         for i, chunk in enumerate(chunks):
             print(f"Summarizing chunk {i+1}/{total_chunks}...")
             completion = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=summarizer_model,
+                temperature=0,
                 messages=[
                     {
-                        "role": "system", 
-                        "content": "You are a helpful research assistant. Summarize the following text from a technical paper/document. Capture key methodologies, specific metrics, results, and conclusions. Do not lose specific data points."
+                        "role": "system",
+                        "content": prompt,
                     },
-                    {
-                        "role": "user", 
-                        "content": chunk
-                    }
+                    {"role": "user", "content": chunk}
                 ]
             )
             summaries.append(completion.choices[0].message.content)
