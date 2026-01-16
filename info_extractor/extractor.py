@@ -5,19 +5,21 @@ info_extractor--|extractor.py
 Created on Mon Jun  9 15:36:52 2025
 @author: Rochana Obadage
 """
-
+import os
+import re
 import json
 import time
-import re
 from openai import OpenAI
 from openai.types.beta.threads import TextContentBlock
 from core.utils import get_logger
 
-from info_extractor.file_utils import read_file_contents, save_output
+from info_extractor.file_utils import read_file_contents, save_output, find_required_file, call_search_model_once, parse_json_strict
 from info_extractor.prompt_builder import build_prompt, build_context_and_message
 from core.constants import API_KEY, TEMPLATE_PATHS, FILE_SELECTION_RULES
 from core.utils import configure_file_logging
 from core.agent import update_metadata, messages_to_responses_input
+
+from core.tools import read_and_summarize_pdf
 
 client = OpenAI(api_key=API_KEY)
 logger, formatter = get_logger()
@@ -72,7 +74,7 @@ def run_stage_1(study_path, difficulty, show_prompt=False, model_name: str="gpt-
     usage = response.usage
     json_text = response.output_text.strip()
 
-    # metric collection (unchanged logic, model-aware fields)
+    # metric collection
     metric_data = {
         "total_time_seconds": round(duration, 2),
         "total_tokens": usage.total_tokens if usage else 0,
@@ -105,11 +107,66 @@ def run_stage_1(study_path, difficulty, show_prompt=False, model_name: str="gpt-
     save_output(extracted_json, study_path, stage="stage_1")
     return extracted_json
 
+def run_web_search(study_path,model_name,show_prompt=False):
+    """
+    Reads initial_details.txt + original_paper.pdf, then calls the paired search model once
+    to return URLs needed for replication. Saves found_urls.json.
+    """
+    start_time = time.time()
+    configure_file_logging(logger, study_path, "find_urls.log")
 
-def run_extraction(study_path, difficulty, stage, show_prompt=False, model_name:str="gpt-4o"):
+    details_path = find_required_file(study_path, "initial_details.txt")
+    paper_path = find_required_file(study_path, "original_paper.pdf")
+
+    # read claim
+    with open(details_path, "r", encoding="utf-8", errors="ignore") as f:
+        claim_text = f.read()
+    
+    paper_text = read_and_summarize_pdf(paper_path, summarizer_model=model_name, for_data=True)
+
+    if model_name.startswith("gpt-5"):
+        search_model = "gpt-5-search-api"
+    else:
+    	search_model = "gpt-4o-search-preview"
+    print(f"[web-search] summarizer_model={model_name} -> search_model={search_model}")
+
+    raw = call_search_model_once(search_model, claim_text, paper_text)
+    parsed = parse_json_strict(raw)
+
+    duration = time.time() - start_time
+
+    # Save output
+    out_obj = {
+        "summarizer_model": model_name,
+        "search_model": search_model,
+        "details_path": details_path,
+        "paper_path": paper_path,
+        "result": parsed,
+        "raw_response": raw,
+    }
+
+    out_path = os.path.join(study_path, f"found_urls_{search_model}.json")
+    with open(out_path, "a", encoding="utf-8") as f:
+        json.dump(out_obj, f, indent=2)
+
+    # Metadata
+    metric_data = {
+        "total_time_seconds": round(duration, 2),
+        "total_turns": 1,
+        # token usage maybe
+    }
+    update_metadata(study_path, "extract_stage_find_urls", metric_data)
+
+    return out_obj
+
+
+
+def run_extraction(study_path, difficulty, stage, model_name, show_prompt=False):
 
     if stage == "stage_1":
         return run_stage_1(study_path, difficulty, show_prompt, model_name)
+    if stage == "web_search":
+    	return run_web_search(study_path,model_name, show_prompt)
     else:
         raise ValueError(f"Unknown stage: {stage}")
 

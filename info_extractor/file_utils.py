@@ -21,24 +21,116 @@ import tiktoken
 
 logger, formatter = get_logger()
 
+def find_required_file(study_path: str, filename: str) -> str:
+    """
+    Finds filename inside study_path (direct child first, then recursive).
+    """
+    direct = os.path.join(study_path, filename)
+    if os.path.exists(direct):
+        return direct
+
+    for root, _, files in os.walk(study_path):
+        if filename in files:
+            return os.path.join(root, filename)
+
+    raise FileNotFoundError(f"Required file not found: {filename} under {study_path}")
+
+URL_FINDER_SYSTEM_PROMPT = """
+You are a replication assistant with web search.
+
+You will receive:
+- The replication claim/hypotheses (initial_details.txt)
+- The original paper text (extracted from original_paper.pdf; may be summarized if very long)
+
+Task:
+Find ALL URLs needed to replicate the claim:
+- data sources (datasets, archives, portals, OSF/Zenodo/Dataverse/MIT, etc.)
+- code sources (GitHub repos, MIT, OSF code, supplemental code archives)
+Return ONLY JSON in the following format:
+
+{
+  "urls": [
+    {
+      "url": "https://...",
+      "kind": "data|code",
+      "resource_name": "short name",
+      "why_needed": "one sentence"
+    }
+  ],
+  "missing": [
+    {
+      "resource_name": "what's missing",
+      "search_query": "a query to find it"
+    }
+  ]
+}
+
+Rules:
+- Use web search when the paper describes a dataset/repo but doesn't give a URL.
+- Prefer official/stable landing pages (DOI landing, archive page, repository homepage).
+- Do not include prose outside the JSON.
+""".strip()
+
+
+def call_search_model_once(search_model: str, claim_text: str, paper_text: str) -> str:
+    """
+    DIFF: uses Chat Completions because search-preview models are documented for Chat Completions. :contentReference[oaicite:2]{index=2}
+    Keep arguments minimal for compatibility.
+    """
+    user_msg = (
+        "CLAIM / HYPOTHESES (from initial_details.txt):\n"
+        f"{claim_text}\n\n"
+        "ORIGINAL PAPER TEXT (from original_paper.pdf):\n"
+        f"{paper_text}\n"
+    )
+
+    resp = client.chat.completions.create(
+        model=search_model,
+        messages=[
+            {"role": "system", "content": URL_FINDER_SYSTEM_PROMPT},
+            {"role": "user", "content": user_msg},
+        ],
+    )
+    return (resp.choices[0].message.content or "").strip()
+
+
+def parse_json_strict(text: str):
+    """
+    Removes ``` fences if present and parses JSON. Returns None on failure.
+    """
+    t = text.strip()
+    if t.startswith("```"):
+        match = re.search(r"```(?:json)?\s*(.*?)\s*```", t, re.DOTALL)
+        if match:
+            t = match.group(1).strip()
+    try:
+        return json.loads(t)
+    except Exception:
+        return None
+
+
 from openai import OpenAI
 from core.constants import API_KEY
 client = OpenAI(api_key=API_KEY)
 
-def read_txt(file_path):
-    if ".txt" not in file_path:
-    	return "not a .txt file"
+def read_txt(file_path, model_name: str = "gpt-4o"):
+    file_path = str(file_path)
+    if not file_path.endswith(".txt"):
+        return "not a .txt file"
     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        file_content =  f.read()
-    return check_long_logs(file_content)
-    
+        file_content = f.read()
+    return check_long_logs(file_content, model_name=model_name)
+
 def check_long_logs(full_doc_content: str, model_name: str = "gpt-4o"):
     """
     Tool: read a potentially very long log. If too big, chunk and summarize progressively.
     Returns a string (full text or summarized).
     """
-    def _count_tokens(text: str, model_name="gpt-4o"):
-        enc = tiktoken.encoding_for_model(model_name if model_name else "gpt-4")
+    def _count_tokens(text: str, model_name_local="gpt-4o") -> int:
+        try:
+            enc = tiktoken.encoding_for_model(model_name_local if model_name_local else "gpt-4")
+        except Exception:
+            enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(text))
     
     MAX_TOKENS = 20000
@@ -75,11 +167,12 @@ def check_long_logs(full_doc_content: str, model_name: str = "gpt-4o"):
         ]
         try:
             out = client.chat.completions.create(
-                model="gpt-4o",
+                model=model_name,
                 temperature=0,
                 messages=messages
             )
-            running_summary += out.choices[0].message.content
+            running_summary += "\n" + (out.choices[0].message.content or "")
+            #running_summary.append(out.choices[0].message.content)
         except Exception as e:
             running_summary += f"\n[Error processing chunk {idx}: {e}]"
 
@@ -94,13 +187,13 @@ def read_pdf(file_path):
     except Exception as e:
         return f"[PDF read error: {e}]"
     
-def read_docx(file_path: str) -> str:
+def read_docx(file_path: str, model_name: str = "gpt-4o") -> str:
     try:
         doc = docx.Document(file_path)
         # Extract text from each paragraph and join with a newline
         full_text = [para.text for para in doc.paragraphs]
         full_text = '\n'.join(full_text)
-        return check_long_logs(full_text)
+        return check_long_logs(full_text, model_name)
     except FileNotFoundError:
         return f"Error: The file at {file_path} was not found."
     except Exception as e:
@@ -108,7 +201,7 @@ def read_docx(file_path: str) -> str:
         return f"An error occurred while reading the docx file: {e}"
 
 
-def read_json(file_path):
+def read_json(file_path, model_name: str = "gpt-4o"):
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)

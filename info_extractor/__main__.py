@@ -8,7 +8,7 @@ from .extractor import run_extraction
 
 def main():
     parser = argparse.ArgumentParser("extractor")
-    parser.add_argument("--stage", choices=["stage_1", "stage_2"], required=True)
+    parser.add_argument("--stage", choices=["stage_1", "web_search"], required=True)
     parser.add_argument("--difficulty", choices=["easy", "medium", "hard"], required=True)
     parser.add_argument("--study-path", required=True)
     parser.add_argument("--show-prompt", action="store_true", default=False)
@@ -34,8 +34,8 @@ def main():
             study_path=args.study_path,
             difficulty=args.difficulty,
             stage=args.stage,
-            show_prompt=args.show_prompt,
-            model_name=args.model_name
+            model_name=args.model_name,
+            show_prompt=args.show_prompt
         )
     except Exception as e:
         logger.exception(f"Fatal error during run_extraction: {e}")
