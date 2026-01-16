@@ -26,8 +26,8 @@ check-docker:
 extract-stage1: check-deps
 	python -m info_extractor --stage stage_1 --difficulty easy --study-path $(STUDY) --model-name $(MODEL)
 
-extract-stage2: check-deps
-	python -m info_extractor --stage stage_2 --difficulty easy --study-path $(STUDY)
+web-search: check-deps
+	python -m info_extractor --stage web_search --difficulty easy --study-path $(STUDY) --model-name $(MODEL)
 
 # generator module
 design-easy: check-deps
