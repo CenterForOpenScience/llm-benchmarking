@@ -533,19 +533,21 @@ def read_and_summarize_pdf(file_path: str, summarizer_model: str="gpt-4o", for_d
         prompt = data_summarizer_prompt if for_data else normal_summarization_prompt
         for i, chunk in enumerate(chunks):
             print(f"Summarizing chunk {i+1}/{total_chunks}...")
-            completion = client.chat.completions.create(
-                model=summarizer_model,
-                temperature=0,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": prompt,
-                    },
-                    {"role": "user", "content": chunk}
-                ]
-            )
-            summaries.append(completion.choices[0].message.content)
-            
+            try: 
+                completion = client.chat.completions.create(
+                    model=summarizer_model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": prompt,
+                        },
+                        {"role": "user", "content": chunk}
+                    ]
+                )
+                summaries.append(completion.choices[0].message.content)
+            except Exception as e:
+                print(f"Chunk {i+1} failed: {e}")
+                summaries.append(f"Chunk {i+1} fauled: {e}")
         consolidated_summary = "\n\n".join(summaries)
         
         return (f"--- PDF SUMMARY (Document was {number_of_pages} pages long) ---\n"
