@@ -126,11 +126,17 @@ def run_web_search(study_path,model_name,show_prompt=False):
 
     if model_name.startswith("gpt-5"):
         search_model = "gpt-5-search-api"
+    elif model_name.startswith("o3"):
+    	search_model = "o3-deep-research"
     else:
     	search_model = "gpt-4o-search-preview"
     print(f"[web-search] summarizer_model={model_name} -> search_model={search_model}")
 
-    raw = call_search_model_once(search_model, claim_text, paper_text)
+    try:
+    	raw = call_search_model_once(search_model, claim_text, paper_text)
+    except Exception as e:
+    	print(f"search model call failed: {search_model}")
+    	
     parsed = parse_json_strict(raw)
 
     duration = time.time() - start_time
