@@ -71,6 +71,10 @@ Rules:
 - Do not include prose outside the JSON.
 """.strip()
 
+DEEP_RESEARCH_MODELS = {
+    "o3-deep-research",
+    "o4-mini-deep-research",
+}
 
 def call_search_model_once(search_model: str, claim_text: str, paper_text: str) -> str:
     """
@@ -83,7 +87,16 @@ def call_search_model_once(search_model: str, claim_text: str, paper_text: str) 
         "ORIGINAL PAPER TEXT (from original_paper.pdf):\n"
         f"{paper_text}\n"
     )
-
+    if search_model in DEEP_RESEARCH_MODELS:
+    	resp = client.responses.create(
+    		model=search_model,
+    		input=[
+                {"role": "system", "content": URL_FINDER_SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+    		tools=[{"type": "web_search"}]
+    	)
+    	return (resp.output_text or "").strip()
     resp = client.chat.completions.create(
         model=search_model,
         messages=[

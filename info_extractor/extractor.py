@@ -128,6 +128,8 @@ def run_web_search(study_path,model_name,show_prompt=False):
         search_model = "gpt-5-search-api"
     elif model_name.startswith("o3"):
     	search_model = "o3-deep-research"
+    elif model_name.startswith("o4"):
+    	search_model = "o4-mini-deep-research"
     else:
     	search_model = "gpt-4o-search-preview"
     print(f"[web-search] summarizer_model={model_name} -> search_model={search_model}")
