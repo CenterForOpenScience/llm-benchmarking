@@ -307,3 +307,152 @@ def get_tool_definitions() -> list:
             }
         }
     ]
+
+def get_execute_tool_definitions() -> list:
+    """
+    Returns schemas for ALL tools available in the Execution phase:
+    Base tools + Shell/Stata tools + Orchestrator tools.
+    """
+    base_tools = get_tool_definitions()
+    
+    execute_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "run_shell_command",
+                "description": "Executes a shell command in the local terminal. REQUIRES human confirmation.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string", "description": "The full shell command to run (e.g. 'python script.py')."}
+                    },
+                    "required": ["command"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_stata_do_file",
+                "description": "Executes a Stata .do file using the local Stata installation.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string", "description": "Path to the .do file."}
+                    },
+                    "required": ["file_path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "orchestrator_plan",
+                "description": "Define the execution plan (sequence of steps) for the replication.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "steps": {
+                            "type": "array",
+                            "description": "List of execution steps.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "Unique name for the step (e.g. '01_data_prep')."},
+                                    "type": {"type": "string", "enum": ["orchestrator", "container"], "description": "Run on host (orchestrator) or inside docker (container)."},
+                                    "lang": {"type": "string", "enum": ["python", "r", "stata", "bash"]},
+                                    "entry": {"type": "string", "description": "File path to the script to run."},
+                                    "expected_artifacts": {"type": "array", "items": {"type": "string"}, "description": "Files expected to be created."}
+                                },
+                                "required": ["name", "type", "entry"]
+                            }
+                        },
+                        "success_criteria": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of criteria to judge success."
+                        }
+                    },
+                    "required": ["steps"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "orchestrator_generate_dockerfile",
+                "description": "Generates a Dockerfile for the replication environment.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "base_image": {"type": "string", "description": "Base image (default python:3.9)."},
+                        "dependencies": {"type": "array", "items": {"type": "string"}, "description": "Pip packages to install."},
+                        "system_packages": {"type": "array", "items": {"type": "string"}, "description": "Apt packages to install."}
+                    },
+                    "required": []
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "orchestrator_build_image",
+                "description": "Builds the Docker image from the generated Dockerfile.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "image_name": {"type": "string", "description": "Tag for the image."}
+                    },
+                    "required": []
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "orchestrator_run_container",
+                "description": "Starts the Docker container.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "image_name": {"type": "string"},
+                        "container_name": {"type": "string"},
+                        "mount_path": {"type": "string", "description": "Host path to mount to /app"}
+                    },
+                    "required": []
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "orchestrator_execute_entry",
+                "description": "Executes a specific step from the plan.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "step_name": {"type": "string", "description": "The name of the step to execute."}
+                    },
+                    "required": ["step_name"]
+                }
+            }
+        },
+         {
+            "type": "function",
+            "function": {
+                "name": "orchestrator_stop_container",
+                "description": "Stops and removes the running container.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "container_name": {"type": "string"}
+                    },
+                    "required": []
+                }
+            }
+        }
+    ]
+    
+    return base_tools + execute_tools
+
+

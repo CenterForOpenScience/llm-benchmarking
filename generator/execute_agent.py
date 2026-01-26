@@ -6,7 +6,7 @@ import logging
 from typing import Dict, Any
 
 from core.constants import GENERATE_EXECUTE_REACT_CONSTANTS
-from core.actions import base_known_actions
+from core.actions import base_known_actions, get_execute_tool_definitions
 from core.agent import run_react_loop, save_output
 from core.prompts import PREAMBLE, EXECUTE, EXAMPLE, EXECUTE_CODE_MODE_POLICY
 from core.utils import build_file_description, configure_file_logging, get_logger
@@ -163,9 +163,11 @@ Answer: [Execute necessary next action to help you solve the task]
         if show_prompt:
             logger.info("\n\n===== Agent Input (truncated) =====\n" + instruction[:2000])
         print(f"\n\nmodel name for execute agent: {model_name}\n\n")
+        tool_definitions = get_execute_tool_definitions()
         return run_react_loop(
             system_prompt,
             known_actions,
+            tool_definitions,
             instruction,
             session_state={"analyzers": {}},
             study_path=study_path,
