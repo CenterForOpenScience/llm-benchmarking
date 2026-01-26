@@ -15,7 +15,7 @@ from info_extractor.file_utils import read_txt, read_csv, read_json, read_pdf, r
 
 from core.prompts import PREAMBLE, INTERPRET, EXAMPLE
 from core.agent import run_react_loop, save_output
-from core.actions import base_known_actions
+from core.actions import base_known_actions, get_interpret_tool_definitions
 from core.utils import get_logger, configure_file_logging, build_file_description  
 
 logger, formatter = get_logger()
@@ -171,9 +171,12 @@ Answer: [Execute necessary next action to help you solve the task]
 
     question = "Question: " + base_question + extra_instructions
 
+    tool_definitions = get_interpret_tool_definitions()
+
     return run_react_loop(
         system_prompt,
         known_actions,
+        tool_definitions,
         question,
         session_state={"analyzers": {}},
         on_final=lambda ans: save_output(

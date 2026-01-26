@@ -455,4 +455,28 @@ def get_execute_tool_definitions() -> list:
     
     return base_tools + execute_tools
 
-
+def get_interpret_tool_definitions() -> list:
+    """
+    Returns schemas for tools available in the Interpret phase:
+    Base tools + read_log.
+    """
+    base_tools = get_tool_definitions()
+    
+    interpret_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_log",
+                "description": "Reads a potentially very long log file. Automatically summarizes it if it exceeds token limits to fit in context.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string", "description": "Path to the log file."}
+                    },
+                    "required": ["file_path"]
+                }
+            }
+        }
+    ]
+    
+    return base_tools + interpret_tools
