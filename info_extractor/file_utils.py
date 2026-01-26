@@ -139,9 +139,9 @@ def check_long_logs(full_doc_content: str, model_name: str = "gpt-4o"):
     Tool: read a potentially very long log. If too big, chunk and summarize progressively.
     Returns a string (full text or summarized).
     """
-    def _count_tokens(text: str, model_name_local="gpt-4o") -> int:
+    def _count_tokens(text: str, model_name="gpt-4o") -> int:
         try:
-            enc = tiktoken.encoding_for_model(model_name_local if model_name_local else "gpt-4")
+            enc = tiktoken.encoding_for_model(model_name if model_name else "gpt-4")
         except Exception:
             enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(text))

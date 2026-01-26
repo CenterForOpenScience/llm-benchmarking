@@ -239,7 +239,7 @@ def read_image(file_path):
 
 
 
-def ask_human_input(question_to_ask: str) -> str:
+def ask_human_input(question: str) -> str:
     """
     Prompts the human user for input in the terminal.
 
@@ -254,7 +254,7 @@ def ask_human_input(question_to_ask: str) -> str:
     """
     # Print a clear message to the user indicating the agent needs help
     print("\n🤔 [AGENT NEEDS HUMAN INPUT] 🤔")
-    print(f"Agent's Question: {question_to_ask}")
+    print(f"Agent's Question: {question}")
     
     # Get input from the user
     human_response = input("Your Response: ")

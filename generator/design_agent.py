@@ -11,7 +11,7 @@ from core.tools import load_dataset, get_dataset_head, get_dataset_shape, get_da
 from core.prompts import PREAMBLE, DESIGN, EXAMPLE, DESIGN_CODE_MODE_POLICY
 from core.agent import Agent, run_react_loop, save_output
 from core.utils import build_file_description, configure_file_logging, get_logger
-from core.actions import base_known_actions
+from core.actions import base_known_actions, get_tool_definitions
 
 logger, formatter = get_logger()
 action_re = re.compile(r'^Action: (\w+): (.*)$', re.MULTILINE) # Use re.MULTILINE for multiline parsing
@@ -70,10 +70,12 @@ def run_design(study_path, show_prompt: bool = False, tier: str = "easy", code_m
     Thought: [Your thinking/planning process for completing the task based on interactions so far]
     Answer: [Execute necessary next action to help you solve the task]
     """.strip()
-    print(f"model name before running design: {model_name}")
+    print(f"starting design phase with {model_name}\n")
+    tool_definitions = get_tool_definitions()
     return run_react_loop(
     	system_prompt,
     	known_actions,
+    	tool_definitions,
     	question,
     	session_state={"analyzers": {}},
     	study_path=study_path,
