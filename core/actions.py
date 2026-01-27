@@ -358,22 +358,12 @@ def get_execute_tool_definitions() -> list:
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "name": {"type": "string", "description": "Unique name for the step (e.g. '01_data_prep')."},
-                                    "type": {"type": "string", "enum": ["orchestrator", "container"], "description": "Run on host (orchestrator) or inside docker (container)."},
-                                    "lang": {"type": "string", "enum": ["python", "r", "stata", "bash"]},
-                                    "entry": {"type": "string", "description": "File path to the script to run."},
-                                    "expected_artifacts": {"type": "array", "items": {"type": "string"}, "description": "Files expected to be created."}
+                                    "study_path": {"type": "string", "description": "Path to the current study directory"}
                                 },
-                                "required": ["name", "type", "entry"]
+                                "required": ["study_path"]
                             }
-                        },
-                        "success_criteria": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "List of criteria to judge success."
                         }
-                    },
-                    "required": ["steps"]
+                    }
                 }
             }
         },
@@ -385,11 +375,9 @@ def get_execute_tool_definitions() -> list:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "base_image": {"type": "string", "description": "Base image (default python:3.9)."},
-                        "dependencies": {"type": "array", "items": {"type": "string"}, "description": "Pip packages to install."},
-                        "system_packages": {"type": "array", "items": {"type": "string"}, "description": "Apt packages to install."}
+                       "study_path": {"type": "string", "description": "Path to the current study directory"}
                     },
-                    "required": []
+                    "required": ["study_path"]
                 }
             }
         },
@@ -401,9 +389,10 @@ def get_execute_tool_definitions() -> list:
                 "parameters": {
                     "type": "object",
                     "properties": {
+                        "study_path": {"type": "string", "description": "Path to the current study directory"},
                         "image_name": {"type": "string", "description": "Tag for the image."}
                     },
-                    "required": []
+                    "required": ["study_path"]
                 }
             }
         },
@@ -415,11 +404,9 @@ def get_execute_tool_definitions() -> list:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "image_name": {"type": "string"},
-                        "container_name": {"type": "string"},
-                        "mount_path": {"type": "string", "description": "Host path to mount to /app"}
+                        "study_path": {"type": "string", "description": "Path to the current study directory"},
                     },
-                    "required": []
+                    "required": ["study_path"]
                 }
             }
         },
@@ -431,9 +418,9 @@ def get_execute_tool_definitions() -> list:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "step_name": {"type": "string", "description": "The name of the step to execute."}
+                        "study_path": {"type": "string", "description": "Path to the current study directory"},
                     },
-                    "required": ["step_name"]
+                    "required": ["study_path"]
                 }
             }
         },
@@ -445,9 +432,9 @@ def get_execute_tool_definitions() -> list:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "container_name": {"type": "string"}
+                        "study_path": {"type": "string", "description": "Path to the current study directory"},
                     },
-                    "required": []
+                    "required": ["study_path"]
                 }
             }
         }

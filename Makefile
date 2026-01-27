@@ -8,6 +8,7 @@ REQ := pytest pytest_cov openai dotenv pymupdf pyreadr pandas numpy docker docx
 STUDY ?= ./data/original/1
 CODE_MODE ?= python
 MODEL ?= gpt-4o
+TIER ?= easy
 
 .PHONY: check-deps install-dev test test-extractor test-generator test-all design-easy execute-easy
 
@@ -31,7 +32,7 @@ web-search: check-deps
 
 # generator module
 design-easy: check-deps
-	python -m generator --stage design --tier easy --study-path $(STUDY) --templates-dir ./templates --code-mode $(CODE_MODE) --model-name $(MODEL)
+	python -m generator --stage design --tier easy --study-path $(STUDY) --templates-dir ./templates --code-mode $(CODE_MODE) --model-name $(MODEL) --tier $(TIER)
 execute-easy: check-deps check-docker
 	python -m generator --stage execute --tier easy --study-path $(STUDY) --code-mode $(CODE_MODE) --model-name $(MODEL)
 

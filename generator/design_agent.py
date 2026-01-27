@@ -8,7 +8,7 @@ import sys
 
 from info_extractor.file_utils import read_txt, read_csv, read_json, read_pdf, read_docx # Keep save_output here if the agent orchestrates saving
 from core.tools import load_dataset, get_dataset_head, get_dataset_shape, get_dataset_description, get_dataset_info, read_image, list_files_in_folder, ask_human_input, write_file
-from core.prompts import PREAMBLE, DESIGN, EXAMPLE, DESIGN_CODE_MODE_POLICY
+from core.prompts import PREAMBLE, DESIGN, EXAMPLE, DESIGN_CODE_MODE_POLICY, CODE_ACCESS_POLICY
 from core.agent import Agent, run_react_loop, save_output
 from core.utils import build_file_description, configure_file_logging, get_logger
 from core.actions import base_known_actions, get_tool_definitions
@@ -28,6 +28,7 @@ def run_design(study_path, show_prompt: bool = False, tier: str = "easy", code_m
     logger.info(f"Starting extraction for study path: {study_path}")
     template =  read_json(GENERATE_REACT_CONSTANTS[f'json_template_{code_mode}'])
     code_policy = DESIGN_CODE_MODE_POLICY.get(code_mode, DESIGN_CODE_MODE_POLICY["python"])
+    code_access_policy = CODE_ACCESS_POLICY.get(tier, CODE_ACCESS_POLICY["easy"])
     
     system_prompt = build_system_prompt(code_mode)
     
@@ -39,16 +40,7 @@ def run_design(study_path, show_prompt: bool = False, tier: str = "easy", code_m
     Based on the provided documents, your goal is to plan for the replication study and fill out this JSON template:
     {json.dumps(template)}
     
-    First, determine whether the provided data can be used for replicating the provided focal claim. 
-    - Ensure that all necessary variables are available.
-    - Ensure that the data qualify for replication criteria. Replication data achieves its purpose by being different data collected under similar/identical conditions, thus testing if the phenomenon is robust across independent instances.
-    
-    If you find issues with the provided data, follow-up with a human supervisor to ask for a different data source until appropriate data is given.
-    
-    Once you have determined the provided data are good for replication, explore the code to help fill out fields related to the codebase. This code will operate directly on the data files given to you.
-    Find potential issues with the provided code such as a data file path that is different from the data files you have looked at.
-    - If the code reads any data file, the file path must be in this directory "/app/data".
-    - If the code dumps content or produce additional content, the file must also be in this directory "/app/data".
+    {code_access_policy}
     
     {code_policy}
 

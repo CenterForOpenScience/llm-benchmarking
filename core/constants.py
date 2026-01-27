@@ -93,7 +93,7 @@ GENERATE_REACT_CONSTANTS = {
         "original_paper.pdf": "The pdf file containing the full text of the original paper",
         "initial_details.txt": "Details about the claim from the original paper to be replicated",
         "post_registration.json": "A structured document with key extracted information about the original paper and the claim to be replicated.",
-        "replication_data": "The folder containing the data that can potentially be used for the replication.",
+        "replication_data": "The folder containing the data that can potentially be used for the replication. There may also be useful code to help you with the replication. But if not, you have to generate the replication code yourself in Python.",
     },
     "json_template_python": "templates/pre_registration_schema_python.json",
     "json_template_native": "templates/pre_registration_schema_native.json"
@@ -115,7 +115,7 @@ EVALUATE_GENERATE_EXECUTE_CONSTANTS = {
     "claim_files": {
         "original_paper.pdf": "The pdf file containing the full text of the original paper",
         "initial_details.txt": "Details about the claim from the original paper to be replicated",
-        "replication_data": "The folder containing the data and code that can be used for the replication.",
+        "replication_data": "The folder containing the data that can potentially be used for the replication. There may also be useful code to help you with the replication. But if not, you have to generate the replication code yourself in Python.",
     },
     "agent_files": {
         "post_registration.json": "A structured document with key extracted information about the original paper and the claim to be replicated.",

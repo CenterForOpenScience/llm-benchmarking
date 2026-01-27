@@ -84,11 +84,23 @@ def save_json(data, path):
 def extract_from_human_replication_study(extracted_json_path, expected_json_path, output_path):
     client = OpenAI(api_key=API_KEY)
     
-    eval_prompt_template = read_txt(TEMPLATE_PATHS['extract_eval_prompt_template'])
+    with open(TEMPLATE_PATHS['extract_eval_prompt_template'], "r", encoding="utf-8", errors="ignore") as f:
+        eval_prompt_template = f.read()
+    # eval_prompt_template = read_txt()
     
-    expected_schema = read_json(TEMPLATE_PATHS['post_registration_template'])
-    extracted_json = read_json(extracted_json_path)
-    expected_json = read_json(expected_json_path)
+    
+    with open(TEMPLATE_PATHS['post_registration_template'], "r", encoding="utf-8", errors="ignore") as f:
+        expected_schema = f.read()
+    # expected_schema = read_json()
+    
+    
+    with open(extracted_json_path, "r", encoding="utf-8", errors="ignore") as f:
+        extracted_json = f.read()
+    # extracted_json = read_json(extracted_json_path)
+    
+    with open(expected_json_path, "r", encoding="utf-8", errors="ignore") as f:
+        expected_json = f.read()
+    # expected_json = read_json(expected_json_path)
     
     log_path = output_path
     evaluated_json = generate_evaluation_json(eval_prompt_template, expected_schema, extracted_json, expected_json, client, log_path)

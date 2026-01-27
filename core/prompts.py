@@ -105,6 +105,7 @@ RUN POLICY (DESIGN)
  """.strip(),
  }
 
+
 EXECUTE_CODE_MODE_POLICY = {
     "native": """
 RUN POLICY (EXECUTE)
@@ -124,6 +125,22 @@ RUN POLICY (EXECUTE)
  """.strip(),
  }
 
+CODE_ACCESS_POLICY = {
+    "easy": """
+First, determine whether the provided data can be used for replicating the provided focal claim. 
+- Ensure that all necessary variables are available.
+- Ensure that the data qualify for replication criteria. Replication data achieves its purpose by being different data collected under similar/identical conditions, thus testing if the phenomenon is robust across independent instances.
+
+If you find issues with the provided data, follow-up with a human supervisor to ask for a different data source until appropriate data is given.
+Once you have determined the provided data are good for replication, explore the code to help fill out fields related to the codebase. This code will operate directly on the data files given to you.
+Find potential issues with the provided code such as a data file path that is different from the data files you have looked at.
+- If the code reads any data file, the file path must be in this directory "/app/data".
+- If the code dumps content or produce additional content, the file must also be in this directory "/app/data
+    """.strip(),
+    "hard": """
+Before filling out the JSON template, you must inspect and use the given dataset to generate the Python code for the replication. You must ensure that your code follows the original study's methodology as close as possible.
+    """.strip()
+}
 
 INTERPRET = """
 Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
