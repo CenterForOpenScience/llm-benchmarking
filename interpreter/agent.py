@@ -178,6 +178,7 @@ Answer: [Execute necessary next action to help you solve the task]
         known_actions,
         tool_definitions,
         question,
+        study_path=study_path,
         session_state={"analyzers": {}},
         on_final=lambda ans: save_output(
             ans,

@@ -261,7 +261,7 @@ def ask_human_input(question: str) -> str:
     
     return human_response
 
-def list_files_in_folder(folder_path: str) -> str:
+def list_files_in_folder(study_path, folder_path: str) -> str:
     """
     Recursively lists all files within a specified folder and its subfolders.
 
@@ -273,6 +273,18 @@ def list_files_in_folder(folder_path: str) -> str:
         each separated by a newline. If the folder does not exist
         or is not a directory, an error message is returned.
     """
+    abs_folder = os.path.abspath(folder_path)
+    abs_study = os.path.abspath(study_path)
+    
+    # Check if abs_folder is inside abs_study
+    # We check if the common path between them is the study_path itself
+    try:
+        if os.path.commonpath([abs_folder, abs_study]) != abs_study:
+            return f"Error: Access denied. '{folder_path}' is outside of the study directory. You can only search within {study_path}"
+    except ValueError:
+        # This handles cases where paths are on different drives (Windows)
+        return "Error: Paths are on different drives."
+    
     # Check if the provided path exists
     if not os.path.exists(folder_path):
         return f"Error: Folder '{folder_path}' does not exist."
