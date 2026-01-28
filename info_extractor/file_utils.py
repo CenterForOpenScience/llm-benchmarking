@@ -71,10 +71,19 @@ Rules:
 - Do not include prose outside the JSON.
 """.strip()
 
-DEEP_RESEARCH_MODELS = {
-    "o3-deep-research",
-    "o4-mini-deep-research",
-}
+def split_models(requested_model: str) -> tuple[str, str]:
+    # If requested_model is a search/deep-research variant, summarizer uses the base model.
+    # Examples:
+    #   o3 -> (o3, o3)
+    #   o3-deep-research -> (o3, o3-deep-research)
+    #   gpt-4o-search-review -> (gpt-4o, gpt-4o-search-review)
+    #   gpt-5-search-api -> (gpt-5, gpt-5-search-api)
+    base = requested_model
+    for suffix in ("-deep-research", "-search-preview", "-search-review", "-search-api"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    return base, requested_model
 
 def call_search_model_once(search_model: str, claim_text: str, paper_text: str) -> str:
     """
@@ -87,24 +96,29 @@ def call_search_model_once(search_model: str, claim_text: str, paper_text: str) 
         "ORIGINAL PAPER TEXT (from original_paper.pdf):\n"
         f"{paper_text}\n"
     )
-    if search_model in DEEP_RESEARCH_MODELS:
-    	resp = client.responses.create(
-    		model=search_model,
-    		input=[
-                {"role": "system", "content": URL_FINDER_SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
-    		tools=[{"type": "web_search"}]
-    	)
-    	return (resp.output_text or "").strip()
-    resp = client.chat.completions.create(
-        model=search_model,
-        messages=[
-            {"role": "system", "content": URL_FINDER_SYSTEM_PROMPT},
-            {"role": "user", "content": user_msg},
-        ],
-    )
-    return (resp.choices[0].message.content or "").strip()
+    try:
+        if "search" in search_model:
+        	resp = client.responses.create(
+                model=search_model,
+                input=messages,
+            )
+        else:
+            resp = client.responses.create(
+                model=search_model,
+                input=messages,
+                tools=[{"type": "web_search"}],
+            )
+        return (resp.output_text or "").strip()
+    except Exception as e:
+        logger.warning(
+            f"[web-search] Responses API failed for model={search_model}; "
+            f"falling back to Chat Completions (no web_search tool). Error: {e}"
+        )
+        resp = client.chat.completions.create(
+            model=search_model,
+            messages=messages,
+        )
+        return (resp.choices[0].message.content or "").strip()
 
 
 def parse_json_strict(text: str):

@@ -13,7 +13,7 @@ from openai import OpenAI
 from openai.types.beta.threads import TextContentBlock
 from core.utils import get_logger
 
-from info_extractor.file_utils import read_file_contents, save_output, find_required_file, call_search_model_once, parse_json_strict
+from info_extractor.file_utils import split_models, read_file_contents, save_output, find_required_file, call_search_model_once, parse_json_strict
 from info_extractor.prompt_builder import build_prompt, build_context_and_message
 from core.constants import API_KEY, TEMPLATE_PATHS, FILE_SELECTION_RULES
 from core.utils import configure_file_logging
@@ -122,18 +122,11 @@ def run_web_search(study_path,model_name,show_prompt=False):
     with open(details_path, "r", encoding="utf-8", errors="ignore") as f:
         claim_text = f.read()
     
-    paper_text = read_and_summarize_pdf(paper_path, summarizer_model=model_name, for_data=True)
-
-    if model_name.startswith("gpt-5"):
-        search_model = "gpt-5-search-api"
-    elif model_name.startswith("o3"):
-    	search_model = "o3-deep-research"
-    elif model_name.startswith("o4"):
-    	search_model = "o4-mini-deep-research"
-    else:
-    	search_model = "gpt-4o-search-preview"
-    print(f"[web-search] summarizer_model={model_name} -> search_model={search_model}")
-
+    summarizer_model, search_model = split_models(model_name)
+    print(f"[web-search] summarizer_model={summarizer_model} -> search_model={search_model}")
+    
+    paper_text = read_and_summarize_pdf(paper_path, summarizer_model=summarizer_model, for_data=True)
+    raw = ""
     try:
     	raw = call_search_model_once(search_model, claim_text, paper_text)
     except Exception as e:
@@ -145,7 +138,8 @@ def run_web_search(study_path,model_name,show_prompt=False):
 
     # Save output
     out_obj = {
-        "summarizer_model": model_name,
+        "requested_model": model_name,
+        "summarizer_model": summarizer_model,
         "search_model": search_model,
         "details_path": details_path,
         "paper_path": paper_path,
@@ -153,7 +147,10 @@ def run_web_search(study_path,model_name,show_prompt=False):
         "raw_response": raw,
     }
 
-    out_path = os.path.join(study_path, f"found_urls_{search_model}.json")
+    out_dir = os.path.join("data", "results", "web-search")
+    os.makedirs(out_dir, exist_ok=True)
+
+    out_path = os.path.join(out_dir, f"merged_{model_name}.jsonl")
     with open(out_path, "a", encoding="utf-8") as f:
         json.dump(out_obj, f, indent=2)
 
