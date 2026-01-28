@@ -37,15 +37,23 @@ def find_required_file(study_path: str, filename: str) -> str:
 
 URL_FINDER_SYSTEM_PROMPT = """
 You are a replication assistant with web search.
+Definitions (important):
+- Reproduction: re-running the ORIGINAL authors' analysis on the SAME dataset/sample (often using the same code) to verify the published results.
+- Replication (our goal): independently re-testing the claim using NEW data or an independent sample/population/time period, while following the paper's design/operationalization as closely as feasible.
+
 
 You will receive:
 - The replication claim/hypotheses (initial_details.txt)
 - The original paper text (extracted from original_paper.pdf; may be summarized if very long)
 
 Task:
-Find ALL URLs needed to replicate the claim:
+Find ALL URLs needed to replicate the claim (not just reproduce the original run):
 - data sources (datasets, archives, portals, OSF/Zenodo/Dataverse/MIT, etc.)
 - code sources (GitHub repos, MIT, OSF code, supplemental code archives)
+
+If the original dataset is restricted, outdated, or a one-off sample, also find the closest feasible data source that can provide a NEW sample with the same required variables and measurement definitions (e.g., the same survey instrument in a later wave, a similar administrative dataset, or a new cohort drawn from the same population).
+Why this matters: replication often requires collecting/drawing a fresh sample; the key is that the data allow construction of the necessary variables and sample criteria, not that it is the identical original sample.
+
 Return ONLY JSON in the following format:
 
 {
@@ -96,6 +104,10 @@ def call_search_model_once(search_model: str, claim_text: str, paper_text: str) 
         "ORIGINAL PAPER TEXT (from original_paper.pdf):\n"
         f"{paper_text}\n"
     )
+    messages = [
+        {"role": "system", "content": URL_FINDER_SYSTEM_PROMPT},
+        {"role": "user", "content": user_msg},
+    ]
     try:
         if "search" in search_model:
         	resp = client.responses.create(
@@ -114,10 +126,17 @@ def call_search_model_once(search_model: str, claim_text: str, paper_text: str) 
             f"[web-search] Responses API failed for model={search_model}; "
             f"falling back to Chat Completions (no web_search tool). Error: {e}"
         )
-        resp = client.chat.completions.create(
-            model=search_model,
-            messages=messages,
-        )
+        if "search" in search_model:
+            resp = client.chat.completions.create(
+                model=search_model,
+                messages=messages,
+            )
+        else:
+        	resp = client.chat.completions.create(
+                model=search_model,
+                messages=messages,
+                tools=[{"type": "web_search"}],
+            )
         return (resp.choices[0].message.content or "").strip()
 
 
