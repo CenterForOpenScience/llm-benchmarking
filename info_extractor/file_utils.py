@@ -109,22 +109,35 @@ def call_search_model_once(search_model: str, claim_text: str, paper_text: str) 
         {"role": "user", "content": user_msg},
     ]
     try:
-        resp = client.responses.create(
-            model=search_model,
-            input=messages,
-            tools=[{"type": "web_search"}],
-        )
-        return (resp.output_text or "").strip()
+        if "-search-" in search_model:
+            resp = client.chat.completions.create(
+                model=search_model,
+                messages=messages,
+            )
+            return (resp.choices[0].message.content or "").strip()
+        else:
+            resp = client.responses.create(
+                model=search_model,
+                input=messages,
+                tools=[{"type": "web_search"}],
+            )
+            return (resp.output_text or "").strip()
     except Exception as e:
         logger.warning(
             f"[web-search] Responses API failed for model={search_model}; "
             f"falling back to Chat Completions (no web_search tool). Error: {e}"
         )
-        resp = client.chat.completions.create(
-            model=search_model,
-            messages=messages,
-            tools=[{"type": "web_search"}],
-        )
+        if "-search-" in search_model:
+            resp = client.chat.completions.create(
+                model=search_model,
+                messages=messages,
+            )
+        else:
+            resp = client.chat.completions.create(
+                model=search_model,
+                messages=messages,
+                tools=[{"type": "web_search"}],
+            )
         return (resp.choices[0].message.content or "").strip()
 
 
