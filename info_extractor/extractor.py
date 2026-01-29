@@ -136,8 +136,15 @@ def run_web_search(study_path,model_name,show_prompt=False):
 
     duration = time.time() - start_time
 
+    study_id = None
+    # extract id "/10/" from the study path. 
+    match = re.search(r"[/\\](\d+)[/\\]", str(study_path))
+    if match:
+        study_id = int(match.group(1))
+
     # Save output
     out_obj = {
+    	"id": study_id,
         "requested_model": model_name,
         "summarizer_model": summarizer_model,
         "search_model": search_model,
