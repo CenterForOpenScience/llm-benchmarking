@@ -79,10 +79,10 @@ def run_stage_1(study_path, difficulty, show_prompt=False, model_name: str="gpt-
         "total_time_seconds": round(duration, 2),
         "total_tokens": usage.total_tokens if usage else 0,
         "prompt_tokens": (
-            usage.input_tokens if is_reasoning_model(model_name) else usage.prompt_tokens
+            usage.input_tokens if is_reasoning_model(model_name) else usage.input_tokens
         ) if usage else 0,
         "completion_tokens": (
-            usage.output_tokens if is_reasoning_model(model_name) else usage.completion_tokens
+            usage.output_tokens if is_reasoning_model(model_name) else usage.output_tokens
         ) if usage else 0,
         "total_turns": 1
     }
@@ -159,8 +159,8 @@ def run_web_search(study_path,model_name,show_prompt=False):
 
     out_path = os.path.join(out_dir, f"merged_{model_name}.jsonl")
     with open(out_path, "a", encoding="utf-8") as f:
-        json.dump(out_obj, f, indent=2)
-
+        f.write(json.dumps(out_obj) + "\n")
+        
     # Metadata
     metric_data = {
         "total_time_seconds": round(duration, 2),
