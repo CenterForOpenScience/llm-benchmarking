@@ -13,7 +13,7 @@ def main():
     p.add_argument("--model-name", help="Please specify the OpenAI model to be used.")
     args = p.parse_args()
 
-    if args.stage == "design" and args.tier == "easy":
+    if args.stage == "design":
         from generator.design_agent import run_design
         # run the agent that generates the plan / prereg JSON
         run_design(args.study_path,
@@ -23,7 +23,7 @@ def main():
         	model_name=args.model_name
         )
 
-    elif args.stage == "execute" and args.tier == "easy":
+    elif args.stage == "execute":
         # Agent-driven, step-by-step with human confirmation before executing
         from generator.execute_agent import run_execute
         run_execute(

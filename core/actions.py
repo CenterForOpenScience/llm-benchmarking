@@ -352,18 +352,9 @@ def get_execute_tool_definitions() -> list:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "steps": {
-                            "type": "array",
-                            "description": "List of execution steps.",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "study_path": {"type": "string", "description": "Path to the current study directory"}
-                                },
-                                "required": ["study_path"]
-                            }
-                        }
-                    }
+                            "study_path": {"type": "string", "description": "Path to the current study directory"}
+                    },
+                    "required": ["study_path"]
                 }
             }
         },
