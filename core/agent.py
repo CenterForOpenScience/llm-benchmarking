@@ -149,7 +149,7 @@ class Agent:
             params["tool_choice"] = "auto"
 
         # Handle Model Specifics (o1/o3 vs GPT-4o)
-        is_reasoning = "o1" in self.model or "o3" in self.model
+        is_reasoning = self.model in REASONING_MODELS
         
         if is_reasoning:
             # o1/o3 support 'max_completion_tokens' instead of 'max_tokens'
