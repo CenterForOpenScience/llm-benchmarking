@@ -1,0 +1,89 @@
+{
+  "replication_study": {
+    "hypothesis": "Among 15-year-old students, the interaction between standardized school-average mathematics ability and standardized use of memorization is negative in predicting standardized mathematics self-concept, controlling for standardized individual mathematics ability (linear and quadratic).",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "PISA2012.replication.RDS",
+      "source_type": "OECD PISA student/school survey (plausible values for mathematics achievement)",
+      "wave_or_subset": "Likely PISA 2012 mathematics domain (based on file name); final subset determined at runtime by available columns.",
+      "sample_size": "Computed at runtime after dropping missing values; not available prior to execution.",
+      "unit_of_analysis": "Individual student, nested within schools and countries.",
+      "access_details": "The RDS file should be placed/mounted at /app/data/PISA2012.replication.RDS for the analysis script to read.",
+      "qualification": {
+        "explanation": "This dataset provides a new wave (2012) of the same OECD PISA survey used in the original (2003), preserving high fidelity in constructs (mathematics self-concept, learning strategies including memorization, and mathematics plausible values), yet yielding a different sample to test generalizability of the focal claim.",
+        "similarity_to_original": "The original used OECD PISA 2003 mathematics data with five plausible values and multilevel modeling (post_registration.json: original_study.data.source='OECD PISA 2003', outcome=mathematics self-concept, five plausible values; original_study.method description). Our replication dataset is named 'PISA2012.replication.RDS' (replication_data folder listing), which strongly indicates it is a PISA dataset and thus shares core constructs and measurement framework with the original.",
+        "deviation_from_original": "While the original sample was PISA 2003 with 265,180 students across 41 countries (post_registration.json), this replication uses a different wave indicated by the file name 'PISA2012.replication.RDS' present in the replication_data folder. The coverage (countries/participants) and instrument versions may differ in 2012 compared to 2003, providing a new sample while maintaining methodological fidelity."
+      },
+      "notes": "Variables may have different names by wave/country coding. The script uses heuristics to identify: country (e.g., CNT), school ID (e.g., SCHOOLID), mathematics self-concept (SCMAT-like), memorization strategy (MEMOR-like), and plausible values (PV1MATH\u2013PV5MATH). All IO paths are under /app/data. Outputs include replication_results.json (combined and per-PV estimates), replication_run_log.txt (logs), and replication_columns.csv (column list)."
+    },
+    "planned_method": {
+      "steps": [
+        "Place PISA2012.replication.RDS at /app/data.",
+        "Run the Python script to load the RDS (via pyreadr) into a DataFrame.",
+        "Heuristically identify columns: country (e.g., CNT), school ID (e.g., SCHOOLID; combined with country to avoid collisions), mathematics self-concept (SCMAT-like), memorization strategy (MEMOR-like), and math plausible values (PV1MATH\u2013PV5MATH).",
+        "For each plausible value (PV1\u2013PV5): compute school-average ability (mean of PV within school), standardize outcome and predictors, create interaction between z(school-average ability) and z(memorization), and include controls for z(individual ability) and z(individual ability)^2.",
+        "Fit a three-level mixed-effects linear model with fixed effects (school-average ability, memorization, interaction, individual ability linear and quadratic) and random intercepts for school (grouping) and for country via variance components.",
+        "Record coefficient and standard error for the interaction term for each plausible value.",
+        "Combine estimates across plausible values using Rubin's rules (report combined estimate, SE, z, and p-value).",
+        "Write detailed results to /app/data/replication_results.json and logs to /app/data/replication_run_log.txt."
+      ],
+      "models": "Three-level mixed-effects linear regression (statsmodels MixedLM): fixed effects for z(school-average ability), z(memorization), interaction z(school-average ability)*z(memorization), z(individual ability), [z(individual ability)]^2; random intercepts for schools (group) and variance-component random intercepts for countries.",
+      "outcome_variable": "Mathematics self-concept (standardized within the analysis sample).",
+      "independent_variables": "School-average mathematics ability (standardized) and memorization strategy (standardized), with their interaction as the focal effect.",
+      "control_variables": "Individual mathematics ability (standardized linear and quadratic).",
+      "tools_software": "Python 3.10; packages: pyreadr, pandas, numpy, statsmodels, scipy.",
+      "planned_estimation_and_test": {
+        "estimation": "Coefficient on the interaction term: z(school-average mathematics ability) \u00d7 z(memorization).",
+        "test": "Normal-approximation z-test on the combined estimate from Rubin's rules; two-sided p-value."
+      },
+      "missing_data_handling": "Listwise deletion for variables used in each model per plausible value.",
+      "multiple_testing_policy": "Not applicable for the focal test; only the single moderator interaction is evaluated.",
+      "inference_criteria": "Primary criterion: interaction coefficient is negative and statistically significant at p < .001 (consistent with original large-N threshold noted in post_registration.json). Secondary: effect magnitude reasonably close to original coefficient (\u22120.089) with the same direction."
+    },
+    "codebase": {
+      "files": {
+        "replicate_bflpe_memorization__py.py": "Entrypoint script for the replication. Reads /app/data/PISA2012.replication.RDS using pyreadr; heuristically detects country, school, outcome (math self-concept), memorization, and PV1\u2013PV5 math columns; standardizes variables; computes school-average ability per PV; fits mixed-effects models (random intercepts for schools and countries) per PV; combines results with Rubin\u2019s rules; writes outputs to /app/data/replication_results.json and logs/columns to /app/data."
+      },
+      "notes": "All IO strictly uses /app/data. Run with: python ./data/original/2/data-only/replication_data/replicate_bflpe_memorization__py.py (ensure the RDS is present at /app/data). The model approximates a three-level structure via school-level random intercepts and country variance components using statsmodels MixedLM. Variable discovery is pattern-based to accommodate naming differences across PISA waves."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10",
+      "packages": {
+        "python": [
+          "pyreadr>=0.5.0",
+          "pandas>=1.5.0",
+          "numpy>=1.23.0",
+          "statsmodels>=0.14.0",
+          "scipy>=1.10.0",
+          "patsy>=0.5.3"
+        ],
+        "other": [
+          "git",
+          "wget"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "16"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": [
+        "Ensure the file PISA2012.replication.RDS is available at ./data (mounted to /app/data in the container).",
+        "Build/run the container with volumes mapping ./data:/app/data.",
+        "Inside the container, run: python /workspace/data/original/2/data-only/replication_data/replicate_bflpe_memorization__py.py (or the appropriate path where the script resides).",
+        "After completion, inspect /app/data/replication_results.json and /app/data/replication_run_log.txt."
+      ],
+      "comparison_metrics": [
+        "Sign of the interaction coefficient (should be negative).",
+        "Statistical significance at p < .001 (Rubin-combined).",
+        "Magnitude of the standardized interaction coefficient compared to original (original \u2248 -0.089; initial_details.txt).",
+        "Qualitative alignment with original effect size direction (original effect size -0.157; initial_details.txt)."
+      ]
+    }
+  }
+}

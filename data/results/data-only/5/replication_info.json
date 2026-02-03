@@ -1,0 +1,94 @@
+{
+  "replication_study": {
+    "hypothesis": "Among adults aged 45+ in poor self-reported general health who are hypertensive at IFLS Wave 4 measurement, the probability of being under-diagnosed decreases with years of education (negative marginal effect in a probit model controlling for age, age^2, sex, per capita expenditures, and distance to health center).",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "IFLS Wave 4 replication subset (replication_data.dta)",
+      "source_type": "Survey (Indonesian Family Life Survey, IFLS)",
+      "wave_or_subset": "Wave 4 (Nov 2007\u2013Apr 2008); adults aged 45+; hypertensive; poor general health subsample",
+      "sample_size": "Computed at runtime; expected order of magnitude ~1064 for poor-health hypertensive subsample (Table 2 of the original; post_registration.json).",
+      "unit_of_analysis": "Individual adult respondent",
+      "access_details": "Dataset provided locally; to run, place replication_data.dta at /app/data/replication_data.dta (public IFLS data otherwise available from RAND).",
+      "qualification": {
+        "explanation": "This dataset is drawn from IFLS Wave 4, the same survey and period used in the original study, enabling high-fidelity replication of the focal probit on under-diagnosis with similar measurements (nurse-measured BP, prior diagnosis, GHS, schooling, expenditures, access proxies). The subset restrictions produce a new analytic sample derived from the same underlying survey.",
+        "similarity_to_original": "Same survey and wave: IFLS Wave 4 (post_registration.json: data.source='IFLS', wave_or_subset='IFLS Wave 4'). The paper confirms measurements and definitions (original_paper.pdf: BP measured 3 times, drop first, average remaining two; WHO thresholds; under-diagnosis defined as hypertensive by survey but not previously diagnosed). The provided dataset contains required variables: BP measures us07b1/us07c1 (systolic) and us07b2/us07c2 (diastolic), prior diagnosis cd05, general health si01, schooling dl06/dl07, household size hh_size, expenditures (ks11aa monthly and ks10aa weekly), distance to nearest health center rj11, and sex (functions.get_dataset_columns).",
+        "deviation_from_original": "Years of education is reconstructed from dl06 (highest level) and dl07 (grade/graduation) with an approximate mapping, whereas the original likely used a ready-made years of schooling variable (original_paper.pdf section 3; post_registration.json method). Per capita expenditures are computed from ks11aa (monthly) or ks10aa\u00d74 (weekly) divided by hh_size with log1p, which may not exactly match the original construction (post_registration.json notes PCE usage). Time and risk preference categories used in the original (post_registration.json method) are not included in the focal poor-health regression here; the original Table 2 reported time preference is not significant in poor-health subsample. These differences are fully documented in the code README and may cause minor deviations in magnitudes."
+      },
+      "notes": "The Stata file encodes many categorical variables with value labels (e.g., '1:Yes', '3:No'); the code parses these labels. Distance (rj11) has substantial missingness; expenditures contain extreme values and missingness; we apply log1p(PCE). Age is taken from 'age' or fallback 'ar09'. General health status 'si01' is assumed coded 1-4 and split into good (1-2) vs poor (3-4). Hypertension constructed as average of us07b1/us07c1 >140 or us07b2/us07c2 >90 (first reading dropped by design). Listwise deletion is applied after constructing variables."
+    },
+    "planned_method": {
+      "steps": [
+        "Load /app/data/replication_data.dta.",
+        "Construct systolic and diastolic averages: mean(us07b1, us07c1) and mean(us07b2, us07c2).",
+        "Define hypertensive: systolic > 140 or diastolic > 90.",
+        "Define under-diagnosed: hypertensive == 1 and cd05 != 'Yes'.",
+        "Define general health status: si01 in {3,4} as poor health; retain poor-health subsample.",
+        "Restrict to age >= 45 and hypertensive == 1.",
+        "Construct female indicator from 'sex' labels.",
+        "Compute log PCE: monthly expenditures ks11aa (or ks10aa*4) divided by hh_size; log1p.",
+        "Distance to health center from rj11.",
+        "Reconstruct years_education from dl06/dl07 using transparent mapping.",
+        "Estimate probit: undiagnosed ~ years_education + female + age + age^2 + log_pce + dist_health_center.",
+        "Compute average marginal effects; record dy/dx for years_education with SE and p-value.",
+        "Save outputs (results JSON, model summary, analysis dataset) to /app/data."
+      ],
+      "models": "Probit regression with average marginal effects (dy/dx) reported.",
+      "outcome_variable": "Undiagnosed indicator among hypertensives: 1 if hypertensive by survey measurement and not previously diagnosed.",
+      "independent_variables": "Primary: years_education. Controls: female, age, age^2, log_pce, dist_health_center.",
+      "control_variables": "Female; age; age squared; log per capita expenditures; distance to nearest health center.",
+      "tools_software": "Python 3; pandas for data handling; statsmodels for probit and marginal effects; numpy.",
+      "planned_estimation_and_test": {
+        "estimation": "Average marginal effect of years_education on probability of being under-diagnosed (dy/dx) from a probit model.",
+        "test": "z-test for marginal effect significance (two-sided); report p-value from statsmodels get_margeff."
+      },
+      "missing_data_handling": "Listwise deletion after constructing analysis variables (drop rows with NA in outcome or regressors).",
+      "multiple_testing_policy": "Not applicable (single focal outcome and coefficient).",
+      "inference_criteria": "Primary replication success if marginal effect on years_education is negative and statistically significant at 5% in poor-health subsample; secondary check on magnitude being reasonably close to original (-0.00867) allowing for deviations due to constructed education and PCE."
+    },
+    "codebase": {
+      "files": {
+        "run_replication__py.py": "Entry point. Locates and runs underdiagnosis_poor_health__py.py either from /app/data or the same directory.",
+        "underdiagnosis_poor_health__py.py": "Main analysis script. Reads /app/data/replication_data.dta; constructs variables; restricts to age>=45, hypertensive==1, poor_health==1; estimates probit; computes marginal effects; writes outputs to /app/data."
+      },
+      "notes": "All I/O uses /app/data. Before running, copy replication_data.dta to /app/data. Outputs: /app/data/replication_results.json, /app/data/replication_model_summary.txt, /app/data/replication_analysis_dataset.csv. Dependencies: pandas, numpy, statsmodels (which requires scipy). A README in the code folder documents variable construction and run instructions."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "numpy>=1.23",
+          "pandas>=1.5",
+          "scipy>=1.9",
+          "statsmodels>=0.14"
+        ],
+        "other": [
+          "wget",
+          "git"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": [
+        "Place replication_data.dta into ./data so it is mounted at /app/data/replication_data.dta.",
+        "Inside the container, run: python /app/data/run_replication__py.py",
+        "Inspect /app/data/replication_results.json for sample size and the marginal effect dy/dx of years_education.",
+        "Review full model output and marginal effects in /app/data/replication_model_summary.txt.",
+        "Compare the estimated dy/dx for years_education to the original (-0.00867; significant at 5%)."
+      ],
+      "comparison_metrics": [
+        "Direction: marginal effect on years_education should be negative.",
+        "Significance: p-value <= 0.05 for years_education in poor-health subsample.",
+        "Magnitude: closeness to original effect (-0.00867) allowing for deviations due to reconstructed years_education and PCE; report absolute and percent difference.",
+        "Sample comparability: report the analysis sample size versus original (expected ~1064)."
+      ]
+    }
+  }
+}

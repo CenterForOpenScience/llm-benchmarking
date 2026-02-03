@@ -1,0 +1,69 @@
+{
+  "replication_study": {
+    "hypothesis": "Households assigned to any ACT subsidy have a higher probability that an illness episode is treated with ACT (drugs_taken_AL=1), relative to control households, with robust standard errors clustered at the household (cu_code) level.",
+    "study_type": "Experimental",
+    "data_plan": {
+      "dataset_identifier": "ReplicationData_Cohen_AmEcoRev_2015_2lb5.dta",
+      "source_type": "Field experiment administrative and survey dataset (RCT in Western Kenya)",
+      "wave_or_subset": "Illness episodes across waves 0-3; analysis excludes observations with missing outcome or treatment indicator and uses sub_county and wave as fixed effects.",
+      "sample_size": "Analysis rows determined after dropping missing outcome/treatment; full file has 7,416 rows (functions.get_dataset_info).",
+      "unit_of_analysis": "Illness episode (episode-level record with ACT taken indicator)",
+      "access_details": "Provided locally in replication_data. The script reads the file from /app/data.",
+      "qualification": {
+        "explanation": "This dataset is the RCT data used to examine ACT access under subsidy regimes. It directly measures the operationalized variables needed to replicate the focal effect of any ACT subsidy on ACT access, with household IDs for clustering and weights.",
+        "similarity_to_original": "The dataset aligns with the original study\u2019s data sources and measures (post_registration.json: randomized arms for ACT/RDT subsidies; outcome ACT access; clustering at household). The original paper (original_paper.pdf) reports the access increase from 19% to over 40% under high subsidy, and the initial_details.txt specifies the focal estimate and clustering method.",
+        "deviation_from_original": "We operationalize 'Any ACT subsidy' using a binary indicator (group) available in the provided dataset. If the original analysis separated specific subsidy levels or excluded certain arms (e.g., RDT-subsidy arms) for the focal estimate, our script approximates the pooled 'Any subsidy' effect using available fields. Any divergence will be documented in output notes."
+      },
+      "notes": "Variables: drugs_taken_AL (binary ACT use), group (0/1 treatment proxy), cu_code (cluster ID), sub_county and wave (FE proxies), weight (sampling weights). Some variables have missingness (e.g., drugs_taken_AL has 299 missing; functions.get_dataset_info). The code performs listwise deletion for the outcome and treatment. If group differs from the original 'any ACT subsidy' construct, this may yield slight deviations. All IO paths use /app/data."
+    },
+    "planned_method": {
+      "steps": "- Load the Stata dataset from /app/data.\n- Drop observations with missing drugs_taken_AL, group, or cu_code.\n- Construct variables: act_access = drugs_taken_AL (int), any_subsidy = group (int).\n- Produce descriptive group means (weighted and unweighted) for act_access by any_subsidy.\n- Estimate Linear Probability Models: (1) Unweighted OLS with cluster-robust SE at cu_code; (2) Unweighted with FE (C(sub_county), C(wave)); (3) Weighted WLS with and without FE; all with cluster-robust SE by cu_code.\n- Save results to /app/data as JSON and CSV.",
+      "models": "Linear Probability Model (OLS) with robust standard errors clustered at the household level; specifications with and without fixed effects (sub_county, wave); optionally WLS using sampling weights.",
+      "outcome_variable": "act_access (constructed as drugs_taken_AL)",
+      "independent_variables": "Primary: any_subsidy (constructed as group). Fixed effects: C(sub_county), C(wave).",
+      "control_variables": "Fixed effects for sub_county and wave as strata/time proxies. No additional covariates included to match the focal ITT comparison.",
+      "tools_software": "Python 3.10; pandas; numpy; statsmodels",
+      "planned_estimation_and_test": {
+        "estimation": "Coefficient on any_subsidy in an LPM (difference in ACT access probability).",
+        "test": "Cluster-robust t-test on the coefficient (clusters: cu_code)."
+      },
+      "missing_data_handling": "Listwise deletion for outcome (drugs_taken_AL), treatment indicator (group), and cluster ID (cu_code).",
+      "multiple_testing_policy": "Not applicable for the focal single-outcome replication.",
+      "inference_criteria": "Two-sided tests with 5% significance threshold; report coefficient, clustered SE, and p-value. Direction expected positive."
+    },
+    "codebase": {
+      "files": {
+        "replicate_act_access__py.py": "Entrypoint script. Reads /app/data/ReplicationData_Cohen_AmEcoRev_2015_2lb5.dta; constructs act_access and any_subsidy; computes weighted/unweighted means; estimates LPMs with cluster-robust SE at cu_code, with and without fixed effects and weights; writes /app/data/act_access_regression_results.json and /app/data/act_access_group_means.csv."
+      },
+      "notes": "All IO uses /app/data. No non-Python scripts. The treatment variable any_subsidy is approximated by 'group' in the dataset; if the original definition differs (e.g., pooling certain subsidy arms, excluding RDT arms), results could differ slightly. Statsmodels provides cluster-robust covariance. We normalize weights for WLS as statsmodels WLS expects precision weights."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas==2.1.4",
+          "numpy==1.26.3",
+          "statsmodels==0.14.1",
+          "pyreadstat==1.2.6"
+        ],
+        "other": [
+          "wget",
+          "git"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data/original/8/data-only/replication_data:/app/code",
+        "./data/original/8/data-only/replication_data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "- Ensure the Stata dataset is available at /app/data/ReplicationData_Cohen_AmEcoRev_2015_2lb5.dta.\n- Run: python /app/code/replicate_act_access__py.py\n- Inspect outputs: /app/data/act_access_regression_results.json and /app/data/act_access_group_means.csv.\n- Compare the coefficient on any_subsidy from the unweighted FE model to the original reported estimate (~0.187 with clustered SE ~0.038, significant at 1%).",
+      "comparison_metrics": "Compare coefficient magnitude, sign, and clustered SE; compute t-statistic and p-value; check alignment with original direction and approximate size. Document any deviations due to operationalization of 'Any ACT subsidy' and sample filters."
+    }
+  }
+}

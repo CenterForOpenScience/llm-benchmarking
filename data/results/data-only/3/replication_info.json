@@ -1,0 +1,79 @@
+{
+  "replication_study": {
+    "hypothesis": "Across countries, the Democracy Index (EIU) is positively associated with the total confirmed COVID-19 cases per one million people as of 2020-04-03, controlling for temperature, economic openness, precipitation, and population density.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "COVID replication.dta (compiled cross-country snapshot as of 2020-04-03)",
+      "source_type": "Compiled cross-country database from multiple sources (ECDC, World Bank, EIU, meteoblue/indexmundi)",
+      "wave_or_subset": "Single cross-sectional snapshot; dependent variable is total confirmed cases per million on 2020-04-03",
+      "sample_size": "163 countries",
+      "unit_of_analysis": "country",
+      "access_details": "Data file provided in the replication_data folder and expected to be mounted at /app/data inside the container. No special access restrictions for replication.",
+      "qualification": {
+        "explanation": "This dataset is directly qualified for replication because it is a compiled cross-country snapshot drawing on the same sources and time point as the original study. It includes the necessary variables (COVID-19 cases as of 2020-04-03, population, annual temperature, trade openness proxies, and the EIU Democracy Index) to operationalize the original regression model.",
+        "similarity_to_original": "The original paper uses: ECDC cases, population (2018), yearly average temperature and precipitation, trade openness from World Bank, and Democracy Index from EIU, analyzing a cross-country snapshot on 2020-04-03 (original_paper.pdf summary; post_registration.json data section). The provided dataset includes: COVID_12_31_04_03 (confirmed cases as of 2020-04-03), popData2019 (population), Annual_temp, trade_recent/imputed_trade/trade_2016 (openness measures), and 'Democracy index (EIU)' (replication_data/COVID replication.dta; observed via file header and column names). This matches the sources and variables specified in post_registration.json and the original_paper.pdf summary.",
+        "deviation_from_original": "This is a direct replication using the same cross-section and sources (post_registration.json: sample size 163; replication_data file columns indicate the same constructs). The key deviations are analytical: (1) the replication uses robust (HC1) standard errors for OLS to handle heteroscedasticity (original_paper.pdf notes heteroscedasticity); (2) precipitation and population density are included only if present in the dataset; (3) for openness, the script prioritizes 'trade_recent', then 'imputed_trade', then 'trade_2016' based on availability; (4) extended lagged dependent variable models are not implemented unless clearly identifiable lag variables exist (original_paper.pdf describes lagged models, but the provided dataset appears to be a snapshot; no clear time-series panel is present)."
+      },
+      "notes": "The dataset file name contains a space ('COVID replication.dta'); the script handles this by searching multiple canonical names in /app/data. Columns include spaces and punctuation (e.g., 'Democracy index (EIU)', 'COVID_12_31_04_03'); the script standardizes column names to snake_case. If a per-million cases variable is not present, the script constructs it as cases per million using COVID_12_31_04_03 and popData2019. If precipitation or population density variables are missing, the model runs without them. The openness measure is chosen among trade_recent, imputed_trade, and trade_2016 depending on availability."
+    },
+    "planned_method": {
+      "steps": [
+        "Mount the dataset to /app/data (e.g., copy 'COVID replication.dta' or 'COVID replication.rds' to /app/data).",
+        "Run the Python script: python /app/replication_data/replicate_democracy_covid.py.",
+        "The script standardizes column names and infers the dependent and independent variables.",
+        "Construct the dependent variable as cases per million: COVID_12_31_04_03 / popData2019 \u00d7 1e6 if needed.",
+        "Select openness variable by priority: trade_recent, then imputed_trade, then trade_2016.",
+        "Estimate baseline OLS with robust (HC1) standard errors: cases per million on temperature, openness, democracy, and (if available) precipitation and population density.",
+        "Estimate a refined OLS dropping non-significant covariates (p > 0.10) but retaining democracy.",
+        "Save outputs: variable_mapping.json, replication_results.json, replication_model_summary.txt to /app/data."
+      ],
+      "models": "Ordinary Least Squares (OLS) with heteroscedasticity-robust (HC1) standard errors; a refined specification drops non-significant covariates while keeping democracy.",
+      "outcome_variable": "Total confirmed COVID-19 cases per one million people (as of 2020-04-03).",
+      "independent_variables": "Yearly average temperature (Annual_temp), economic openness (trade_recent/imputed_trade/trade_2016), democracy index (EIU), plus precipitation and population density if present.",
+      "control_variables": "Precipitation and population density (included if available).",
+      "tools_software": "Python 3.10; pandas, numpy, statsmodels, pyreadr (for RDS), pyreadstat (for Stata).",
+      "planned_estimation_and_test": {
+        "estimation": "Coefficient on democracy index in the OLS regression of cases per million.",
+        "test": "Two-sided t-test on the democracy coefficient (robust SE), with directional expectation that the coefficient is > 0."
+      },
+      "missing_data_handling": "Listwise deletion after coercing relevant columns to numeric.",
+      "multiple_testing_policy": "Not applicable; single focal outcome and coefficient. No multiple-comparison correction.",
+      "inference_criteria": "Primary success if the democracy coefficient is positive and statistically significant at \u03b1=0.05 (robust SE). Secondary checks: direction and approximate magnitude relative to original (86.76) and model fit (R\u00b2)."
+    },
+    "codebase": {
+      "files": {
+        "replicate_democracy_covid.py": "Entrypoint Python script placed in replication_data. Reads the dataset from /app/data (supports .dta, .rds, .csv), standardizes column names, constructs the dependent variable if needed, selects openness proxy, and runs OLS with robust SE. Outputs variable_mapping.json, replication_results.json, and a human-readable model summary to /app/data.",
+        "README_replicate_democracy_covid.txt": "Run instructions and notes about expected input file names and column mappings. Not executed."
+      },
+      "notes": "All I/O occurs under /app/data. The script prioritizes reading Stata, then RDS, then CSV. It handles non-standard column names by standardizing to snake_case and searching for known variants (Annual_temp, Democracy index (EIU), COVID_12_31_04_03, popData2019, trade_recent/imputed_trade/trade_2016). Robust SE (HC1) are used to address heteroscedasticity noted in the original paper. No GPU or special hardware is required."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "numpy>=1.24.0",
+          "pandas>=1.5.0",
+          "statsmodels>=0.13.5",
+          "pyreadr>=0.4.9",
+          "pyreadstat>=1.2.1"
+        ],
+        "other": [
+          "bash",
+          "ca-certificates"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "2"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "1) Place the dataset file (e.g., 'COVID replication.dta') into ./data, which will be mounted to /app/data. 2) Inside the container, run: python /app/replication_data/replicate_democracy_covid.py. 3) Inspect /app/data/replication_results.json and /app/data/replication_model_summary.txt for model estimates and robust p-values. 4) Compare the democracy coefficient and p-value to the original values (coef\u224886.76467; p\u22480.0001).",
+      "comparison_metrics": "Sign and magnitude of the democracy coefficient; robust p-value; adjusted R\u00b2; whether democracy remains significant in refined model. Primary benchmark: coefficient positive and statistically significant (p<0.05), direction matching the original claim."
+    }
+  }
+}

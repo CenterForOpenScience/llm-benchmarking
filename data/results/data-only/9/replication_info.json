@@ -1,0 +1,79 @@
+{
+  "replication_study": {
+    "hypothesis": "On the economic policy dimension, the log of party system dispersion (max-min distance across parties) is positively associated with the log of the number of parties (relevance count or effective number) at the country-election level.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "CMP_final.dta and CPDS_final.dta (Replication package variant covering 20 established parliamentary democracies, circa 1945\u20131999)",
+      "source_type": "Comparative Manifesto Project (CMP) party manifesto data; CPDS-derived electoral institutions data",
+      "wave_or_subset": "Elections in twenty established parliamentary democracies from 1945 to 1999 (post_registration.json).",
+      "sample_size": "Country-election observations derived from CMP after grouping by country-election (exact N determined at runtime); CPDS_final.dta contains 1,752 country-year rows (observed via dataset info).",
+      "unit_of_analysis": "Party system by country-election (dispersion computed within each party system).",
+      "access_details": "Provided as local files CMP_final.dta and CPDS_final.dta; the analysis script reads from /app/data.",
+      "qualification": {
+        "explanation": "This dataset is qualified because it includes the same core data source as the original study (CMP) and a control dataset for electoral rules (CPDS). It allows reconstructing party positions and dispersion across elections and linking to electoral-system indicators to replicate the core regression of log dispersion on log number of parties.",
+        "similarity_to_original": "The original used CMP manifesto data to construct economic and social dimensions (post_registration.json: source and method) and tested OLS regressions of log dispersion on log number of parties with electoral system control (post_registration.json: method/models). The provided CMP_final.dta and CPDS_final.dta correspond to the same sources, preserving high fidelity to the original data structure and variables (replication_data folder contents listing CMP_final.dta and CPDS_final.dta; CPDS contains 'prop' indicating proportionality as described in post_registration.json\u2019s control variables).",
+        "deviation_from_original": "The original described a relevance definition requiring at least 1% of seats in two consecutive elections and used principal components analysis on selected CMP categories to form economic and social dimensions (post_registration.json: data/method). In the provided replication code, relevance count approximates this with a 1% share threshold within an election due to lack of consecutive-election flags in the provided file; PCA dimension construction is data-driven across available CMP policy variables if precomputed dimensions are absent (run_replication.py). Thus, the dataset constitutes a new sample realization with operational approximations while maintaining core constructs."
+      },
+      "notes": "CPDS_final.dta columns: country (object), year (object castable to Int), elect (datetime), prop (float), prop_imputed_by_datafinder (float). The CMP file could not be inspected via tool but is read at runtime via pandas.read_stata (requires pyreadstat). The script will attempt to detect precomputed policy dimensions; otherwise it constructs them via PCA over common CMP policy variables. PCA imputes variable-wise means for missing values; max-min dispersion is then computed. Relevance count uses a 1% share threshold; effective number of parties (ENP) is computed as 1/sum(s_i^2). All IO is constrained to /app/data."
+    },
+    "planned_method": {
+      "steps": [
+        "Load CMP_final.dta from /app/data and infer identifiers (country, year or election date).",
+        "Identify precomputed policy dimensions (econ, soc); if absent, run PCA on CMP policy variables to construct two components (economic and social).",
+        "Compute party-level seat/vote shares per country-election (if seat shares unavailable, fallback to vote shares where present).",
+        "Compute number of parties per election using: (a) relevance count >= 1% share; (b) effective number of parties ENP = 1/sum(s_i^2).",
+        "Compute dispersion per country-election as max-min of party positions along each dimension.",
+        "Load CPDS_final.dta; merge electoral system control (e.g., prop indicator) by country-year into the dispersion dataset.",
+        "Transform dispersion and party counts via natural logs.",
+        "Run OLS regressions of log dispersion on log number of parties with electoral-system control; compute cluster-robust SEs by country.",
+        "Save results (coefficients, SEs, p-values, R-squared) and the constructed analysis dataset to /app/data/replication_outputs."
+      ],
+      "models": "OLS regressions with clustered standard errors by country: log(dispersion_econ) ~ log(number_of_parties) + electoral_system_control; replicated similarly for social dimension and for ENP as an alternative count.",
+      "outcome_variable": "Party system dispersion by country-election: max-min distance across party positions along economic (primary) and social (secondary) dimensions.",
+      "independent_variables": "Primary: log of number of parties (relevance count); Alternative: log of effective number of parties (ENP).",
+      "control_variables": "Electoral system indicator (e.g., prop for proportional systems). Additional available controls in CPDS can be included if present.",
+      "tools_software": "Python 3.10; pandas, numpy, scikit-learn (PCA, StandardScaler), statsmodels (OLS with clustered SE), pyreadstat (for Stata .dta reading).",
+      "planned_estimation_and_test": {
+        "estimation": "Regression coefficients of log(number_of_parties) on log(dispersion_econ) (primary), with clustered standard errors by country.",
+        "test": "t-tests on coefficients with cluster-robust standard errors; two-sided tests."
+      },
+      "missing_data_handling": "For PCA inputs: mean imputation per variable; for regressions: listwise deletion after constructing variables; zero dispersion or party counts are treated as missing for logs.",
+      "multiple_testing_policy": "Two primary outcomes (economic and social). Report unadjusted p-values and note multiplicity; optionally provide Holm\u2013Bonferroni-adjusted p-values in supplementary output.",
+      "inference_criteria": "Primary inference focuses on the coefficient of log(number_of_parties) in the economic dimension model. Significance threshold alpha=0.05 (two-sided), expecting a positive sign consistent with initial_details.txt (coefficient approx. 0.39; robust SE ~0.14)."
+    },
+    "codebase": {
+      "files": {
+        "run_replication.py": "Entrypoint script. Reads CMP_final.dta and CPDS_final.dta from /app/data; constructs economic and social dimensions (via detection or PCA), computes party-system dispersion and party counts (relevance and ENP), merges electoral-system control from CPDS, runs OLS with clustered SE by country, and writes results to /app/data/replication_outputs. Uses PCA if precomputed dimensions are not found."
+      },
+      "notes": "All data IO uses /app/data. Outputs are written to /app/data/replication_outputs (results_replication.json and analysis_dataset.csv). The script requires pyreadstat for reading .dta files via pandas. A README_run.txt is included for human-readable run instructions (not executed)."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "numpy>=1.23.0",
+          "pandas>=1.5.0",
+          "scikit-learn>=1.1.0",
+          "statsmodels>=0.13.5",
+          "pyreadstat>=1.2.0"
+        ],
+        "other": [
+          "wget",
+          "git"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "1) Place CMP_final.dta and CPDS_final.dta into ./data (mounted to /app/data). 2) Execute: python ./data/original/9/data-only/replication_data/run_replication.py (or run within container with /app/data mounted). 3) Inspect /app/data/replication_outputs/results_replication.json for model outputs and /app/data/replication_outputs/analysis_dataset.csv for the constructed dataset.",
+      "comparison_metrics": "Compare the coefficient on log(number_of_parties) for the economic dimension to the original: direction (should be positive), magnitude (approximate to 0.39), statistical significance (p<0.05), and 95% CI overlapping reported range. Also compare R-squared values and robustness across the two party count measures (relevance vs ENP)."
+    }
+  }
+}
