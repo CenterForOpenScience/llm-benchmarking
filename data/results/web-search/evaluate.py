@@ -14,6 +14,40 @@ from urllib.parse import urlsplit
 # URL utilities (from your eval script)
 _TRAILING_PUNCT = " \t\r\n).,;]}>\"'"
 
+def _extract_json(text: str) -> Dict[str, Any]:
+    if not text: 
+        return {}
+    m = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if m:
+        try: return json.loads(m.group(1))
+        except: pass
+    m = re.search(r'(\{.*\})', text, re.DOTALL)
+    if m:
+        try: return json.loads(m.group(1))
+        except: pass
+    return {}
+
+def _get_predicted_urls(pred: Dict[str, Any]) -> List[Dict[str, Any]]:
+    result = pred.get("result")
+    
+    # If result is None/Empty, try parsing 'raw_response'
+    if not result and "raw_response" in pred:
+        result = _extract_json(str(pred["raw_response"]))
+
+    result = result or {}
+    urls = result.get("urls") or []
+    
+    if not isinstance(urls, list):
+        return []
+        
+    out: List[Dict[str, Any]] = []
+    for u in urls:
+        if isinstance(u, dict) and "url" in u:
+            out.append(u)
+        elif isinstance(u, str):
+            out.append({"url": u})
+    return out
+
 def _sanitize_url(raw: str) -> Optional[str]:
     if raw is None:
         return None
@@ -185,10 +219,25 @@ def evaluate_one_case(gold_case: Dict[str, Any], pred_urls: List[Dict[str, Any]]
         strict = obj.get("_norm_strict", "")
         loose = obj.get("_norm_loose", "")
         candidates: List[GoldResource] = []
+        
+        # Try Exact Matches first
         if strict and strict in urlkey_to_candidates:
             candidates.extend(urlkey_to_candidates[strict])
         if loose and loose in urlkey_to_candidates:
             candidates.extend(urlkey_to_candidates[loose])
+
+        # If no exact match, try Relaxed/Prefix Matches
+        if not candidates:
+            for gold_key, gold_cands in urlkey_to_candidates.items():
+                # Check if Prediction is a sub-page of Gold Alias
+                # e.g. Gold: "oecd.org", Pred: "oecd.org/data/report.pdf"
+                if strict.startswith(gold_key) or loose.startswith(gold_key):
+                    candidates.extend(gold_cands)
+                
+                # Check if Gold is a sub-page of Prediction (optional, covers generic landing pages)
+                # e.g. Gold: "oecd.org/report.pdf", Pred: "oecd.org"
+                elif gold_key.startswith(strict) or gold_key.startswith(loose):
+                    candidates.extend(gold_cands)
 
         # dedupe candidates by rid
         seen = set()
