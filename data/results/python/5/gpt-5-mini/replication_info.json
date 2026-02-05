@@ -1,0 +1,70 @@
+{
+  "replication_study": {
+    "hypothesis": "Among hypertensive respondents in poor self-reported general health (kk01 == 3 or 4), each additional year of formal education (yrs_school) is associated with a lower probability of being under-diagnosed (under_diag = 1 if measured hypertensive and never previously diagnosed).",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "IFLS4-derived replication_data.dta (provided in ./replication_data)",
+      "source_type": "Household survey / survey-derived biomarker dataset (Indonesian Family Life Survey IFLS4, analytic subset)",
+      "wave_or_subset": "IFLS4-derived analytic file provided (replication_data.dta). Sample will be restricted to respondents with measured hypertension and self-reported poor general health (kk01 == 3 or 4).",
+      "sample_size": "Depends on filtering. The script reports sample sizes after filtering. The .dta contains many observations; expected hypertensive & poor-health subset will be computed by the script.",
+      "unit_of_analysis": "Individual respondent",
+      "access_details": "The replication_data.dta file is included in ./data/original/5/python/replication_data within the study bundle. No additional external access required for this provided file.",
+      "qualification": {
+        "explanation": "The provided replication_data.dta is derived from IFLS4 (the same survey used by Kim & Radoias 2016) and includes the key variables needed to operationalize the focal claim: blood pressure measurements (us07b1/us07c1/us07b2/us07c2), diagnosis status (cd05), education variables (dl04, dl06, dl07), self-reported general health (kk01), age (ar09), sex, time and risk preference items (si*), distance to health center (rj11), and a set of expenditure items (ks02_*/ks06_*/ks08_*). The Stata .do file in replication_data documents the construction and codes and the Python script reproduces the same operations. (See post_registration.json data.source and method; see replication_data/Kim & Radoias 2016 - Replication Analysis.do for coding rules.)",
+        "similarity_to_original": "High-fidelity: The data are IFLS4-derived and contain the exact item-level variables the original study used to define hypertension, under-diagnosis, education, and general health. Evidence: post_registration.json (original study data and method descriptions) and the Stata .do file in replication_data that performs identical variable constructions.",
+        "deviation_from_original": "Deviations: The provided dataset appears to be an analytic subset (replication_data.dta) rather than the raw set of IFLS4 files. The replication code provided is a do-file with explicit recoding; the Python translation reproduces these steps. The PCE/log PCE variable in the original paper may have been constructed with a particular aggregation/household-level normalization; the Python script constructs a proxy by summing available ks02/ks06/ks08 components and taking log, which may differ from the original exact PCE. References: post_registration.json (sample restrictions, variables used) and replication_data/ Kim & Radoias 2016 - Replication Analysis.do (construction rules)."
+      },
+      "notes": "Caveats: The dataset uses survey-specific missing-code conventions (e.g., 8/9/98/99 meaning Don\u2019t Know or missing); these are handled per the .do file recoding. The distance variable (rj11) may be missing for many respondents (question only asked for those who visited a provider recently). The time/risk preference indices are constructed per Ng (2013) using branching items; the do-file averages two measures and rounds. The proxy for log PCE implemented in the Python translation is simpler than a full household-level PCE construction (documented in replication_info). All IO paths in the translation use /app/data when executed in a container."
+    },
+    "planned_method": {
+      "steps": "1) Load replication_data.dta. 2) Construct systolic and diastolic averages from us07b1/us07c1 and us07b2/us07c2; define hypertension per WHO (systolic>140 or diastolic>90), set missing if measurements missing. 3) Define under_diag: hypertension==1 & cd05==3 (never diagnosed); set missing if cd05 missing or 8 (don't know). 4) Construct yrs_school from dl04/dl06/dl07 using mappings in the do-file (e.g., elementary=6, junior high add 6, senior add 9, etc.), treating special codes 98/99 as missing and dl04==3 -> yrs_school=0. 5) Construct age and age^2 (ar09; ar09==998 -> missing), female dummy from sex. 6) Construct risk_A, risk_B, time_A, time_B per the do-file item rules, combine by averaging and rounding to get 4-group indexes. 7) Construct distance from rj11 with missing handling (rj11x==8 -> missing). 8) Construct a proxy for log PCE by summing available ks02/ks06/ks08 components and log-transforming (document discrepancy). 9) Subset sample to hypertensive respondents with poor general health (kk01 in {3,4}). 10) Estimate a probit model with under_diag as dependent variable, yrs_school as focal independent variable, and controls: age, age^2, female, log_pce_proxy, distance, risk_preference; compute marginal effects at the mean and standard errors. 11) Save results in JSON.",
+      "models": "Probit regression for binary dependent variable (under_diag). Marginal effects (dy/dx) reported (at means).",
+      "outcome_variable": "under_diag (binary: 1 if measured hypertensive and respondent reports never diagnosed by doctor).",
+      "independent_variables": "Primary: yrs_school (years of formal education). Secondary: time_preference and risk_preference indices.",
+      "control_variables": "age, age squared, female dummy, log household per-capita expenditure proxy, distance to health center, risk_preference.",
+      "tools_software": "Python 3.x (script uses pandas, numpy, statsmodels).",
+      "planned_estimation_and_test": {
+        "estimation": "Estimate the probit coefficient on yrs_school and report marginal effect (dy/dx) for an additional year of education.",
+        "test": "Wald-type z/t tests on coefficients from the probit; p-values reported for coefficients and marginal effects (standard errors from marginal effect estimation)."
+      },
+      "missing_data_handling": "Follow the .do recoding for missing (explicitly set known missing codes to NA). Use listwise deletion for the regression (drop observations missing the dependent variable or covariates used in the model).",
+      "multiple_testing_policy": "No correction planned for the single focal hypothesis. If multiple related outcomes or many subgroup tests are reported, we will report results both unadjusted and with corrections (e.g., Benjamini-Hochberg or Bonferroni) and note adjusted significance.",
+      "inference_criteria": "Two-sided tests with default thresholds: p<0.05 primary, p<0.01 and p<0.10 secondary. Directional expectation: education reduces under-diagnosis among poor-health hypertensives (negative effect on probability of being under-diagnosed, i.e., marginal effect is negative in direction of reducing under-diagnosis, or equivalently, education increases diagnosis probability)."
+    },
+    "codebase": {
+      "files": {
+        "replication_analysis__py.py": "Python translation of the replication Stata .do. Constructs variables (systolic, diastolic, hypertension, under_diag), maps years of schooling using dl04/dl06/dl07 recoding, constructs age/agesqrt, risk/time preference indices, distance, and a proxy for log PCE, subsets to hypertensive respondents in poor health, estimates a probit model and computes marginal effects. Reads replication_data.dta from /app/data/original/5/python/replication_data and writes replication_results.json to the same folder. This is the execution entrypoint.",
+        "replication_results.json": "(Output) JSON file produced by replication_analysis__py.py containing estimated coefficient, marginal effect, standard error, p-value for yrs_school, n_obs and model summary (if estimation runs)."
+      },
+      "notes": "The original materials included a Stata .do file (Kim & Radoias 2016 - Replication Analysis.do). Per run policy, the .do has been translated to Python (replication_analysis__py.py) and placed in the replication_data folder. The Python script uses only /app/data paths so it will work inside the specified Docker volume. The script intentionally approximates PCE construction as a proxy; a fuller re-construction of household-level PCE could be added if required. Dependencies are pandas, numpy, statsmodels, pyreadstat for Stata reading if needed (pandas read_stata also works)."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=1.3",
+          "numpy>=1.21",
+          "statsmodels>=0.13",
+          "pyreadstat>=1.1"
+        ],
+        "other": [
+          "git",
+          "wget",
+          "unzip"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "To reproduce the focal estimate: 1) Ensure the working directory contains ./replication_data/replication_analysis__py.py and the data file replication_data.dta in /app/data/original/5/python/replication_data. 2) From the project root (mounted at /app in the container), run: python /app/data/original/5/python/replication_data/replication_analysis__py.py. 3) The script will write /app/data/original/5/python/replication_data/replication_results.json with coefficient, marginal effect, SE, p-value for yrs_school and model output. 4) Compare the marginal effect for yrs_school against the original reported marginal effect for poor-health subsample (post_registration.json reports 0.00867, significant at 5% for years of education in poor health). Also compare sample sizes and note any discrepancies arising from missing data handling and PCE construction.",
+      "comparison_metrics": "Compare (a) marginal effect (dy/dx) for yrs_school magnitude and sign; (b) standard error and p-value/significance level; (c) estimated coefficient from the probit; (d) sample size after filtering. Report absolute and relative differences in point estimates and whether statistical significance changes. Optionally, compute standardized effect sizes (e.g., effect per standard deviation of education) and compare."
+    }
+  }
+}
