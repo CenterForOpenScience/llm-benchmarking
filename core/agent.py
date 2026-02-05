@@ -34,7 +34,7 @@ DICT_ONLY_ACTIONS = {
     # add others that require kwargs
 }
 
-REASONING_MODELS = ("o1", "o3", "gpt-5")
+REASONING_MODELS = ("o1", "o3", "gpt-5", "gpt-5-mini")
 
 def is_reasoning_model(model: str) -> bool:
     return model.startswith(REASONING_MODELS)
