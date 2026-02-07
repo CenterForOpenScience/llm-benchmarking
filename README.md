@@ -153,6 +153,9 @@ Core team members from COS, plus external partners from Old Dominion University,
 * Benchmark design
 * Open Science Research
 
+## Acknowledgement
+This project is funded by Coefficient Giving as part of its 'Benchmarking LLM Agents on Consequential Real-World Tasks' program. We thank Anna Szabelska, Adam	Gill, and Ahana Biswas for their annotation of the ground-truth post-registrations for the extraction stage.
+
 ## 📬 Contact
 
 For questions please contact:
