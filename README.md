@@ -1,145 +1,116 @@
 # LLM Benchmarking Project
 
-Welcome to the official repository for the **LLM Benchmarking Project**, led by the Center for Open Science (COS). This project aims to evaluate the capabilities of large language model (LLM) agents across key components of the scientific research lifecycle, including **replication**, **peer review**, and **research design**.
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Center for Open Science](https://img.shields.io/badge/Organization-COS-green)](https://cos.io)
 
-## 🔍 What This Project Is About
+Welcome to the official repository for the **LLM Benchmarking Project**, led by the Center for Open Science (COS). This project provides a modular framework to evaluate the capabilities of large language model (LLM) agents across key components of the scientific research lifecycle, including **replication**, **peer review**, and **research design**.
 
-We are developing a modular benchmark framework to assess whether and how LLM agents can:
+## 🔍 Project Overview
 
-* **Replicate published scientific findings**
-* **Evaluate the quality and credibility of research outputs**
-* **Generate valid and meaningful research designs**
+### Core Capabilities
+* **Information Extraction:** Automated extraction of structured metadata from PDFs and data files.
+* **Research Design:** LLM-driven generation of replication plans and analysis scripts.
+* **Execution & Sandboxing:** Secure execution of generated code within Docker environments.
+* **Scientific Interpretation:** Synthesis of statistical results into human-readable research reports.
+* **Automated Validation:** An **LLM-as-judge** system that benchmarks agent performance against expert-annotated ground truths.
 
 This work builds on the conceptual structure outlined in our Open Philanthropy grant, emphasizing real-world relevance, task diversity, and community participation.
 
-## 🚧 Current Status
+---
 
-This repository is in **active development**. Right now, it hosts internal work on:
+## 🧰 Tech Stack & Dependencies
 
-* Task definitions for replication benchmarking
-* Agent development and evaluation pipelines
-* Experimental scaffolding for testing and refining agent performance
+The project relies on the following core libraries:
+* **LLM Orchestration:** `openai`, `python-dotenv`
+* **Data Science:** `pandas`, `numpy`, `pyreadr`
+* **Document Parsing:** `pymupdf` (fitz), `python-docx`
+* **Infrastructure:** `docker`
+* **Testing:** `pytest`, `pytest-cov`
 
-Over time, we will open up parts of this repo for **community use and feedback**, including:
+---
+ 
 
-* Evaluation harnesses
-* Benchmarks and datasets
-* Contribution guidelines for task submissions and agent evaluation strategies
-
-
-## Project Structure
-```
-llm-benchmarking/
-│
-├── info_extractor/
-│   ├── extractor.py
-│   ├── file_utils.py
-│   ├── prompt_builder.py
-│   └── README.md
-│
-├── validator/
-│   ├── extract_from_human_replication_study.py
-│   ├── compare_outputs.py                        
-│   └── README.md                                 
-│
-├── templates/
-│   ├── info_extractor_instructions.json
-│   ├── interpret_schema.json
-│   ├── post_registration_schema.json
-│   └── replication_info_schema.json
-│
-├── samples/
-│   ├── initial_details_easy.txt
-│   └── initial_details_medium_hard.txt             
-│
-├── constants.py
-├── extract_human_replication_info.py
-├── main.py
-├── README.md
-└── validate_info_extractor.py
-
-
-```
-
-## 🧰 Installation
+## ⚙️ Installation
 1. Clone repository:
    ```bash
    git clone https://github.com/CenterForOpenScience/llm-benchmarking.git
    cd llm-benchmarking
    ```
 
-2. Install dependencies:
+2. Environment Setup
+The project uses a ```Makefile``` to streamline set up and execute different components of our framework. Make sure you have Python 3.9+ and Docker installed
    ```bash
-   pip install openai pymupdf pandas python-docx dotenv pyreadr
+   # Install all required dependencies
+   make install-deps
+   
+   # Verify your environment and dependencies
+   make check-deps
+   make check-docker
    ```
 
-3. Configure API key in `constants.py`
-
-## 🔧 Usage
-
-### Info Extractor Module
-
-This module runs LLM-based extraction of structured metadata from original and replication studies (based on the difficulty level).
-
-```bash
-# Stage 1: Extract from original study
-python main.py --study_path ./studies/case_study_1 --stage stage_1 --difficulty easy
-
-# Stage 2: Extract from replication study
-python main.py --study_path ./studies/case_study_1 --stage stage_2 --difficulty easy
+3. API Configuration
+Create a `.env` file in the root directory:
+```
+OPENAI_API_KEY=your_api_key_here
 ```
 
-**Arguments:**
-* `--study_path`: Path to the study folder
-* `--stage`: `"stage_1"` for original, `"stage_2"` for replication
-* `--difficulty`: `"easy"`, `"medium"`, or `"hard"`
-* `--show-prompt`: Print the constructed LLM prompt for debugging
+---
 
-#### Output Files
-* Stage 1 → `post_registration.json`
-* Stage 2 → `replication_info.json`
+## 🚀 Running the Pipeline
+You can run the full end-to-end pipeline or individual using `make`.
 
-#### Input File Requirements
-
-##### Stage 1
-
-| Difficulty | Required Files |
-|------------|----------------|
-| Easy | `initial_details_easy.txt`, `original_paper.pdf` |
-| Medium | `initial_details_medium_hard.txt`, `original_paper.pdf` |
-| Hard | `initial_details_medium_hard.txt`, `original_paper.pdf` |
-
-##### Stage 2
-
-| Difficulty | Required Files |
-|------------|----------------|
-| Easy | `initial_details_easy.txt`, `original_paper.pdf`, `post_registration.json`, `replication_data.csv` |
-| Medium | `initial_details_medium_hard.txt`, `original_paper.pdf`, `post_registration.json` |
-| Hard | `initial_details_medium_hard.txt`, `original_paper.pdf`, `post_registration.json` |
-
-### Validator Module
-
-This module validates whether the metadata extracted by the info extractor matches what is expected based on human-annotated metadata.
-- We use an LLM (GPT4o) to compare the extracted info (`extracted_json.json`) against the human-annotated ground-truth (`expected_json.json`).
-- We use the same proposed evaluation rubrics in the task design as prompt to the LLM-as-judge and ask it to assign a score for the extracted info (can be found under `templates/prompts/extract_eval.txt`.
-
+### End-to-End Execution
+To run the full flow (**Extract → Design → Execute → Interpret**) for a specific study:
 ```bash
-python evaluate_extract_info.py \
-  --extracted_json_path path/to/extracted_json.json \
-  --expected_json_path path/to/expected_json.json \
-  --output_path path/to/study_dir/llm_eval.json
+make pipeline-easy STUDY=./data/original/1 MODEL=gpt-4o
 ```
-##### Output
-* JSON formatted evaluation of the extracted metadata
-* prompt for traceability (`logs/` directory)
 
-## 🔐 Access and Permissions
+### Individual Module Commands
+| Module / Stage | Command | Description |
+| :--- | :--- | :--- |
+| **Info Extraction** | `make extract-stage1` | Extracts structured metadata from the original study into `post_registration.json`. |
+| **Web Search** | `make web-search` | Performs an open-ended web search to identify data resources needed to replicate a claim given the original paper. |
+| **Research Design** | `make design-easy` | Generates the replication design and analysis plan based on extracted info into `replication_info.json`. |
+| **Execution** | `make execute-easy` | Runs the generated Python analysis script inside a secure Docker container. |
+| **Interpretation** | `make interpret-easy` | Analyzes execution results to produce a final scientific interpretation report. |
+| **Validation: Extract** | `make evaluate-extract` | Benchmarks the extraction stage against human-annotated ground truth. |
+| **Validation: Design** | `make evaluate-design` | Evaluates the quality and validity of the LLM-generated research design. |
+| **Validation: Execute**| `make evaluate-execute` | Compares the statistical output of the executed code against expected results. |
+| **Validation: Summary**| `make evaluate-summary` | Generates a comprehensive evaluation report across all pipeline stages. |
 
-This repository is managed under the **COS GitHub organization**, with:
+---
 
-* **Admin access** retained by COS staff
-* **Write or maintain access** granted to approved external collaborators
+## 📊 Evaluation (LLM-as-Judge)
 
+The validator compares agent outputs against human-annotated ground truths using specific research rubrics.
+
+* **Evaluate All Stages:**
+    ```bash
+    make evaluate-pipeline-easy STUDY=./data/original/1
+    ```
+* **Specific Evaluations:**
+    * `make evaluate-extract`: Validates JSON metadata accuracy.
+    * `make evaluate-design`: Checks research plan validity.
+    * `make evaluate-execute`: Validates statistical outputs.
+    * `make evaluate-summary`: Generates an overall performance report.
+
+---
+
+## 📂 Project Structure
+```
+llm-benchmarking/
+├── core/               # Central logic containing autonomous agent, tools, prompts, and actions.
+├── info_extractor/     # PDF parsing and metadata extraction
+├── generator/          # Research design and code generation
+├── interpreter/        # Result analysis and report generation
+├── validator/          # CLI tools for LLM-based evaluation
+├── templates/          # JSON schemas and prompt templates
+├── data/               # Benchmark datasets and ground truth
+├── Makefile            # Project automation
+└── requirements-dev.txt
+```
+
+--- 
 
 ## 📄 License
 
