@@ -1,18 +1,3 @@
----
-pretty_name: "LLM Benchmarking Project — Scientific Replication Benchmark Data"
-license: apache-2.0
-language:
-  - en
-tags:
-  - open-science
-  - replication
-  - benchmark
-  - llm
-  - information-extraction
-  - research-design
-  - evaluation
----
-
 # LLM Benchmarking Project — Dataset (Scientific Replication Benchmark)
 
 This repository contains the **data-only** portion of the Center for Open Science (COS) **LLM Benchmarking Project**. The dataset supports benchmarking LLM agents on core parts of the scientific research lifecycle—especially **replication**—including:
