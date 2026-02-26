@@ -1,0 +1,175 @@
+---
+title: "Replication of Rich & Gureckis (2018)"
+author: Josh de Leeuw, Rachel Ostrowski, Miles Bader
+output: html_notebook
+---
+
+```{r Load Libraries, message=FALSE, warning=FALSE, include=FALSE}
+library(dplyr)
+library(jsonlite)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(readr)
+```
+
+```{r Load the Data, include=FALSE}
+data.files <- list.files('data/prolific', full.names = TRUE, pattern=".json")
+data.tables <- lapply(data.files, function(file){
+  data.table <- fromJSON(file)
+  rand_id <- str_split(file, "-|\\.")[[1]][2]
+  data.table$subject <- rand_id
+  return(data.table)
+})
+all.data <- bind_rows(data.tables)
+```
+
+# Participants
+
+```{r Filter subjects who indicate using external materials to help remember, include=FALSE}
+good.subjects <- all.data %>% filter(trial_type == 'survey-multi-choice', is.na(correct), study_id!="60edd13110225f80f9f3709b") %>%
+  select(subject, condition, response) %>%
+  unnest(response) %>%
+  filter(response == "No")
+```
+
+```{r Count groupings, include=FALSE}
+n.subjects <- length(unique(all.data$subject))
+n.included.subjects <- length(good.subjects$subject)
+n.full.info <- good.subjects %>% filter(condition=="full-information") %>% nrow()
+n.conditional <- good.subjects %>% filter(condition=="contingent") %>% nrow()
+```
+
+Our target analytic sample size is 474 participants. A total of `r n.subjects` completed the experiment. Of these, `r n.subjects - n.included.subjects` reported using pen and paper or some other aid to help remember features of the bees, and were excluded from the analysis. This left a total of `r n.included.subjects` participants in the analytic data set. There were `r n.full.info` subjects in the full information condition and `r n.conditional` subjects in the conditional information condition.
+
+# Learning Phase Performance
+
+```{r Filter to Critical Data, include=FALSE}
+data <- all.data %>% 
+  filter(subject %in% good.subjects$subject) %>%
+  filter(trial_type == 'image-button-response') %>%
+  select(subject, condition, stimulus, rt, action, response, bee_group, relevant_dimensions) %>%
+  mutate(phase = if_else(is.na(action), "Test", "Learning")) %>%
+  unnest(bee_group) %>%
+  mutate(stimulus_code = str_extract(stimulus, "[AB][12][SD][MF]")) %>%
+  mutate(stimulus_antennae = str_sub(stimulus_code, 1, 1),
+         stimulus_wings = str_sub(stimulus_code, 2, 2),
+         stimulus_pattern = str_sub(stimulus_code, 3, 3),
+         stimulus_legs = str_sub(stimulus_code, 4, 4)) %>%
+  mutate(dangerous_bee = 
+           (antennae == "X" | antennae == stimulus_antennae) &
+           (wings == "X" | wings == stimulus_wings) &
+           (pattern == "X" | pattern == stimulus_pattern) &
+           (legs == "X" | legs == stimulus_legs)) %>%
+  mutate(correct = response == dangerous_bee) %>%
+  rowwise() %>%
+  mutate(
+    dim1 = relevant_dimensions[[1]],
+    dim2 = relevant_dimensions[[2]]) %>%
+  ungroup() %>%
+  mutate(
+    correct_1d_a = case_when(
+      dim1 == "antennae" ~ response == (antennae == stimulus_antennae),
+      dim1 == "wings" ~ response == (wings == stimulus_wings),
+      dim1 == "pattern" ~ response == (pattern == stimulus_pattern),
+      dim1 == "legs" ~ response == (legs == stimulus_legs)),
+    correct_1d_b = case_when(
+      dim2 == "antennae" ~ response == (antennae == stimulus_antennae),
+      dim2 == "wings" ~ response == (wings == stimulus_wings),
+      dim2 == "pattern" ~ response == (pattern == stimulus_pattern),
+      dim2 == "legs" ~ response == (legs == stimulus_legs))
+  )
+```
+
+```{r Write CSV of raw data, include=FALSE}
+write_csv(data, file='data/prolific/analysis-data.csv')
+```
+
+```{r Categorize as 1D or 2D strategy, include=FALSE, message=FALSE}
+learning.strategy <- data %>%
+  group_by(subject) %>%
+  mutate(block=c(rep(1,16),rep(2,16),rep(3,16),rep(4,16),rep(5,32))) %>%
+  group_by(subject, block, condition) %>%
+  summarize(strategy = case_when(
+    sum(correct) >= n()*0.9375 ~ "2D",
+    sum(correct_1d_a) >= n()*0.9375 ~ "1D",
+    sum(correct_1d_b) >= n()*0.9375 ~ "1D",
+    TRUE ~ "None"))
+```
+
+Following Rich and Gureckis (2018), we classified learner performance as following a 2D rule if 15 of 16 trials in a block were correct. We classified participants as using a 1D rule if 15 of 16 trials in a block followed the correct decision criteria if the participant was only attending to one dimension. We treated the test phase as a single block of 32 trials, requiring 30 of 32 trials to follow a rule.
+
+```{r Plot learner performance, message=FALSE, echo=FALSE}
+learning.strategy.summary <- learning.strategy %>%
+  group_by(block, condition) %>%
+  summarize(p.1d = sum(strategy=="1D") / n(),
+            p.2d = sum(strategy=="2D") / n(),
+            p.none = sum(strategy=="None") / n()) %>%
+  pivot_longer(c(`p.1d`, `p.2d`, `p.none`), names_to="strategy", values_to="proportion") %>%
+  mutate(strategy = factor(strategy, levels=c('p.1d', 'p.none', 'p.2d')))
+
+ggplot(learning.strategy.summary, aes(x=block, y=proportion, fill=strategy))+
+  geom_area()+
+  facet_wrap(.~condition, labeller=as_labeller(c("contingent"="Contingent", "full-information"="Full Information")))+
+  scale_fill_manual(values=c(rgb(170,0,0,255, maxColorValue = 255),rgb(0,0,0,0),rgb(0,207,68,255, maxColorValue = 255)), labels=c("One Dimensional", " ", "Two Dimensional"))+
+  scale_x_continuous(breaks=1:5, labels=c("1","2","3","4","Test"), expand=c(0,0))+
+  scale_y_continuous(expand=c(0,0))+
+  labs(x="\nBlock",y="Proportion of Participants Following Strategy\n",fill="Strategy")+
+  theme_bw()+
+  theme(panel.spacing = unit(1, "lines"))
+```
+
+# Test Phase Accuracy
+
+```{r Calculate participant 1D and 2D scores at test, message=FALSE, include=FALSE}
+test.summary <- data %>%
+  filter(phase == "Test") %>%
+  group_by(subject, condition) %>%
+  summarize(acc_2d = mean(correct),
+            acc_1d_a = mean(correct_1d_a),
+            acc_1d_b = mean(correct_1d_b)) %>%
+  rowwise() %>%
+  mutate(acc_1d = max(acc_1d_a, acc_1d_b)) %>%
+  ungroup()
+
+group.test.summary <- test.summary %>%
+  group_by(condition) %>%
+  summarize(M=mean(acc_1d), SD=sd(acc_1d))
+
+contingent.group <- group.test.summary %>% filter(condition=="contingent")
+full.info.group <- group.test.summary %>% filter(condition=="full-information")
+```
+
+```{r Perform t-test on 1D accuracy scores by information condition, include=FALSE}
+h0.test <- t.test(acc_1d ~ condition, data=test.summary, var.equal = T)
+
+h0.test.print <- papaja::apa_print(h0.test)
+```
+
+```{r Calculate effect size, include=FALSE}
+cohens.d <- (group.test.summary$M[1] - group.test.summary$M[2]) / sqrt(sum(group.test.summary$SD^2)/2)
+```
+The critical hypothesis for the SCORE replication is
+
+> H*: Participants in the contingent feedback condition will adopt an inferior one-dimension categorization strategy more often than participants in the full-information condition. 
+>
+> Expected pattern of results: Participants in the contingent feedback condition will have a higher average 1D score compared to participants in the full-information condition.
+
+We tested this hypothesis with an independent samples t-test. 1D accuracy scores in the contingent information condition (M=`r contingent.group$M`, SD=`r contingent.group$SD`) were [higher/lower/not significantly different from] scores in the full-information condition (M=`r full.info.group$M`, SD=`r full.info.group$SD`), `r h0.test.print$full_result`. The effect size is *d* = `r cohens.d`.
+
+```{r Plot results, fig.cap = "Histogram of 1D accuracy scores for each condition.", echo=FALSE}
+ggplot(test.summary, aes(x=acc_1d))+
+  geom_histogram(data=test.summary %>% filter(condition=='full-information'), aes(y = -..count..), fill="#69b3a2", binwidth=1/16)+
+  annotate("label", x=0.5, y=-40, label="Full Information", fill="#69b3a2", color="#ffffff", fontface="bold",label.padding=unit(.5, "lines"), label.r=unit(0.25, "lines"))+
+  geom_histogram(data=test.summary %>% filter(condition=='contingent'), aes(y = ..count..), fill="#404080", binwidth=1/16)+
+  annotate("label", x=0.5, y=40, label="Contingent Information", fill="#404080", color="#ffffff", fontface="bold", label.padding=unit(.5, "lines"), label.r=unit(0.25, "lines"))+
+  scale_y_continuous(name="Count\n", breaks=seq(-80,80,10), labels=abs(seq(-80,80,10)))+
+  #scale_x_continuous(limits=c(0,1.0))+
+  labs(x="\n1D Accuracy at Test")+
+  theme_minimal()+
+  theme(panel.grid.minor = element_blank())
+  
+```
+
+
+

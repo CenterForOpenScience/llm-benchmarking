@@ -1,0 +1,390 @@
+---
+title: "Kachanoff Analysis"
+author: "Erin M. Buchanan"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r}
+library(rio, quietly = T) #import data
+library(lavaan, quietly = T) #sem
+library(openssl, quietly = T) #make anonymous IDs
+
+# Reproduce this analysis
+R.version
+packageVersion("rio")
+packageVersion("lavaan")
+packageVersion("openssl")
+```
+
+# Deidentify the Data
+
+In order for the data to be opened in something like Excel, we should remove the `-` sign from the beginning of the session codes. Otherwise, Excel replaces them with `#NAME`, and you lose that information. 
+
+```{r eval = FALSE}
+DF <- import("../Data/Kachanoff_Survey_raw.csv")
+
+# Deal with = sign at beginning of session codes
+DF$session <- gsub("^-*", "", DF$session)
+
+# Create new anonymous IDs
+DF$participant_id <- sha256(paste0(DF$PROLIFIC_PID))
+
+# write that data out without prolific ID
+write.csv(DF[ , -6], "../Data/Kachanoff_Survey_deidentify.csv", row.names = F)
+```
+
+# Import the Data
+
+```{r}
+DF <- import("../Data/Kachanoff_Survey_deidentify.csv")
+```
+
+# Clean the Data
+
+First, we will remove all the test sessions before we started collecting data.
+
+*NOTE*: If you have opened this document in Excel, it *will* change the date format. You can use the first section to recreate the analysis. 
+
+```{r}
+#if you opened in Excel
+# DF <- subset(DF, 
+#              as.POSIXct(DF$created, 
+#                         format = "%m/%d/%Y %H:%M", 
+#                         tz = "America/New_York") > 
+#                as.POSIXct("1/18/21 15:39", 
+#                           format = "%m/%d/%Y %H:%M", 
+#                           tz = "America/New_York"))
+
+#else
+DF <- subset(DF, 
+             as.POSIXct(DF$created, tz = "America/New_York") > 
+               as.POSIXct("2021-01-18 15:39:38", tz = "America/New_York"))
+```
+
+We will now deal with duplicate responses. In this study, participants were required to take the survey twice, approximately one week apart. However, sometimes they took it twice during the same time period. We noted these during the payment process, and they are excluded below by the session ID. 
+
+```{r}
+#how many we started with 
+nrow(DF) 
+
+#sessions to exclude
+dup_sessions <- c("yzjrqRlxP9w2VGfCc8oH8Ksx1Yy0dbIVzyYISA9cWO7usiklW1LN5cTrMUQ24ULh",
+                  "iz1H-cKfL9nNaOhPcG48r6qpur0ONIdF0I5de4DIqxE2zsJnB74YBh9zxgM_P7Ob",
+                  "EZZPS01lPHHFhMBsAb2VO037TFobEwTVd6W78z03LgW3OlznQ4dr8eXZZC03F1be",
+                  "sAetiZs9o7qBrRB057nP0BaGuKAT0Q6eNCUl3zQWBXCAsZP7gngqMvAtJ1GrNh7a",
+                  "d-a0BOe7-Z6nrW12Bsq2PhEzo9jIbc_3Ep5AQkLK5po-Bvy6b6fAIFOoEkyP7XBd")
+
+#exclude those sessions
+DF <- subset(DF, !(session %in% dup_sessions))
+
+#check how many ended with
+nrow(DF)
+```
+
+Several sessions came through without Prolific ID numbers. We were able to match these sessions by time codes to pay participants and match them to their other week's data. These were noted during the payment process and the deidentified code is entered below by session name. 
+
+```{r}
+DF$participant_id[DF$session == "DJQanruwarJ2PKjrPE3nNdEypUcXDt6nP5ih-QoBBDjzlULNWQUYx9UjTIkIefan"] <- "5785878a7736990fc77e00a986691b585d99f8f4bb54f23c956d4b9308f5560c"
+
+DF$participant_id[DF$session == "dZSb1dXIBV-n7L4y8G_agKJaaPT7f5mH0C2Hhd6NLmSRnY6blJGdB88V319-JxH9"] <- "0673437a2ed308f0bbaf10316ef2e82982bf81af157d29d204fa23adf672f08c"
+
+DF$participant_id[DF$session == "0AabsQl0emQ1Tm8S5JRuTdiZHK40Bnp_D2W_6O6Qdrc4tAOolxyOBSDGNoxiUjjY"] <- "1de48a76898337ed94716e3fa5801a92e97b8380ecfc3ad3e807003e7b9a807d"
+
+DF$participant_id[DF$session == "MWTXvlIJ_5s95rGPBU9DDy_EwnUridHqNTsTuOMuSSofk3lC5HQ3BbwvhlQfEiFC"] <- "43c6eae02afe28045ffaf8c840681f371ce90bf77b4fd3d598cbdd5f758b3227"
+
+DF$participant_id[DF$session == "V0qB0HT3nzxege3w_uhiyvMLvFFd1s59bqthHXkV3RsSpAQ2WqnqELiqU_W6UanK"] <- "f6a67bb87a9848674bd1658b16984e900539913682cd57098418da6433ea9f9e"
+
+DF$participant_id[DF$session == "1sj37XZOM60G_V_a_pJBmlqy8I3kg0ckBn0G4gnf0ECTLH076MiPODA6VTgchKoz"] <- "8d5a6ff56773cd89287b6fef08426805239bdad1ed4cfafda46b07196e66f197"
+
+DF$participant_id[DF$session == "spasGfBDHDZ99_09r0zGti0DG6m17WMRFTtXINRP_5itwscUd817DquL6YZy8GvM"] <- "607670bd19da0c3aedab99a7c23e64561d23a02d0c174ad74afa23967410b869"
+
+DF$participant_id[DF$session == "Jx26YD6h6_9Ti0Bvc16bijyiZDNaIt2dacAISjc_sO5ZaFme1S9FedDgBlGROPIL"] <- "19bbdee77a0ef89a217fcb888c9fba4f745aed34444178f62f184ae795ca26a0"
+
+DF$participant_id[DF$session == "WIlUb9O7dhPIZmYs2YzHGOEZPb6u4MxWRN3C6atXVtGNo9wDLTs04ofolIwcLGmY"] <- "c433b2f1a8aa00b25ce09874bbd852c0643b73a54953f63c0294bebb94c73f0a"
+```
+
+Next, we should exclude all values that were not able to be matched because no ID was recorded, and they did not match participants in the system to be paid. The original ID was empty, but the deidentification creates a code, so we will use that one to eliminate them. 
+
+```{r}
+DF <- subset(DF, !participant_id == sha256(""))
+```
+
+Last, we should check to make sure we do not have any other issues with duplicate participant IDs. Additionally, this confirms that we have met our sample size requirements of 243 participants. 
+
+```{r}
+#create a count of number for each ID
+part_count <- as.data.frame(table(DF$participant_id))
+#show it's only 1 time or 2 times
+table(part_count$Freq)
+```
+
+Last, a summary of the dataframe to check for accuracy.
+
+```{r}
+summary(DF)
+```
+
+# Data Screening, Fix Scoring
+
+```{r}
+# Beck 0 to 3
+DF[ , grepl("bai|attention_check1", colnames(DF))] <- DF[ , grepl("bai|attention_check1", colnames(DF))] - 1
+summary(DF[ , grepl("bai|attention_check1", colnames(DF))])
+
+# COVID Realistic and Symbolic 1 to 4
+summary(DF[ , grepl("covid", colnames(DF))])
+
+# IES COVID 0 to 3
+DF[ , grepl("instrusion|avoid", colnames(DF))] <- DF[ , grepl("instrusion|avoid", colnames(DF))] - 1
+summary(DF[ , grepl("instrusion|avoid", colnames(DF))])
+
+# SWLS 1 to 7
+summary(DF[ , grepl("swls", colnames(DF))])
+
+# PANAS 1 to 5
+summary(DF[ , grepl("positive|negative", colnames(DF))])
+
+# Handwashing 1 to 5
+summary(DF[ , grepl("handwashing", colnames(DF))])
+
+# Social 1 to 5
+summary(DF[ , grepl("social", colnames(DF))])
+
+# SDS 1 to 7
+# Reverse 1 and 2
+DF$sds1 <- 8 - DF$sds1
+DF$sds2 <- 8 - DF$sds2
+summary(DF[ , grepl("sds", colnames(DF))])
+
+# Behavior 1 to 5
+summary(DF[ , grepl("behave", colnames(DF))])
+```
+
+# Exclusions due to Manipulation Check
+
+```{r}
+DF$attention_total <- 0
+# Must be moderately
+DF$attention_total <- DF$attention_total + as.numeric(DF$attention_check1 == 2)
+# Must be 50
+DF$attention_total <- DF$attention_total + as.numeric(DF$attention_check2 == 50)
+# Must be less than previous check and divide evenly by 5
+DF$attention_total <- DF$attention_total + as.numeric(DF$attention_check3 < DF$attention_check2 & !(DF$attention_check3%%5))
+# Must be less than previous check
+DF$attention_total <- DF$attention_total + as.numeric(DF$attention_check4 < DF$attention_check3)
+# Scored using regular expressions
+DF$attention_dog_scored <- grepl("dog|bark|bork|woof|bowwow|bow wow|ruff|roof|arf|wolf|whoof|woo|whoops|roo|boof", tolower(DF$attention_check5))
+DF$attention_total <- DF$attention_total + as.numeric(DF$attention_dog_scored)
+
+# People must get four right 
+DF <- subset(DF, attention_total >= 4) 
+
+# Double check participant totals
+#create a count of number for each ID
+part_count <- as.data.frame(table(DF$participant_id))
+#show it's only 1 time or 2 times
+table(part_count$Freq)
+```
+
+# Check Missing Data
+
+From the preregistration:
+
+From examining the SPS and R syntax provided with the study, it appears that missing values were ignored when present, and sum/average scores were created without regard to any missing points. Their data appears complete (i.e. no missing values), which may not happen in a replication. Therefore, we will use participants who complete at least 80% of the scale and sum/average scores when appropriate. 
+
+If the participant scores pass this check, the code below was updated to ignore missing values. If they didn't pass the check, we updated the code to ignore missing values for people only 
+
+```{r}
+# BAI check
+percentmiss <- function(x){ sum(is.na(x)) / length(x) * 100 }
+table(apply(DF[ , grepl("bai", colnames(DF))], 1, percentmiss)) #use na.rm = T
+
+# COVID Realistic and Symbolic
+table(apply(DF[ , grepl("covid_real", colnames(DF))], 1, percentmiss)) #use na.rm = T
+table(apply(DF[ , grepl("covid_symbolic", colnames(DF))], 1, percentmiss)) #use na.rm = T
+
+# IES Intrusion and Avoidance
+table(apply(DF[ , grepl("intrusion", colnames(DF))], 1, percentmiss)) #treat special
+table(apply(DF[ , grepl("avoid", colnames(DF))], 1, percentmiss)) # treat special
+
+# SWLS
+table(apply(DF[ , grepl("swls", colnames(DF))], 1, percentmiss)) #use na.rm = T
+
+# PANAS
+table(apply(DF[ , grepl("positive", colnames(DF))], 1, percentmiss)) #use na.rm = T
+table(apply(DF[ , grepl("negative", colnames(DF))], 1, percentmiss)) #use na.rm = T
+
+# Social
+table(apply(DF[ , grepl("social", colnames(DF))], 1, percentmiss)) #just exclude all
+
+# SDS
+table(apply(DF[ , grepl("sds", colnames(DF))], 1, percentmiss)) #just exclude all 
+
+# Behaviors
+table(apply(DF[ , grepl("behave_norm", colnames(DF))], 1, percentmiss)) #just exclude all 
+table(apply(DF[ , grepl("behave_american", colnames(DF))], 1, percentmiss)) #just exclude all 
+```
+
+# Create Composite Scores
+
+```{r}
+# BAI summed
+DF$BAI_total <- apply(DF[ , grepl("bai", colnames(DF))], 1, sum, na.rm = T)
+
+# COVID Realistic and Symbolic averaged
+DF$Realistic <- apply(DF[ , grepl("covid_real", colnames(DF))], 1, mean, na.rm = T)
+DF$Symbolic <- apply(DF[ , grepl("covid_symbolic", colnames(DF))], 1, mean, na.rm = T)
+
+# IES Intrusion and Avoidance summed
+# Treat special due to missing
+int_missing <- apply(DF[ , grepl("intrusion", colnames(DF))], 1, percentmiss)
+DF$Intrusion <- NA
+# Only for rows with 80% data
+DF$Intrusion[int_missing <= 20] <- apply(DF[ int_missing <= 20, 
+                          grepl("intrusion", colnames(DF))], 
+                      1, sum, na.rm = T)
+
+avd_missing <- apply(DF[ , grepl("avoid", colnames(DF))], 1, percentmiss)
+DF$Avoidance <- NA
+DF$Avoidance <- apply(DF[ , grepl("avoid", colnames(DF))], 1, sum)
+# Only for rows with 80% data
+DF$Avoidance[avd_missing <= 20] <- apply(DF[ avd_missing <= 20, 
+                          grepl("avoid", colnames(DF))], 
+                      1, sum, na.rm = T)
+
+# SWLS averaged
+DF$SWLS <- apply(DF[ , grepl("swls", colnames(DF))], 1, mean, na.rm = T)
+
+# PANAS summed
+DF$Positive <- apply(DF[ , grepl("positive", colnames(DF))], 1, sum, na.rm = T)
+DF$Negative <- apply(DF[ , grepl("negative", colnames(DF))], 1, sum, na.rm = T)
+
+# Social Distance summed
+DF$Social <- apply(DF[ , grepl("social", colnames(DF))], 1, sum)
+
+# SDS averaged
+DF$SDS <- apply(DF[ , grepl("sds", colnames(DF))], 1, mean)
+
+# Behaviors averaged
+DF$Norms <- apply(DF[ , grepl("behave_norm", colnames(DF))], 1, mean)
+DF$American <- apply(DF[ , grepl("behave_american", colnames(DF))], 1, mean)
+```
+
+# Long to Wide 
+
+```{r}
+# Sort the data so time 1 is always first
+DF <- DF[order(DF$created), ]
+
+# Grab only the variables you need
+variables <- c("participant_id", "created", "BAI_total", "Realistic", 
+               "Symbolic", "Intrusion", "Avoidance", 
+               "SWLS", "Positive", "Negative", "Social", 
+               "SDS", "Norms","American", "handwashing")
+
+DFreduced <- DF[ , variables]
+
+# Create a variable to indicate time 1/2
+DFreduced$time2 <- duplicated(DFreduced$participant_id)
+
+# Take apart
+DFtime1 <- subset(DFreduced, time2 == FALSE)
+DFtime2 <- subset(DFreduced, time2 == TRUE)
+
+# Merge back
+# Don't use all because only 1 time doesn't help us
+# .x is time 1, .y is time 2
+DFwide <- merge(DFtime1, DFtime2, by = "participant_id")
+```
+
+# SEM 
+
+```{r}
+model1 <- '
+# Regressions
+
+BAI_total.y ~ Realistic.x + Symbolic.x
+Intrusion.y ~ Realistic.x + Symbolic.x
+Avoidance.y ~ Realistic.x + Symbolic.x
+SWLS.y ~ Realistic.x + Symbolic.x
+Positive.y ~ Realistic.x + Symbolic.x
+Negative.y ~ Realistic.x + Symbolic.x
+Social.y ~ Realistic.x + Symbolic.x
+handwashing.y ~ Realistic.x + Symbolic.x
+SDS.y ~ Realistic.x + Symbolic.x
+American.y ~ Realistic.x + Symbolic.x
+Norms.y ~ Realistic.x + Symbolic.x
+
+# Enter the covariances between the multiple predictors
+
+Realistic.x ~~ Symbolic.x
+
+# Enter the covariances between the multiple DVS
+
+BAI_total.y ~~ Avoidance.y
+BAI_total.y ~~ Intrusion.y
+BAI_total.y ~~ SWLS.y
+BAI_total.y ~~ Positive.y
+BAI_total.y ~~ Negative.y
+BAI_total.y ~~ Social.y
+BAI_total.y ~~ handwashing.y
+BAI_total.y ~~ American.y
+BAI_total.y ~~ Norms.y
+Avoidance.y ~~ Intrusion.y
+Avoidance.y ~~ SWLS.y
+Avoidance.y ~~ Positive.y
+Avoidance.y ~~ Negative.y
+Avoidance.y ~~ Social.y
+Avoidance.y ~~ handwashing.y
+Avoidance.y ~~ SDS.y
+Avoidance.y ~~ American.y
+Avoidance.y ~~ Norms.y
+Intrusion.y ~~ SWLS.y
+Intrusion.y ~~ Positive.y
+Intrusion.y ~~ Negative.y
+Intrusion.y ~~ Social.y
+Intrusion.y ~~ handwashing.y
+Intrusion.y ~~ SDS.y
+Intrusion.y ~~ American.y
+Intrusion.y ~~ Norms.y
+SWLS.y ~~ Positive.y
+SWLS.y ~~ Negative.y
+SWLS.y ~~ Social.y
+SWLS.y ~~ handwashing.y
+SWLS.y ~~ SDS.y
+SWLS.y ~~ American.y
+SWLS.y ~~ Norms.y
+Positive.y ~~ Negative.y
+Positive.y ~~ Social.y
+Positive.y ~~ handwashing.y
+Positive.y ~~ SDS.y
+Positive.y ~~ American.y
+Positive.y ~~ Norms.y
+Negative.y ~~ Social.y
+Negative.y ~~ handwashing.y
+Negative.y ~~ SDS.y
+Negative.y ~~ American.y
+Negative.y ~~ Norms.y
+Social.y ~~ SDS.y
+Social.y ~~ American.y
+Social.y~~ Norms.y
+handwashing.y ~~ SDS.y
+handwashing.y ~~ American.y
+handwashing.y~~ Norms.y
+Social.y~~handwashing.y
+SDS.y ~~ American.y
+SDS.y ~~ Norms.y
+American.y ~~ Norms.y
+'
+
+fit1 <- sem(model1, data = DFwide)  
+summary(fit1, fit.measures = TRUE)
+parameterestimates(fit1)
+```
