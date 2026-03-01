@@ -1,0 +1,105 @@
+---
+title: "SCORE - Tremoliere Generalizability of Claim 4"
+author: "Zachariah Berry"
+date: "12/17/2021"
+output: 
+  html_document:
+    theme: flatly
+    code_folding: hide
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    number_sections: true
+---
+
+# Libraries
+
+Below are the libraries that need to be loaded in order to run the code in this RMarkdown file.
+
+```{r, include =F}
+library(tidyverse)
+library(stats)
+library(emmeans)
+library(kableExtra)
+library(Rmisc)
+library(car)
+library(reshape2)
+library(lme4)
+library(lmerTest)
+library(sjPlot)
+library(pwr)
+library(rstatix)
+```
+
+# Read in data and clean
+
+```{r}
+df <- read.csv("Tremoliere_generalizability_score.csv")
+# check how many people provided an "appropriate" response to the manipulation
+with(df, table(satisfactory_manipulation_response1))
+# re-structure data so that it's in long form 
+df2 <- melt(df[,c("moral_accept", "moral_accept1","ResponseId",
+                  "death_salience","pain_salience","satisfactory_manipulation_response1",
+                        "age","gender", "gender_3_TEXT", "politic_1","politic_2","politic_3", "race",
+                        "race_7_TEXT","race_8_TEXT","income","education","open","cond","salience", "participant_uid")],
+              id.vars = c("ResponseId","death_salience","pain_salience","satisfactory_manipulation_response1",
+                        "age","gender", "gender_3_TEXT", "politic_1","politic_2","politic_3", "race",
+                        "race_7_TEXT","race_8_TEXT","income","education","open","cond","salience", "participant_uid"),
+              value.name = "moral_acceptability")#
+# remove responses that did not proprely respond to the manipulation
+df2 <- df2 %>% 
+  filter(satisfactory_manipulation_response1 == 1)
+# create moral acceptability measure where morally acceptable is 1 and 
+df2 <- df2 %>% 
+  mutate(moral_acceptability_01 = case_when(
+         moral_acceptability == "1" ~ 0,
+         moral_acceptability == "2" ~ 1))
+# create a variable for the different moral dilemma outcomes
+df2 <- df2 %>% 
+  mutate(moral_scenario = case_when(
+    variable == "moral_accept" ~ "impartial_beneficience",
+    variable == "moral_accept1" ~ "partial_beneficience"
+  ))
+# set variables to their type
+df2 <- df2 %>% 
+  mutate(salience_fact = as.factor(salience),
+         moral_scenario_fact = as.factor(moral_scenario))
+```
+
+# Descriptive Visualization
+
+## Moral acceptability by salience condition (death, pain) and outcome (impartial, partial)
+
+```{r}
+df2 %>% 
+  ggplot() + 
+  aes(x = moral_acceptability_01, group = salience) + 
+  geom_bar(aes(y = ..prop.., fill = factor(..x..)), stat = "count") + 
+  scale_y_continuous(labels = scales::percent) + 
+  scale_x_continuous(breaks = c(0,1), labels = c("not moral","moral")) +
+  facet_grid(.~salience*moral_scenario)
+```
+
+# Analysis
+
+```{r}
+# fit logistic regression model with random intercept for participant id
+fit10 <- glmer(moral_acceptability_01 ~ salience*moral_scenario + (1|participant_uid),data = df2, 
+               family=binomial, control = glmerControl(optimizer = "bobyqa"))
+# summarize results of model
+summary(fit10)
+# get table with odds ratios
+tab_model(fit10)
+```
+
+
+# Original Paper Analysis
+
+Below, I analyze the results with an ANOVA in line with how the original paper conducted the analysis. This analysis will not be used to assess a successful generalizability of the original claim. 
+
+```{r}
+fit4 <- anova_test(data = df2, dv = moral_acceptability_01, wid = participant_uid,
+                   between = salience_fact, within = moral_scenario_fact)
+get_anova_table(fit4)
+```
+
