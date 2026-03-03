@@ -113,15 +113,15 @@ GENERATE_EXECUTE_REACT_CONSTANTS = {
 EVALUATE_GENERATE_EXECUTE_CONSTANTS = {
     "prompt_template": "templates/prompts/execute_eval.txt",
     "claim_files": {
-        "original_paper.pdf": "The pdf file containing the full text of the original paper",
-        "initial_details.txt": "Details about the claim from the original paper to be replicated",
-        "replication_data": "The folder containing the data that can potentially be used for the replication. There may also be useful code to help you with the replication. But if not, you have to generate the replication code yourself in Python.",
+        "input/original_paper.pdf": "The pdf file containing the full text of the original paper",
+        "input/initial_details.txt": "Details about the claim from the original paper to be replicated",
+        "input/replication_data": "The folder containing the data that can potentially be used for the replication. There may also be useful code to help you with the replication. But if not, you have to generate the replication code yourself in Python.",
     },
     "agent_files": {
-        "post_registration.json": "A structured document with key extracted information about the original paper and the claim to be replicated.",
-        "_log/": "Folder contain the logs of the agent replication attempt. Focus on the logs of the design and the execute stage for this evaluation.",
-        "replication_info.json": "Final structured report of the design stage by the agent.",
-        "execution_results.json": "Final strcuterd report of the execution stage by the agent."
+        "input/post_registration.json": "A structured document with key extracted information about the original paper and the claim to be replicated.",
+        "input/_log/": "Folder contain the logs of the agent replication attempt. Focus on the logs of the design and the execute stage for this evaluation.",
+        "input/replication_info.json": "Final structured report of the design stage by the agent.",
+        "input/execution_results.json": "Final strcuterd report of the execution stage by the agent."
     },
     "json_template": "templates/evaluate_execute_schema.json"
 }
@@ -144,7 +144,7 @@ INTERPRET_CONSTANTS = {
 
 EVALUATE_INTERPRET_CONSTANTS = {
     "prompt_template": "templates/prompts/interpret_eval.txt",
-    "interpret_results": "interpret_results.json",
+    "interpret_results": "input/interpret_results.json",
     "json_template": "templates/interpret_schema.json"
 }
 
