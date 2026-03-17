@@ -1,0 +1,317 @@
+2026-03-10 10:57:33,979 - replication - DEBUG - [core.utils] File logging configured: data/original/24/input/_log/execute_easy__python.log
+2026-03-10 10:57:33,979 - replication - INFO - [agent] dynamic orchestrator run loop for: data/original/24/input
+2026-03-10 10:57:34,086 - replication - INFO - 
+--- Turn 1 ---
+2026-03-10 10:57:34,086 - replication - INFO - ***Agent input:
+Your goal is to successfully execute the replication study inside a Docker container.
+You are operating in a DEBUG LOOP. You must assess the result of every action. 
+
+RUN POLICY (EXECUTE)
+- Execute using Python.
+- Any missing code should be written to replication_data inside the study path.
+- If the original code is incompatible with the data, rewrite the code to Python so that it is compatible. 
+- If replication_info.json points to a non-.py entrypoint, create/complete the Python translations (keeping originals unchanged),
+  create a single Python entrypoint, and update replication_info.json to that .py entrypoint.
+- If it fails, fix the Python rewrite / deps (don’t switch back to the original language).
+
+File operations policy:
+ - To modify existing files: ALWAYS call read_file first, then use edit_file for targeted changes.
+ - write_file is for creating new files. It will refuse to overwrite unless overwrite=True.
+ - Only use write_file(overwrite=True) when you intend to replace the entire file contents.
+
+If an action fails (e.g., Docker build error, Missing Dependency, Code crash), you MUST:
+1. Analyze the error message in the Observation.
+2. Use `write_file` to FIX the issue (e.g., rewrite `replication_info.json` to add packages, or rewrite the code files). Remember that write_file will overwrite any existing content in the provided file_path if existing. When you use the tool, the provided path file_path to the tool MUST be the study path given to you. But to access other files within the file_content argument, you MUST use the container's directories "app/data". 
+3. RETRY the failed step.
+
+**Phases of Execution:**
+
+PHASE 1: BUILD ENVIRONMENT
+1. `orchestrator_generate_dockerfile`: Creates _runtime/Dockerfile from replication_info.json.
+2. `orchestrator_build_image`: Builds the image.
+   * IF BUILD FAILS: Read the error log. It usually means a missing system package or R/Python library. Edit `replication_info.json` to add the missing dependency, regenerate the Dockerfile, and rebuild.
+
+PHASE 2: PREPARE RUNTIME
+3. `orchestrator_run_container`: Mounts the code and data and starts the container.
+4. `orchestrator_plan` & `orchestrator_preview_entry`: Verify what will run.
+
+PHASE 3: HUMAN APPROVAL (Strict Check)
+5. Before running the actual analysis code, you MUST Ask the human:
+   Action: ask_human_input: "Ready to execute command: <COMMAND>. Approve? (yes/no)"
+   * If they say "no", stop the container and fill the output JSON with status "cancelled".
+   * If they say "yes", proceed to Phase 4.
+
+PHASE 4: EXECUTE & DEBUG
+6. `orchestrator_execute_entry`: Runs the code.
+   * IF EXECUTION FAILS (exit_code != 0): 
+     - Read the `stderr` in the observation.
+     - Identify if it is a code error or missing library.
+     - Use `write_file` to fix the script or `replication_info.json`.
+     - If you changed dependencies, you must go back to Phase 1 (Rebuild).
+     - If you only changed code, you can retry `orchestrator_execute_entry`.
+
+PHASE 5: FINALIZE
+7. `orchestrator_stop_container`: Cleanup.
+8. Parse `execution_result.json` and output the Answer in the following required JSON schema.
+"{\n  \"execution_summary\": \"A narrative overview of the execution process, including key steps followed, overall success, and alignment with the preregistration (e.g., 'The OLS regression was executed on the 1999 ARIS-REDS dataset, testing the hypothesis on low-caste households. No major deviations occurred, but BAC classification required manual coding.').\",\n  \"code_executed\": [\n    {\n      \"command\": \"a command that was approved for executed\",\n      \"status\": \"Overall status (Success, Partial Success, Failure).\",\n      \"logs\": \"summaries from execution logs, including warnings, errors, or runtime\",\n      \"environment\": \"Description of the runtime environment (e.g., 'Python 3.12 with numpy, statsmodels')\"\n    },\n    {\n      \"command\": \"another command that was approved for executed\",\n      \"status\": \"Overall status (Success, Partial Success, Failure).\",\n      \"logs\": \"summaries from execution logs, including warnings, errors, or runtime\",\n      \"environment\": \"Description of the runtime environment (e.g., 'Python 3.12 with numpy, statsmodels')\"\n    }\n  ],\n  \"results\": {\n    \"hypothesis_tested\": \"Restatement of the focal hypothesis from the preregistration for context.\",\n    \"findings_summary\": [\n      {\n        \"outcome_name\": \" Name of statistic 1 (e.g., 'Coefficient for low-caste villages').\",\n        \"value\": \"The computed value (e.g., 566.5)\",\n        \"standard_error\": \"SE (e.g., 209)\",\n        \"confidence_interval\": \"CI bounds (e.g., [150, 983])\",\n        \"p_value\": \"p-value (e.g., 0.007)\",\n        \"statistical_significance\": \"Significance level (e.g., 'p < 0.01').\",\n        \"direction\": \"Effect direction (e.g., 'positive')\",\n        \"effect_size\": \"Optional measures like Cohen's d or R-squared if applicable\"\n      },\n ...
+2026-03-10 10:57:39,861 - replication - INFO - ***Agent output (Thought):
+Thought: I'll begin by generating the Dockerfile from replication_info.json as instructed in Phase 1. This sets up the base environment for the container build.
+2026-03-10 10:57:39,862 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_generate_dockerfile [Checkpoint: 1. Generate Dockerfile]
+2026-03-10 10:57:39,863 - replication - INFO - ***Observation (orchestrator_generate_dockerfile):
+{"ok": true, "dockerfile": "/Users/domsoos/Desktop/research/llm-benchmarking/data/original/24/input/_runtime/Dockerfile", "content": "FROM python:3.10-slim\nRUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git wget ca-certificates && rm -rf /var/lib/apt/lists/*\nRUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y bash && rm -rf /var/lib/apt/lists/*\nRUN command -v python3 || (apt-get update && apt-get install -y python3 python3-pip)\nRUN pip3 install --no-cache-dir pandas>=1.5.0 numpy>=1.23.0 scipy>=1.9.0\nWORKDIR /workspace\nRUN useradd -m runner && mkdir -p /app/data /app/artifacts /app/tmp && chown -R runner:runner /workspace /app\nUSER runner\nCMD [\"bash\"]"}
+2026-03-10 10:57:39,863 - replication - INFO - 
+--- Turn 2 ---
+2026-03-10 10:57:43,072 - replication - INFO - ***Agent output (Thought):
+Thought: Next, I'll build the Docker image using the generated Dockerfile. If the build fails due to missing dependencies, I'll update replication_info.json and regenerate the Dockerfile before retrying.
+2026-03-10 10:57:43,074 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_build_image [Checkpoint: 2. Build Image]
+2026-03-10 10:57:58,400 - replication - INFO - ***Observation (orchestrator_build_image):
+{"ok": true, "image": "replication-exec"}
+2026-03-10 10:57:58,402 - replication - INFO - 
+--- Turn 3 ---
+2026-03-10 10:58:03,049 - replication - INFO - ***Agent output (Thought):
+Thought: I'll start the runtime container and then retrieve the execution plan to see what command will be run and confirm if it's a Python entrypoint or needs translation.
+2026-03-10 10:58:03,049 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_run_container [Checkpoint: 3. Start Container]
+2026-03-10 10:58:03,209 - replication - INFO - ***Observation (orchestrator_run_container):
+{"ok": true, "container": "replication-runner"}
+2026-03-10 10:58:03,209 - replication - INFO - 
+--- Turn 4 ---
+2026-03-10 10:58:04,407 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_plan [Checkpoint: 4. Plan & Preview]
+2026-03-10 10:58:04,408 - replication - INFO - ***Observation (orchestrator_plan):
+{"plan_id": "study", "steps": [{"name": "prepare-env", "type": "orchestrator", "lang": "", "entry": null}, {"name": "run-analysis", "type": "container", "lang": "python", "entry": "replication_data/analysis__py.py"}]}
+2026-03-10 10:58:04,409 - replication - INFO - 
+--- Turn 5 ---
+2026-03-10 10:58:08,474 - replication - INFO - ***Agent output (Thought):
+Thought: I need to verify that the Python entrypoint file exists and inspect its contents to ensure it's runnable before seeking human approval. I'll read replication_data/analysis__py.py.
+2026-03-10 10:58:08,475 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: read_file [Checkpoint: 4. Plan & Preview]
+2026-03-10 10:58:08,477 - replication - INFO - ***Observation (read_file):
+import os
+import json
+import numpy as np
+import pandas as pd
+from scipy import stats
+
+# Reproducibility
+RNG_SEED = int(os.environ.get("PY_SEED", 123))
+rng = np.random.default_rng(RNG_SEED)
+
+# Paths (all IO via /app/data)
+DATA_FILE = "/app/data/replication_data/analysis-data.csv"
+OUT_TEST_SUMMARY = "/app/data/replication_test_summary.csv"
+OUT_RESULTS_JSON = "/app/data/replication_results.json"
+
+
+def load_data(path: str) -> pd.DataFrame:
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Expected data file not found at {path}")
+    df = pd.read_csv(path)
+    return df
+
+
+def compute_subject_scores(df: pd.DataFrame) -> pd.DataFrame:
+    # Filter to Test phase
+    df_test = df[df["phase"] == "Test"].copy()
+
+    # Aggregate per subject and condition
+    grouped = (
+        df_test.groupby(["subject", "condition"], as_index=False)
+        .agg(
+            acc_2d=("correct", "mean"),
+            acc_1d_a=("correct_1d_a", "mean"),
+            acc_1d_b=("correct_1d_b", "mean"),
+        )
+    )
+    # 1D score is the max across the two 1D-consistent rules
+    grouped["acc_1d"] = grouped[["acc_1d_a", "acc_1d_b"]].max(axis=1)
+    return grouped
+
+
+def summarize_groups(test_summary: pd.DataFrame) -> pd.DataFrame:
+    summary = (
+        test_summary.groupby("condition", as_index=False)
+        .agg(M=("acc_1d", "mean"), SD=("acc_1d", "std"), N=("acc_1d", "size"))
+    )
+    return summary
+
+
+def pooled_sd(x: np.ndarray, y: np.ndarray) -> float:
+    nx, ny = len(x), len(y)
+    vx, vy = x.var(ddof=1), y.var(ddof=1)
+    sp2 = ((nx - 1) * vx + (ny - 1) * vy) / (nx + ny - 2)
+    return np.sqrt(sp2)
+
+
+def diff_means_ci_equal_var(x: np.ndarray, y: np.ndarray, alpha: float = 0.05):
+    nx, ny = len(x), len(y)
+    sp = pooled_sd(x, y)
+    diff = x.mean() - y.mean()
+    se = sp * np.sqrt(1.0 / nx + 1.0 / ny)
+    df = nx + ny - 2
+    tcrit = stats.t.ppf(1 - alpha / 2.0, df)
+    lo, hi = diff - tcrit * se, diff + tcrit * se
+    return diff, (lo, hi), se, df, sp
+
+
+def bootstrap_d
+... (truncated)
+2026-03-10 10:58:08,477 - replication - INFO - 
+--- Turn 6 ---
+2026-03-10 10:58:11,220 - replication - INFO - ***Agent output (Thought):
+Thought: I'll list the study directory to verify presence of replication_data, the data file(s), and replication_info.json to ensure everything aligns.
+2026-03-10 10:58:11,220 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: list_files_in_folder [Checkpoint: 4. Plan & Preview]
+2026-03-10 10:58:11,225 - replication - INFO - ***Observation (list_files_in_folder):
+Folder path: data/original/24/input
+All files:
+_log/design_easy__python.log
+_log/execute_easy__python.log
+_log/extract.log
+_runtime/Dockerfile
+initial_details.txt
+original_paper.pdf
+post_registration.json
+replication_data/.DS_Store
+replication_data/analysis-data.csv
+replication_data/analysis.Rmd
+replication_data/analysis.Rproj
+replication_data/analysis__py.py
+replication_data/data-dictionary.tsv
+replication_data/data_exp1.csv
+replication_data/fake/subject-61814fe47aa52.json
+replication_data/fake/subject-6181554172892.json
+replication_data/fake/subject-61815eb158e33.json
+replication_data/fake/subject-6181a272d0b5c.json
+replication_data/fake/subject-6181a7fae0bca.json
+replication_data/fake/subject-6181a9c4952a9.json
+replication_data/fake/subject-6181c13dac2f6.json
+replication_data/fake/subject-6181c1e298066.json
+replication_data/fake/subject-6181c59a0713b.json
+replication_data/fake/subject-6181c845f34d5.json
+replication_data/fake/subject-61820bffa5e65.json
+replication_data/fake/subject-61822ade020c3.json
+replication_info.json
+2026-03-10 10:58:11,225 - replication - INFO - 
+--- Turn 7 ---
+2026-03-10 10:58:17,768 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: ask_human_input [Checkpoint: 5. Human Approval]
+2026-03-10 10:58:46,231 - replication - INFO - ***Observation (ask_human_input):
+yes
+2026-03-10 10:58:46,234 - replication - INFO - 
+--- Turn 8 ---
+2026-03-10 10:58:48,233 - replication - INFO - ***Agent output (Thought):
+Thought: Human approved execution. I'll run the orchestrator_execute_entry to execute the analysis. If it fails, I'll inspect the error and make necessary fixes.
+2026-03-10 10:58:48,234 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_execute_entry [Checkpoint: 6. Execute Code]
+2026-03-10 10:58:49,406 - replication - INFO - ***Observation (orchestrator_execute_entry):
+{"plan_id": "study", "steps": [{"name": "prepare-env", "ok": true}, {"name": "run-analysis", "ok": false, "exit_code": 1, "stdout": "", "stderr": "Traceback (most recent call last):\n  File \"/workspace/replication_data/analysis__py.py\", line 147, in <module>\n    main()\n  File \"/workspace/replication_data/analysis__py.py\", line 82, in main\n    df = load_data(DATA_FILE)\n  File \"/workspace/replication_data/analysis__py.py\", line 19, in load_data\n    raise FileNotFoundError(f\"Expected data file not found at {path}\")\nFileNotFoundError: Expected data file not found at /app/data/replication_data/analysis-data.csv\n", "artifacts": [], "entry": "replication_data/analysis__py.py", "resolved_path": "/workspace/replication_data/analysis__py.py"}], "ok": false}
+2026-03-10 10:58:49,406 - replication - INFO - 
+--- Turn 9 ---
+2026-03-10 10:59:07,872 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: read_file [Checkpoint: 6. Execute Code]
+2026-03-10 10:59:07,885 - replication - INFO - ***Observation (read_file):
+subject,condition,stimulus,rt,action,response,antennae,wings,pattern,legs,relevant_dimensions,phase,stimulus_code,stimulus_antennae,stimulus_wings,stimulus_pattern,stimulus_legs,dangerous_bee,correct,dim1,dim2,correct_1d_a,correct_1d_b
+1eebe30c27b15,full-information,bees-with-color/bee-A2DF.svg,2751,harvest,,X,1,X,F,,Learning,A2DF,A,2,D,F,FALSE,TRUE,wings,legs,TRUE,FALSE
+1eebe30c27b15,full-information,bees-with-color/bee-A2DM.svg,2174,avoid,,X,1,X,F,,Learning,A2DM,A,2,D,M,FALSE,FALSE,wings,legs,FALSE,FALSE
+1eebe30c27b15,full-information,bees-with-color/bee-A1DF.svg,4037,harvest,,X,1,X,F,,Learning,A1DF,A,1,D,F,TRUE,FALSE,wings,legs,FALSE,FALSE
+1eebe30c27b15,full-information,bees-with-color/bee-B2DM.svg,3542,harvest,,X,1,X,F,,Learning,B2DM,B,2,D,M,FALSE,TRUE,wings,legs,TRUE,TRUE
+1eebe30c27b15,full-information,bees-with-color/bee-A2SF.svg,2021,harvest,,X,1,X,F,,Learning,A2SF,A,2,S,F,FALSE,TRUE,wings,legs,TRUE,FALSE
+1eebe30c27b15,full-information,bees-with-color/bee-B1DF.svg,1658,avoid,,X,1,X,F,,Learning,B1DF,B,1,D,F,TRUE,TRUE,wings,legs,TRUE,TRUE
+1eebe30c27b15,full-information,bees-with-color/bee-A2SM.svg,1904,harvest,,X,1,X,F,,Learning,A2SM,A,2,S,M,FALSE,TRUE,wings,legs,TRUE,TRUE
+1eebe30c27b15,full-information,bees-with-color/bee-B1DM.svg,1171,avoid,,X,1,X,F,,Learning,B1DM,B,1,D,M,FALSE,FALSE,wings,legs,TRUE,FALSE
+1eebe30c27b15,full-information,bees-with-color/bee-A1DM.svg,2377,avoid,,X,1,X,F,,Learning,A1DM,A,1,D,M,FALSE,FALSE,wings,legs,TRUE,FALSE
+1eebe30c27b15,full-information,bees-with-color/bee-B1SM.svg,1887,avoid,,X,1,X,F,,Learning,B1SM,B,1,S,M,FALSE,FALSE,wings,legs,TRUE,FALSE
+1eebe30c27b15,full-information,bees-with-color/bee-B2SM.svg,1253,harvest,,X,1,X,F,,Learning,B2SM,B,2,S,M,FALSE,TRUE,wings,legs,TRUE,TRUE
+1eebe30c27b15,full-information,bees-with-color/bee-A1SM.svg,1325,avoid,,X,1,X,F,,Learning,A1SM,A,1,S,M,FALSE,FALSE,wings,legs,TRUE,FALSE
+1eebe30c27b15,full-information,bees-with-color/bee-B1SF.svg,970,avoid,,X,1,X,F,,Learning,B1SF,B,1,S,F,TRUE,TRUE,wings,
+... (truncated)
+2026-03-10 10:59:07,885 - replication - INFO - 
+--- Turn 10 ---
+2026-03-10 10:59:51,290 - replication - INFO - ***Agent output (Thought):
+Thought: The execution failed because the analysis script tried to read the input from /app/data, but the data file is mounted under /workspace/replication_data. I'll update the script to read the input from /workspace while keeping outputs in /app/data so artifacts can be collected. Then I'll retry execution.
+2026-03-10 10:59:51,290 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: edit_file [Checkpoint: 6. Execute Code]
+2026-03-10 11:03:02,905 - replication - INFO - ***Observation (edit_file):
+✅ Successfully edited /Users/domsoos/Desktop/research/llm-benchmarking/data/original/24/input/replication_data/analysis__py.py
+2026-03-10 11:03:02,906 - replication - INFO - 
+--- Turn 11 ---
+2026-03-10 11:03:04,315 - replication - INFO - ***Agent output (Thought):
+Thought: Since only code changed, I can retry orchestrator_execute_entry without rebuilding.
+2026-03-10 11:03:04,315 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_execute_entry [Checkpoint: 6. Execute Code]
+2026-03-10 11:03:05,869 - replication - INFO - ***Observation (orchestrator_execute_entry):
+{"plan_id": "study", "steps": [{"name": "prepare-env", "ok": true}, {"name": "run-analysis", "ok": true, "exit_code": 0, "stdout": "{\n  \"n_subjects_inferred\": 474,\n  \"group_stats_acc_1d\": {\n    \"contingent\": {\n      \"mean\": 0.7707918326693227,\n      \"sd\": 0.18474949727408704,\n      \"n\": 251\n    },\n    \"full-information\": {\n      \"mean\": 0.6974495515695067,\n      \"sd\": 0.13172363694997768,\n      \"n\": 223\n    }\n  },\n  \"mean_diff_contingent_minus_fullinfo\": 0.073342281099816,\n  \"t_stat\": 4.920132417072174,\n  \"p_value\": 1.1967234883606056e-06,\n  \"df\": 472,\n  \"pooled_sd\": 0.16198609780084844,\n  \"se_diff\": 0.014906566507301409,\n  \"ci95_diff_equal_var\": [\n    0.0440508380160933,\n    0.1026337241835387\n  ],\n  \"cohens_d\": 0.45276898508898983,\n  \"bootstrap_ci95_diff\": [\n    0.04440808793972097,\n    0.10163178563771819\n  ],\n  \"notes\": \"acc_1d is the subject-level 1D score computed as the maximum of mean(correct_1d_a) and mean(correct_1d_b) across 32 test trials.\"\n}\n", "stderr": "", "artifacts": [], "entry": "replication_data/analysis__py.py", "resolved_path": "/workspace/replication_data/analysis__py.py"}], "ok": true}
+2026-03-10 11:03:05,870 - replication - INFO - 
+--- Turn 12 ---
+2026-03-10 11:03:07,127 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_stop_container [Checkpoint: 7. Stop Container]
+2026-03-10 11:03:07,255 - replication - INFO - ***Observation (orchestrator_stop_container):
+{"ok": true}
+2026-03-10 11:03:07,255 - replication - INFO - 
+--- Turn 13 ---
+2026-03-10 11:03:07,255 - replication - INFO - Rate limit approach, going to sleep...zZZ
+
+2026-03-10 11:03:41,729 - replication - INFO - ***Agent output (Thought):
+Thought: I'll read initial_details.txt to restate the focal hypothesis accurately in the final results summary.
+2026-03-10 11:03:41,730 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: read_txt [Checkpoint: 7. Stop Container]
+2026-03-10 11:03:41,737 - replication - INFO - ***Observation (read_txt):
+[CLAIM]
+The 95% posterior credible intervals (CI) for the difference between the conditions excluded zero: participants in the contingent-information condition had an average 1D score of .83, while those in the full-information condition had an average score of .75, CI = [.03, .14]
+
+[HYPOTHESES]
+Participants in the contingent feedback condition will adopt an inferior one-dimension categorization strategy more often than participants in the full-information condition. 
+2026-03-10 11:03:41,737 - replication - INFO - 
+--- Turn 14 ---
+2026-03-10 11:04:36,803 - replication - INFO - ***Agent output (Thought):
+Thought: I built the Docker image, launched the container, inspected the plan, and sought human approval to run the Python entrypoint. The initial run failed due to an input path mismatch (/app/data vs /workspace). I fixed the script to read input from /workspace, reran the analysis successfully, and stopped the container. Below is the final execution report with results and artifacts.
+
+Answer: {
+  "execution_summary": "Built a Python 3.10 Docker image with numpy/pandas/scipy, started the container, and executed the Python rewrite entrypoint (replication_data/analysis__py.py). Initial run failed due to the script reading input from /app/data while the code/data are mounted under /workspace; I patched the script to read from /workspace and reran successfully. The analysis computed subject-level 1D scores (max of two 1D-consistent rules) and performed an equal-variance two-sample t-test comparing contingent vs full-information conditions. Results showed a positive mean difference favoring contingent feedback with a 95% CI excluding zero, consistent with the preregistered focal claim (original CI [.03, .14]).",
+  "code_executed": [
+    {
+      "command": "python replication_data/analysis__py.py",
+      "status": "Failure",
+      "logs": "FileNotFoundError: Expected data file not found at /app/data/replication_data/analysis-data.csv. Patched script to load from /workspace/replication_data/analysis-data.csv.",
+      "environment": "Python 3.10 (slim), numpy>=1.23, pandas>=1.5, scipy>=1.9"
+    },
+    {
+      "command": "python replication_data/analysis__py.py",
+      "status": "Success",
+      "logs": "n_subjects_inferred=474; contingent n=251, mean=0.7708, sd=0.1847; full-information n=223, mean=0.6974, sd=0.1317; mean_diff=0.07334; t=4.920; df=472; p=1.20e-06; SE=0.01491; 95% CI [0.0441, 0.1026]; Cohen's d=0.453; bootstrap 95% CI [0.0444, 0.1016]. Artifacts written to /app/data/replication_test_summary.csv and /app/data/replication_results.json.",
+      "environment": "Python 3.10 (slim), numpy>=1.23, pandas>=1.5, scipy>=1.9"
+    }
+  ],
+  "results": {
+    "hypothesis_tested": "Participants in the contingent feedback condition will adopt an inferior one-dimension (1D) categorization strategy more often than participants in the full-information condition (i.e., higher 1D scores under contingent feedback).",
+    "findings_summary": [
+      {
+        "outcome_name": "Difference in mean acc_1d (contingent − full-information)",
+        "value": "0.073342281099816",
+        "standard_error": "0.014906566507301409",
+        "confidence_interval": "[0.0440508380160933, 0.1026337241835387]",
+        "p_value": "1.1967234883606056e-06",
+        "statistical_significance": "p < 0.001",
+        "direction": "positive",
+        "effect_size": "Cohen's d = 0.45276898508898983"
+      },
+      {
+        "outcome_name": "t-statistic for difference in acc_1d (equal variances)",
+        "value": "4.920132417072174",
+        "standard_error": "NA",
+        "confidence_interval": "NA",
+        "p_value": "1.1967234883606056e-06",
+        "statistical_significance": "p < 0.001",
+        "direction": "positive",
+        "effect_size": "df = 472"
+      }
+    ],
+    "tables": [
+      {
+        "table_id": "Table S1",
+        "table_description": "Group summary of acc_1d by condition (mean, SD, N) at the subject level.",
+        "table_file": "/app/data/replication_test_summary.csv"
+      },
+      {
+        "table_id": "Table S2",
+        "table_description": "Main analysis results (JSON): group stats, mean difference, t, p, SE, CI, Cohen's d, bootstrap CI.",
+        "table_file": "/app/data/replication_results.json"
+      }
+    ],
+    "figures": []
+  }
+}
+2026-03-10 11:04:36,805 - replication - INFO - 
+--- Final Answer Found ---
+2026-03-10 11:04:36,807 - replication - INFO - Execute stage output saved to data/original/24/input/execution_results.json
+2026-03-10 11:04:36,809 - replication - INFO - Updated metadata for generate-execute in data/original/24/input/metadata.json
