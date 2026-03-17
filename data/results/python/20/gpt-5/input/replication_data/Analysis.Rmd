@@ -1,0 +1,221 @@
+---
+title: "Kachanoff Analysis"
+author: "Erin M. Buchanan"
+date: "8/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r}
+library(rio) #import data
+library(lavaan) #sem
+```
+
+# Import the Data
+
+```{r}
+DF <- import("../Data/Kachanoff_Survey_example.csv")
+```
+
+# Data Screening, Fix Scoring
+
+```{r}
+# Beck 0 to 3
+DF[ , grepl("bai|attention_check1", colnames(DF))] <- DF[ , grepl("bai|attention_check1", colnames(DF))] - 1
+summary(DF[ , grepl("bai|attention_check1", colnames(DF))])
+
+# COVID Realistic and Symbolic 1 to 4
+summary(DF[ , grepl("covid", colnames(DF))])
+
+# IES COVID 0 to 3
+DF[ , grepl("instrusion|avoid", colnames(DF))] <- DF[ , grepl("instrusion|avoid", colnames(DF))] - 1
+summary(DF[ , grepl("instrusion|avoid", colnames(DF))])
+
+# SWLS 1 to 7
+summary(DF[ , grepl("swls", colnames(DF))])
+
+# PANAS 1 to 5
+summary(DF[ , grepl("positive|negative", colnames(DF))])
+
+# Handwashing 1 to 5
+summary(DF[ , grepl("handwashing", colnames(DF))])
+
+# Social 1 to 5
+summary(DF[ , grepl("social", colnames(DF))])
+
+# SDS 1 to 7
+# Reverse 1 and 2
+DF$sds1 <- 8 - DF$sds1
+DF$sds2 <- 8 - DF$sds2
+summary(DF[ , grepl("sds", colnames(DF))])
+
+# Behavior 1 to 5
+summary(DF[ , grepl("behave", colnames(DF))])
+```
+
+# Exclusions due to Manipulation Check
+
+```{r}
+DF$attention_total <- 0
+# Must be moderately
+DF$attention_total <- DF$attention_total + as.numeric(DF$attention_check1 == 2)
+# Must be 50
+DF$attention_total <- DF$attention_total + as.numeric(DF$attention_check2 == 50)
+# Must be less than previous check and divide evenly by 5
+DF$attention_total <- DF$attention_total + as.numeric(DF$attention_check3 < DF$attention_check2 & !(DF$attention_check3%%5))
+# Must be less than previous check
+DF$attention_total <- DF$attention_total + as.numeric(DF$attention_check4 < DF$attention_check3)
+# Hand scored, must be a dog related word
+DF$attention_total <- DF$attention_total + as.numeric(DF$attention_dog_scored == "yes")
+# People must get four right 
+# DF <- subset(DF, attention_total >= 4) #turned off for made up data
+```
+
+# Create Composite Scores
+
+```{r}
+# BAI summed
+DF$BAI_total <- apply(DF[ , grepl("bai", colnames(DF))], 1, sum)
+
+# COVID Realistic and Symbolic averaged
+DF$Realistic <- apply(DF[ , grepl("covid_real", colnames(DF))], 1, mean)
+DF$Symbolic <- apply(DF[ , grepl("covid_symbolic", colnames(DF))], 1, mean)
+
+# IES Intrusion and Avoidance summed
+DF$Intrusion <- apply(DF[ , grepl("intrusion", colnames(DF))], 1, sum)
+DF$Avoidance <- apply(DF[ , grepl("avoid", colnames(DF))], 1, sum)
+
+# SWLS averaged
+DF$SWLS <- apply(DF[ , grepl("swls", colnames(DF))], 1, mean)
+
+# PANAS summed
+DF$Positive <- apply(DF[ , grepl("positive", colnames(DF))], 1, sum)
+DF$Negative <- apply(DF[ , grepl("negative", colnames(DF))], 1, sum)
+
+# Social Distance summed
+DF$Social <- apply(DF[ , grepl("social", colnames(DF))], 1, sum)
+
+# SDS averaged
+DF$SDS <- apply(DF[ , grepl("sds", colnames(DF))], 1, mean)
+
+# Behaviors averaged
+DF$Norms <- apply(DF[ , grepl("behave_norm", colnames(DF))], 1, mean)
+DF$American <- apply(DF[ , grepl("behave_american", colnames(DF))], 1, mean)
+```
+
+# Long to Wide 
+
+```{r}
+# Sort the data so time 1 is always first
+DF <- DF[order(DF$created), ]
+
+# Grab only the variables you need
+variables <- c("PROLIFIC_PID", "created", "BAI_total", "Realistic", 
+               "Symbolic", "Intrusion", "Avoidance", 
+               "SWLS", "Positive", "Negative", "Social", 
+               "SDS", "Norms","American", "handwashing")
+
+DFreduced <- DF[ , variables]
+
+# Create a variable to indicate time 1/2
+DFreduced$time2 <- duplicated(DFreduced$PROLIFIC_PID)
+
+# Take apart
+DFtime1 <- subset(DFreduced, time2 == FALSE)
+DFtime2 <- subset(DFreduced, time2 == TRUE)
+
+# Merge back
+# Don't use all because only 1 time doesn't help us
+# .x is time 1, .y is time 2
+DFwide <- merge(DFtime1, DFtime2, by = "PROLIFIC_PID")
+```
+
+# SEM 
+
+```{r}
+model1 <- '
+# Regressions
+
+BAI_total.y ~ Realistic.x + Symbolic.x
+Intrusion.y ~ Realistic.x + Symbolic.x
+Avoidance.y ~ Realistic.x + Symbolic.x
+SWLS.y ~ Realistic.x + Symbolic.x
+Positive.y ~ Realistic.x + Symbolic.x
+Negative.y ~ Realistic.x + Symbolic.x
+Social.y ~ Realistic.x + Symbolic.x
+handwashing.y ~ Realistic.x + Symbolic.x
+SDS.y ~ Realistic.x + Symbolic.x
+American.y ~ Realistic.x + Symbolic.x
+Norms.y ~ Realistic.x + Symbolic.x
+
+# Enter the covariances between the multiple predictors
+
+Realistic.x ~~ Symbolic.x
+
+# Enter the covariances between the multiple DVS
+
+BAI_total.y ~~ Avoidance.y
+BAI_total.y ~~ Intrusion.y
+BAI_total.y ~~ SWLS.y
+BAI_total.y ~~ Positive.y
+BAI_total.y ~~ Negative.y
+BAI_total.y ~~ Social.y
+BAI_total.y ~~ handwashing.y
+BAI_total.y ~~ American.y
+BAI_total.y ~~ Norms.y
+Avoidance.y ~~ Intrusion.y
+Avoidance.y ~~ SWLS.y
+Avoidance.y ~~ Positive.y
+Avoidance.y ~~ Negative.y
+Avoidance.y ~~ Social.y
+Avoidance.y ~~ handwashing.y
+Avoidance.y ~~ SDS.y
+Avoidance.y ~~ American.y
+Avoidance.y ~~ Norms.y
+Intrusion.y ~~ SWLS.y
+Intrusion.y ~~ Positive.y
+Intrusion.y ~~ Negative.y
+Intrusion.y ~~ Social.y
+Intrusion.y ~~ handwashing.y
+Intrusion.y ~~ SDS.y
+Intrusion.y ~~ American.y
+Intrusion.y ~~ Norms.y
+SWLS.y ~~ Positive.y
+SWLS.y ~~ Negative.y
+SWLS.y ~~ Social.y
+SWLS.y ~~ handwashing.y
+SWLS.y ~~ SDS.y
+SWLS.y ~~ American.y
+SWLS.y ~~ Norms.y
+Positive.y ~~ Negative.y
+Positive.y ~~ Social.y
+Positive.y ~~ handwashing.y
+Positive.y ~~ SDS.y
+Positive.y ~~ American.y
+Positive.y ~~ Norms.y
+Negative.y ~~ Social.y
+Negative.y ~~ handwashing.y
+Negative.y ~~ SDS.y
+Negative.y ~~ American.y
+Negative.y ~~ Norms.y
+Social.y ~~ SDS.y
+Social.y ~~ American.y
+Social.y~~ Norms.y
+handwashing.y ~~ SDS.y
+handwashing.y ~~ American.y
+handwashing.y~~ Norms.y
+Social.y~~handwashing.y
+SDS.y ~~ American.y
+SDS.y ~~ Norms.y
+American.y ~~ Norms.y
+'
+
+fit1 <- sem(model1, data = DFwide)  
+summary(fit1, fit.measures = TRUE)
+parameterestimates(fit1)
+```
