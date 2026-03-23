@@ -1,0 +1,148 @@
+---
+title: "Al-Tammemi Analysis"
+author: "Erin M. Buchanan"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r}
+library(rio, quietly = T) #import data
+library(mlogit, quietly = T) #multilogit
+library(openssl, quietly = T)
+R.version
+packageVersion("rio")
+packageVersion("mlogit")
+packageVersion("openssl")
+```
+
+# Deidentify the Data
+
+In order for the data to be opened in something like Excel, we should remove the `-` sign from the beginning of the session codes. Otherwise, Excel replaces them with `#NAME`, and you lose that information. 
+
+```{r eval = FALSE}
+DF <- import("../Data/AlTammemi_Survey_raw.csv")
+
+# Deal with = sign at beginning of session codes
+DF$session <- gsub("^-*", "", DF$session)
+
+# Create new anonymous IDs
+# Use both session and PID since some blanks, makes all rows unique
+DF$participant_id <- sha256(paste0(DF$session, DF$PROLIFIC_PID))
+
+# write that data out without prolific ID
+write.csv(DF[ , -6], "../Data/AlTammemi_Survey_deidentify.csv", row.names = F)
+```
+
+# Import the Data
+
+```{r}
+DF <- import("../Data/AlTammemi_Survey_deidentify.csv")
+```
+
+# Clean the Data 
+
+During data collection through Prolific, several participants emailed information they forgot to enter on the survey. Because Prolific IDs are not anonymous, we will show the manually entered data here based on session ID. It was matched by using Prolific ID. 
+
+```{r}
+# Information added
+DF$demographic_1[DF$session == "Z1ZXG3s_b1asR0dpEE_1FOpUpN7iZZPFvgvOna_rXjusm-EexJXMZIGpjSBV3hI"] <- 2000
+DF$demographic_1[DF$session == "sRQhTuBwLGLUlIlftg7QkirXHsDZCVn-IIcYZE591JqHdsYXwCGP9SfIjUJBUmpv"] <- 2000
+DF$demographic_1[DF$session == "5U8H_S12amNz-wLU02yS5x3CErLVQqI03Joi_a_frAU8xmPWior00litK9LpDyhj"] <- 1978
+```
+
+Next, we will remove all the test sessions before we started collecting data. 
+
+*NOTE*: If you have opened this document in Excel, it *will* change the date format. You can use the first section to recreate the analysis. 
+
+```{r}
+#if you opened in excel
+# DF <- subset(DF, 
+#              as.POSIXct(DF$created, 
+#                         format = "%m/%d/%Y %H:%M", 
+#                         tz = "America/New_York") > 
+#                as.POSIXct("1/19/21 17:50", 
+#                           format = "%m/%d/%Y %H:%M", 
+#                           tz = "America/New_York"))
+
+#else
+DF <- subset(DF, 
+             as.POSIXct(DF$created, tz = "America/New_York") > 
+               as.POSIXct("2021-01-19 17:50:32", tz = "America/New_York"))
+```
+
+Let's make sure all user IDs are unique.
+
+```{r}
+sum(duplicated(DF$participant_id))
+```
+
+Check the data to make sure it's in the right format before starting.
+
+```{r}
+summary(DF)
+```
+
+# Score the Data
+
+```{r}
+# Kessler items are not shown if others are selected
+sum(is.na(DF$Kessler_3)) # how many blank
+DF$Kessler_3[is.na(DF$Kessler_3) & #it's na and two is 1 so it wasn't show
+             DF$Kessler_2 == 1] <- 1
+sum(is.na(DF$Kessler_3)) # how many not replaced
+
+sum(is.na(DF$Kessler_6)) # how many blank
+DF$Kessler_6[is.na(DF$Kessler_6) & #it's na and two is 1 so it wasn't show
+             DF$Kessler_5 == 1] <- 1
+sum(is.na(DF$Kessler_6)) # how many not replaced
+
+# Kessler is summed
+DF$Kessler_total <- apply(DF[ , grepl("Kessler", colnames(DF))], 1, sum)
+
+# Kessler is categorized
+DF$Kessler_categories <- NA
+DF$Kessler_categories[DF$Kessler_total < 20] <- "No Distress"
+DF$Kessler_categories[DF$Kessler_total >= 20 & DF$Kessler_total <= 24] <- "Low Distress"
+DF$Kessler_categories[DF$Kessler_total>= 25 & DF$Kessler_total <= 29] <- "Moderate Distress"
+DF$Kessler_categories[DF$Kessler_total > 29] <- "Severe Distress"
+DF$Kessler_categories <- factor(DF$Kessler_categories,
+                                levels = c("No Distress", "Low Distress", 
+                                           "Moderate Distress", "Severe Distress"))
+
+summary(DF)
+```
+
+# Sample Size Requirements
+
+The initial target analytic sample size is 596 students. We have met this goal, as noted by the number of complete cases listed below. 
+
+```{r}
+sum(complete.cases(DF[ , c("Kessler_categories", "online_learning_1")]))
+```
+
+# Multinomial Log
+
+```{r}
+# Restructure to specific format
+DFlong <- mlogit.data(DF[ , c("Kessler_categories", "online_learning_1") ], 
+                      choice = "Kessler_categories", shape = "wide")
+
+##run the log!
+model <- mlogit(Kessler_categories ~ 1 | online_learning_1,
+               data = DFlong, 
+               reflevel = "No Distress")
+summary(model)
+
+# convert to odds ratio
+exp(model$coefficients)
+
+# get confidence interval odds ratio
+exp(confint(model))
+```
+
