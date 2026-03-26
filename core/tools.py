@@ -34,7 +34,7 @@ class DataFrameAnalyzer:
     def _load_data(self) -> Optional[pd.DataFrame]:
         """
         Private method to load data from the file_path.
-        Handles both .csv, .xlsx, and .dta files and potential errors.
+        Handles both .csv, .xlsx, .dta, .rds, .sav files and potential errors.
         """
         # Get the file extension from the file path
         _, file_extension = os.path.splitext(self.file_path)
@@ -52,6 +52,8 @@ class DataFrameAnalyzer:
                 return pd.read_stata(self.file_path)
             elif file_extension.lower() == '.rds':
                 return pyreadr.read_r(self.file_path)[None]
+            elif file_extension.lower() == ".sav":
+                return pd.read_spss(self.file_path)
             else:
                 print(f"Error: Unsupported file type '{file_extension}'.")
                 return None

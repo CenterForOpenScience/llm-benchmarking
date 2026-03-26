@@ -143,7 +143,7 @@ def get_tool_definitions() -> list:
             "type": "function",
             "function": {
                 "name": "load_dataset",
-                "description": "Loads a dataset (CSV, Excel, DTA) into memory for analysis. Must be called before other dataset tools.",
+                "description": "Loads a dataset (CSV, Excel, DTA, RDS, SAV) into memory for analysis. Must be called before other dataset tools.",
                 "parameters": {
                     "type": "object",
                     "properties": {
