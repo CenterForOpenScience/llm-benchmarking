@@ -1,0 +1,75 @@
+{
+  "replication_study": {
+    "hypothesis": "After controlling for general cognitive ability, age, gender, socio-economic status (HISEI), parental education, and cultural capital (books at home), bilingual students (minority language at home) will have higher English-as-a-foreign-language achievement (WLE) than monolingual students.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "Final replication dataset.rds (ELEMENT Grade 6, Berlin)",
+      "source_type": "Secondary dataset from standardized tests and student/parent questionnaires (ELEMENT study)",
+      "wave_or_subset": "Grade 6 elementary school cohort (Berlin public schools)",
+      "sample_size": "To be determined programmatically upon loading the dataset; original analytic sample N=2835 (post_registration.json).",
+      "unit_of_analysis": "Individual student",
+      "access_details": "Use the provided RDS file. Ensure it is available at /app/data/Final replication dataset.rds when running the container.",
+      "qualification": {
+        "explanation": "This dataset is designed for direct replication of the focal claim. It comes from the same ELEMENT study as the original paper and includes the same constructs (English Cloze WLE, bilingual status, and background covariates). Using the same source maintains high fidelity. The analysis pipeline mirrors the original Mplus modeling using Python equivalents (imputation and cluster-robust regression), enabling a transparent and reproducible re-estimation.",
+        "similarity_to_original": "The dataset originates from the same ELEMENT Grade 6 study described in the original paper (post_registration.json: source, wave/subset, WLE scaling, controls). The outcome is English Cloze test WLE (M=100, SD=20), and bilingual status is derived from home language reports (post_registration.json: data notes). The RDS file in replication_data provides the pre-assembled replication dataset from the ELEMENT sample (replication_data/Final replication dataset.rds).",
+        "deviation_from_original": "This replication uses a pre-extracted RDS dataset rather than the full raw ELEMENT files. We implement multiple imputation using scikit-learn's IterativeImputer (m=5) and OLS with cluster-robust standard errors in Python instead of Mplus (post_registration.json: original used Mplus type=imputation and type=complex). We do not re-estimate IRT/Rasch scales (ACER ConQuest) and assume the provided WLE scores are final. If the dataset variable names differ from the original, the Python code heuristically detects the appropriate columns. The sample itself is intended to be the same Grade 6 cohort rather than a different sample."
+      },
+      "notes": "The script auto-detects variable names by string patterns. If mapping fails, the script writes two helper files into /app/data: dataset_columns.txt (all column names) and replication_columns_detected.json (heuristic mappings found). The focal adjusted model intentionally excludes German reading proficiency to align with the focal claim (Model B). Any subgroup/language-group models are not executed in this minimal replication script."
+    },
+    "planned_method": {
+      "steps": [
+        "Place the file Final replication dataset.rds into /app/data.",
+        "Run the Python script: python replication_data/replicate_study.py (optionally pass a custom input path).",
+        "The script will: (a) load the RDS, (b) detect variables (English WLE outcome, bilingual indicator, background controls, classroom cluster if available), (c) perform multiple imputation (m=5) using IterativeImputer, (d) run OLS with cluster-robust SEs at class level when a class ID is available (else HC1), and (e) pool the bilingual coefficient using Rubin's rules.",
+        "Review outputs in /app/data: replication_results.json (machine-readable), replication_results.txt (human-readable summary), replication_columns_detected.json and dataset_columns.txt (diagnostics)."
+      ],
+      "models": "Multiple linear regression: English WLE ~ Bilingual + controls (age, gender, HISEI, parental education, books at home, cognitive abilities); cluster-robust SEs by class (if class ID exists); pooled multiple imputation (m=5).",
+      "outcome_variable": "English Cloze test WLE (scaled M=100, SD=20).",
+      "independent_variables": "Primary: Bilingual indicator (1 = bilingual/minority language at home, 0 = monolingual).",
+      "control_variables": "General cognitive abilities (CFT-like indicators if present), age, gender, socio-economic status (HISEI), parental education, cultural capital (books at home).",
+      "tools_software": "Python 3.10; packages: numpy, pandas, statsmodels, scikit-learn (IterativeImputer), pyreadr (for RDS), scipy (for t CDF).",
+      "planned_estimation_and_test": {
+        "estimation": "The adjusted regression coefficient on the bilingual indicator (in WLE points).",
+        "test": "Two-sided t-test on the bilingual coefficient with MI-pooled standard error; cluster-robust covariance if class clusters are available."
+      },
+      "missing_data_handling": "Multiple Imputation via IterativeImputer (m=5; sample_posterior=True; max_iter=25; median initialization).",
+      "multiple_testing_policy": "Not applicable for the single focal test. If subgroup analyses are added, use Bonferroni or Benjamini-Hochberg as appropriate.",
+      "inference_criteria": "Two-sided alpha = 0.05; expect positive direction. Compare coefficient magnitude and p-value to the original (estimate \u2248 2.68; p < .01)."
+    },
+    "codebase": {
+      "files": {
+        "replication_data/replicate_study.py": "Entry-point Python script. Loads /app/data/Final replication dataset.rds via pyreadr; heuristically detects English WLE outcome, bilingual indicator, and controls; performs multiple imputation (m=5); fits OLS with cluster-robust errors (class-level if available); pools estimates via Rubin's rules; writes results to /app/data/replication_results.json and /app/data/replication_results.txt. Also emits diagnostic files to /app/data (dataset_columns.txt and replication_columns_detected.json)."
+      },
+      "notes": "All IO is constrained to /app/data. The script approximates the original Mplus model using statsmodels and scikit-learn. No re-scaling/IRT is performed; WLE is assumed final. Executed entrypoint: python replication_data/replicate_study.py."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "numpy>=1.23",
+          "pandas>=1.5",
+          "statsmodels>=0.13.5",
+          "scikit-learn>=1.2",
+          "pyreadr>=0.4.9",
+          "scipy>=1.9"
+        ],
+        "other": [
+          "git",
+          "wget"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "1) Ensure Final replication dataset.rds is present at /app/data/Final replication dataset.rds. 2) Run: python replication_data/replicate_study.py. 3) Inspect /app/data/replication_results.txt and replication_results.json. The bilingual coefficient, pooled SE, t-stat, df, and p-value are reported under mi_pooled. 4) If variable detection fails, consult /app/data/dataset_columns.txt and /app/data/replication_columns_detected.json to adjust data preparation.",
+      "comparison_metrics": "Compare the pooled bilingual coefficient and p-value against the original adjusted estimate (2.68; p < .01). Metrics: sign (positive vs negative), statistical significance at alpha=0.05, magnitude difference (absolute difference from 2.68), and confidence interval overlap if desired (derive from pooled SE)."
+    }
+  }
+}
