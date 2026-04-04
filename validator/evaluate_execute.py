@@ -101,16 +101,17 @@ def read_log(file_path, model_name="gpt-4o"):
 
 
 class Agent:
-    def __init__(self, system="", session_state={}):
+    def __init__(self, system="", session_state={},model_name="gpt-4o"):
         self.system = system
         self.messages = []
+        self.model_name = model_name
         if self.system:
             self.messages.append({"role": "system", "content": system})
         self.session_state = session_state
         
-    def count_tokens_in_messages(self, model_name="gpt-4o"):
+    def count_tokens_in_messages(self):
         """Counts the number of tokens in a list of messages for a given model."""
-        encoding = tiktoken.encoding_for_model(model_name)
+        encoding = tiktoken.encoding_for_model(self.model_name)
         num_tokens = 0
         for message in self.messages:
             # Each message has a role, content, and potentially a name
@@ -149,8 +150,7 @@ class Agent:
         })
         
         summary_completion = client.chat.completions.create(
-                                    model="gpt-4o",
-                                    temperature=0,
+                                    model=self.model_name,
                                     messages=messages)
         return summary_completion.choices[0].message.content
 
@@ -168,8 +168,7 @@ class Agent:
                 self.messages[-1]
             ]
         completion = client.chat.completions.create(
-                                model="gpt-4o",
-                                temperature=0,
+                                model=self.model_name,
                                 messages=self.messages)
         return completion.choices[0].message.content
     
@@ -237,9 +236,8 @@ Your available actions are:
 
 1. list_files_in_folder:
     e.g. list_files_in_folder: "data/study_A/datasets"
-    Description: Lists all files within a specified folder
-    Returns: Names of all files within the specified folder with their names as a single string,
-    with each file separated by a comma.
+    Description: Lists all files within a specified folder.
+    Returns: Names of all files within the specified folder. IMPORTANT: You should ignore the 'evals' directory if it appears.
 
 2.  read_txt:
     e.g. read_txt: "data/study_X/abstract.txt"
@@ -380,24 +378,26 @@ known_actions = {
 }
 
 action_re = re.compile(r'^Action: (\w+): (.*)$', re.MULTILINE) # Use re.MULTILINE for multiline parsing
-def save_output(extracted_json, study_path):
+def save_output(extracted_json, study_path, evaluator_model="gpt-4o"):
     final_output = {
         "stage": "execute",
         **extracted_json
     }
-    output_path = os.path.join(study_path,"llm_eval", "execute_llm_eval.json")
-    extracted_json = final_output
+    # Update path dynamically
+    output_directory = os.path.join(study_path, "evals", evaluator_model)
+    os.makedirs(output_directory, exist_ok=True)
+    output_path = os.path.join(output_directory, "execute_llm_eval.json")
     with open(output_path, 'w') as f:
-        json.dump(extracted_json, f, indent=2)
+        json.dump(final_output, f, indent=2)
 
     logger.info(f"Interpret stage output saved to {output_path}")
     
-def query_agent(question: str, max_turns: int = 20, study_path_for_saving=None):
+def query_agent(question: str, max_turns: int = 20, study_path_for_saving=None, evaluator_model="gpt-4o"):
     """
     Main function to query the agent and orchestrate the extraction process.
     """
     i = 0
-    bot = Agent(agent_prompt, session_state = {"analyzers": {}})
+    bot = Agent(agent_prompt, session_state = {"analyzers": {}}, model_name=evaluator_model)
     next_prompt = question
 
     final_extracted_data = {} # To accumulate results
@@ -445,7 +445,7 @@ def query_agent(question: str, max_turns: int = 20, study_path_for_saving=None):
                 logger.info(json.dumps(final_answer, indent=2))
                 # Agent decides when to save the output now
                 if study_path_for_saving:
-                    save_output(final_answer, study_path_for_saving)
+                    save_output(final_answer, study_path_for_saving, evaluator_model)
                 logger.info("Process completed")
                 return final_answer
             except json.JSONDecodeError as e:
@@ -492,7 +492,7 @@ def build_file_description(available_files, file_path):
         desc += f"{file_id}. {os.path.join(file_path, file_name)}: {file_desc}\n"
     return desc
 
-def _configure_file_logging(study_path: str):
+def _configure_file_logging(study_path: str, evaluator_model="gpt-4o"):
     """
     Configures a file handler for the logger, saving logs to the study_path.
     This function should be called once the study_path is known (e.g., at the start of run_extraction).
@@ -507,7 +507,7 @@ def _configure_file_logging(study_path: str):
 
     # Construct the log file path within the given study_path
     log_file_name = 'evaluate_execute.log'
-    log_directory = os.path.join(study_path, "llm_eval") # Assuming study_path is already the directory where you want the log
+    log_directory = os.path.join(study_path, "evals", evaluator_model) 
     os.makedirs(log_directory, exist_ok=True)
     log_file_full_path = os.path.join(log_directory, log_file_name)
 
@@ -523,8 +523,8 @@ def _configure_file_logging(study_path: str):
     logger.info(f"File logging configured to: '{log_file_full_path}'.")
 
 
-def run_evaluate_execute(study_path, show_prompt=False):
-    _configure_file_logging(study_path)
+def run_evaluate_execute(study_path, show_prompt=False, evaluator_model="gpt-4o"):
+    _configure_file_logging(study_path, evaluator_model)
     # Load json template
     logger.info(f"Starting execution evaluation for study path: {study_path}")
     eval_prompt_template = read_txt(EVALUATE_GENERATE_EXECUTE_CONSTANTS['prompt_template'])
@@ -545,4 +545,5 @@ def run_evaluate_execute(study_path, show_prompt=False):
     query_agent(
         query_question,
         study_path_for_saving=study_path,
+        evaluator_model=evaluator_model
     )

@@ -59,7 +59,10 @@ def build_extraction_prompt(preregistration, score_report, expected_schema):
         Output Requirements:\n- Return a valid JSON object only.\n- Do NOT wrap the output in markdown (no ```json).\n- Do NOT include extra text, commentary, or notes.\n\nBegin extraction using the provided schema below and the file contents. Ensure accuracy and completeness.\n- Strictly use provided sources as specified
         """
 
-def save_prompt_log(study_path, prompt):
+def save_prompt_log(study_path, prompt, evaluator_model="gpt-4o"):
+    # Change path to evals structure
+    log_dir = os.path.join(study_path, "evals", evaluator_model)
+    os.makedirs(log_dir, exist_ok=True)
     case_name = os.path.basename(os.path.normpath(study_path))
 
     if "case_study" not in case_name:
@@ -68,8 +71,6 @@ def save_prompt_log(study_path, prompt):
             case_name = match.group()
             
     log_dir = "logs"
-    # log_dir = os.path.join(study_path, "logs")
-    os.makedirs(log_dir, exist_ok=True)
 
     log_file = os.path.join(log_dir, f"{case_name}_validator_ehri_log.txt")
 
@@ -80,22 +81,25 @@ def save_prompt_log(study_path, prompt):
     print(f"[INFO] Prompt logged to {log_file}")
     
 
-def generate_expected_json(preregistration, score_report, expected_schema, client, log_path):
+def generate_expected_json(preregistration, score_report, expected_schema, client, log_path, evaluator_model="gpt-4o"):
     prompt = build_extraction_prompt(preregistration, score_report, expected_schema)
 
     save_prompt_log(log_path, prompt)
     
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model=evaluator_model,
         messages=[{"role": "user", "content": prompt.strip()}],
-        temperature=0
     )
     content = response.choices[0].message.content
     return json.loads(content)
 
 
-def save_json(data, path):
-    save_path = os.path.join(path, "llm_eval", "design_llm_eval.json")
+def save_json(data, path, evaluator_model="gpt-4o"):
+    # Change path to evals structure
+    save_dir = os.path.join(path, "evals", evaluator_model)
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, "design_llm_eval.json")
+
     with open(save_path, 'w') as f:
         json.dump(data, f, indent=2)
         print(f"extract_from_human_replication_study.py output saved to {save_path}")
@@ -110,5 +114,5 @@ def extract_from_human_replication_study(preregistration_path, score_report_path
     score_report = load_report_text(score_report_path)
     
     log_path = os.path.dirname(output_path)
-    expected_json = generate_expected_json(preregistration, score_report, expected_schema, client, log_path)
-    save_json(expected_json, output_path)
+    expected_json = generate_expected_json(preregistration, score_report, expected_schema, client, log_path, evaluator_model)
+    save_json(expected_json, output_path, evaluator_model)

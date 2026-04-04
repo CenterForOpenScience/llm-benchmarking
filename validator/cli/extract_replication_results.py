@@ -8,9 +8,11 @@ def main():
     parser = argparse.ArgumentParser(description="LLM-based Replication Results Extractor")
     parser.add_argument('--study_path', required=True, help="Path to case study folder")
     parser.add_argument("--show-prompt", action="store_true", help="Print the generated prompt and exit")
+    parser.add_argument('--model_name', type=str, default='gpt-4o', help="Model to use for extraction")
+
     args = parser.parse_args()
    
-    run_extraction(study_path=args.study_path, show_prompt=args.show_prompt)
+    run_extraction(study_path=args.study_path,  model_name=args.model_name, show_prompt=args.show_prompt)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ REQ := pytest pytest_cov openai dotenv pymupdf pyreadr pandas numpy docker docx
 STUDY ?= ./data/original/1
 CODE_MODE ?= python
 MODEL ?= gpt-4o
+EVAL_MODEL ?= gpt-4o
 TIER ?= easy
 
 .PHONY: check-deps install-dev test test-extractor test-generator test-all design-easy execute-easy
@@ -47,16 +48,15 @@ pipeline-easy: extract-stage1 design-easy execute-easy interpret-easy
 
 # validator module
 evaluate-extract: check-deps
-	python -m validator.cli.evaluate_extracted_info --extracted_json_path $(STUDY)/input/post_registration.json --expected_json_path $(STUDY)/gt/expected_post_registration.json --output_path $(STUDY)
+	python -m validator.cli.evaluate_extracted_info --extracted_json_path $(STUDY)/input/post_registration.json --expected_json_path $(STUDY)/gt/expected_post_registration.json --output_path $(STUDY) --evaluator_model $(EVAL_MODEL)
 evaluate-design: check-deps	
-	python -m validator.cli.evaluate_design_cli --extracted_json_path $(STUDY)/input/replication_info.json --reference_doc_path $(firstword $(wildcard $(STUDY)/gt/human_preregistration.*)) --output_path $(STUDY)
+	python -m validator.cli.evaluate_design_cli --extracted_json_path $(STUDY)/input/replication_info.json --reference_doc_path $(firstword $(wildcard $(STUDY)/gt/human_preregistration.*)) --output_path $(STUDY) --evaluator_model $(EVAL_MODEL)
 evaluate-execute: check-deps
-	python -m validator.cli.evaluate_execute_cli  --study_path $(STUDY)
+	python -m validator.cli.evaluate_execute_cli  --study_path $(STUDY) --evaluator_model $(EVAL_MODEL)
 evaluate-interpret: check-deps
-	python -m validator.cli.evaluate_interpret_cli  --study_path $(STUDY) --reference_report_path $(firstword $(wildcard $(STUDY)/gt/human_report.*))
+	python -m validator.cli.evaluate_interpret_cli  --study_path $(STUDY) --reference_report_path $(firstword $(wildcard $(STUDY)/gt/human_report.*)) --evaluator_model $(EVAL_MODEL)
 evaluate-summary: check-deps
-	python -m validator.cli.evaluate_summary_cli --study_path $(STUDY)
-
+	python -m validator.cli.evaluate_summary_cli --study_path $(STUDY) --evaluator_model $(EVAL_MODEL)
 evaluate-pipeline-easy: evaluate-extract evaluate-design evaluate-execute evaluate-interpret evaluate-summary
 
 # Evaluate all stages

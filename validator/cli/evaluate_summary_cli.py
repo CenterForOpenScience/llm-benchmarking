@@ -7,9 +7,10 @@ from validator.aggregate_eval_scores import summarize_eval_scores
 def main():
     parser = argparse.ArgumentParser(description="Validator: Aggregate and summarize evaluation scores")
     parser.add_argument('--study_path', type=str, required=True, help='Path to study with agents output for evaluation')
+    parser.add_argument('--evaluator_model', type=str, default='gpt-4o', help='Model to use for evaluation')
     args = parser.parse_args()
 
-    summarize_eval_scores(args.study_path)
+    summarize_eval_scores(args.study_path, args.evaluator_model)
 
 
 if __name__ == "__main__":

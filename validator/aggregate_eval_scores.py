@@ -29,13 +29,24 @@ def _to_float_or_none(x):
             return None
         return float(s)  # will still raise if it's something else
     return None
-
-def summarize_eval_scores(study_path):
+def summarize_eval_scores(study_path, evaluator_model="gpt-4o"):
     stages = ["extract", "design", "execute", "interpret"]
     eval_summary = {}
+    
+    # Use the dynamic evaluation directory
+    evals_dir = os.path.join(study_path, "evals", evaluator_model)
+    
     for stage in stages:
-        with open(f"{study_path}/llm_eval/{stage}_llm_eval.json") as f:
+        stage_file_path = os.path.join(evals_dir, f"{stage}_llm_eval.json")
+        
+        # Safety check: If the execute JSON (or any other) is missing, skip it without crashing!
+        if not os.path.exists(stage_file_path):
+            print(f"Skipping {stage} evaluation - file not found: {stage_file_path}")
+            continue
+            
+        with open(stage_file_path) as f:
             eval_json = json.load(f)
+            
         if stage == "execute":
             eval_data = {
                 "design": eval_json["evaluate_design"],
@@ -64,6 +75,7 @@ def summarize_eval_scores(study_path):
             eval_summary[stage]["avg_score"] = (
                 sum(stage_scores) / len(stage_scores) if stage_scores else 0.0
             )
-        with open(f"{study_path}/llm_eval/eval_summary.json", "w") as fout:
-            json.dump(eval_summary, fout, indent =2)
-            
+    
+    summary_file_path = os.path.join(evals_dir, "eval_summary.json")
+    with open(summary_file_path, "w") as fout:
+        json.dump(eval_summary, fout, indent=2)

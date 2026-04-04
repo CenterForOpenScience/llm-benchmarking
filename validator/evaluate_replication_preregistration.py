@@ -40,7 +40,11 @@ def build_extract_evaluate_prompt(eval_prompt_template, extraction_schema, extra
     final_prompt = eval_prompt_template.format(**variables)
     return final_prompt
 
-def save_prompt_log(study_path, prompt):
+def save_prompt_log(study_path, prompt, evaluator_model="gpt-4o"):
+    # Change path to evals structure
+    log_dir = os.path.join(study_path, "evals", evaluator_model)
+    os.makedirs(log_dir, exist_ok=True)
+
     case_name = os.path.basename(os.path.normpath(study_path))
 
     if "case_study" not in case_name:
@@ -48,9 +52,6 @@ def save_prompt_log(study_path, prompt):
         if match:
             case_name = match.group()
             
-    log_dir = os.path.join(study_path, "llm_eval")
-    os.makedirs(log_dir, exist_ok=True)
-
     log_file = os.path.join(log_dir, f"design_llm_eval.log")
 
     with open(log_file, "w", encoding="utf-8") as f:
@@ -60,28 +61,30 @@ def save_prompt_log(study_path, prompt):
     print(f"[INFO] Prompt logged to {log_file}")
     
 
-def generate_evaluation_json(eval_prompt_template, expected_schema, extracted_json, reference_doc, client, log_path):
+def generate_evaluation_json(eval_prompt_template, expected_schema, extracted_json, reference_doc, client, log_path, evaluator_model="gpt-4o"):
     prompt = build_extract_evaluate_prompt(eval_prompt_template, expected_schema, extracted_json, reference_doc)
 
-    save_prompt_log(log_path, prompt)
+    save_prompt_log(log_path, prompt, evaluator_model)
     
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model=evaluator_model,
         messages=[{"role": "user", "content": prompt.strip()}],
-        temperature=0
     )
     content = response.choices[0].message.content
     return json.loads(content)
 
 
-def save_json(data, path):
-    save_path = os.path.join(path, "llm_eval", "design_llm_eval.json")
+def save_json(data, path, evaluator_model="gpt-4o"):
+    # Change path to evals structure
+    save_dir = os.path.join(path, "evals", evaluator_model)
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, "design_llm_eval.json")
     with open(save_path, 'w') as f:
         json.dump(data, f, indent=2)
         print(f"Design Evaluate output saved to {save_path}")
 
 
-def extract_from_human_replication_study(extracted_json_path, reference_doc_path, output_path):
+def extract_from_human_replication_study(extracted_json_path, reference_doc_path, output_path, evaluator_model="gpt-4o"):
     client = OpenAI(api_key=API_KEY)
     
     eval_prompt_template = read_txt(TEMPLATE_PATHS['generate_design_eval_prompt_template'])
@@ -91,5 +94,5 @@ def extract_from_human_replication_study(extracted_json_path, reference_doc_path
     reference_doc = read_pdf(reference_doc_path)
     
     log_path = output_path
-    evaluated_json = generate_evaluation_json(eval_prompt_template, expected_schema, extracted_json, reference_doc, client, log_path)
-    save_json(evaluated_json, output_path)
+    evaluated_json = generate_evaluation_json(eval_prompt_template, expected_schema, extracted_json, reference_doc, client, log_path, evaluator_model)
+    save_json(evaluated_json, output_path, evaluator_model)

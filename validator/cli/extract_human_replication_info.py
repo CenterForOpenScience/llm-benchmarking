@@ -17,9 +17,10 @@ def extract_human_replication_info():
     parser.add_argument('--preregistration', type=str, required=True, help='Path to PDF or DOCX pre-registration document')
     parser.add_argument('--score_report', type=str, required=True, help='Path to PDF or DOCX SCORE report')
     parser.add_argument('--output_path', type=str, required=True, help='Path to save the expected replication_info.json')
+    parser.add_argument('--evaluator_model', type=str, default='gpt-4o', help='Model to use for evaluation')
     args = parser.parse_args()
 
-    extract_from_human_replication_study(args.preregistration, args.score_report, args.output_path)
+    extract_from_human_replication_study(args.preregistration, args.score_report, args.output_path, args.evaluator_model)
 
 
 if __name__ == "__main__":
