@@ -263,28 +263,40 @@ def ask_human_input(question: str) -> str:
     
     return human_response
 
-def list_files_in_folder(study_path, folder_path: str) -> str:
+
+def list_files_in_folder(study_path, folder_path: str = None) -> str:
     """
     Recursively lists all files within a specified folder and its subfolders.
-
-    Args:
-        folder_path: The absolute or relative path to the folder.
-
-    Returns:
-        A string containing the relative paths of all files found,
-        each separated by a newline. If the folder does not exist
-        or is not a directory, an error message is returned.
+    Automatically adapts to both OpenAI JSON tool calls and ReAct text parsers.
     """
+
+    # If folder_path is None, this was called by the ReAct text parser in evaluate_execute.py, 
+    # which dumped the single string into the first argument (study_path).
+    if folder_path is None:
+        folder_path = str(study_path).strip(' "\'')
+        
+        # Dynamically infer the actual study_path from the folder string
+        # e.g., converts "data/original/2/input" -> "data/original/2"
+        path_parts = folder_path.replace("\\", "/").split("/")
+        study_path_parts = []
+        for part in path_parts:
+            study_path_parts.append(part)
+            if part.isdigit(): # Stops when it hits the experiment number
+                break
+        study_path = os.path.join(*study_path_parts) if study_path_parts else "."
+    else:
+        # Normal execution by the Generative Agent!
+        folder_path = str(folder_path).strip(' "\'')
+        study_path = str(study_path).strip(' "\'')
+
     abs_folder = os.path.abspath(folder_path)
     abs_study = os.path.abspath(study_path)
     
     # Check if abs_folder is inside abs_study
-    # We check if the common path between them is the study_path itself
     try:
         if os.path.commonpath([abs_folder, abs_study]) != abs_study:
             return f"Error: Access denied. '{folder_path}' is outside of the study directory. You can only search within {study_path}"
     except ValueError:
-        # This handles cases where paths are on different drives (Windows)
         return "Error: Paths are on different drives."
     
     # Check if the provided path exists
@@ -296,15 +308,15 @@ def list_files_in_folder(study_path, folder_path: str) -> str:
         return f"Error: Path '{folder_path}' is not a directory."
 
     file_paths = []
-    strs2avoid = ["human_preregistration","metadata.json", "human_report", "llm_eval", "expected_post_registration"]
+    # evals added to avoid cheating
+    strs2avoid = ["human_preregistration", "metadata.json", "human_report", "llm_eval", "expected_post_registration", "evals"]
 
     # Walk through all directories and subdirectories
     for current_root, _, files in os.walk(folder_path):
         for file in files:
             full_path = os.path.join(current_root, file)
-            # Store paths relative to the provided folder
             relative_path = os.path.relpath(full_path, folder_path)
-            if not any(s in relative_path for s in strs2avoid): #avoid cheating
+            if not any(s in relative_path for s in strs2avoid): 
                 file_paths.append(relative_path)
 
     if not file_paths:
@@ -312,8 +324,7 @@ def list_files_in_folder(study_path, folder_path: str) -> str:
 
     file_paths.sort()
 
-    file_info = f"Folder path: {folder_path}\n"
-    file_info += "All files:\n" + "\n".join(file_paths)
+    file_info = f"Folder path: {folder_path}\nAll files:\n" + "\n".join(file_paths)
     return file_info
 
 from pathlib import Path
