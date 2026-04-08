@@ -1,7 +1,6 @@
 import os
 import json
 
-
 def summarize_eval_execute(eval_data):
     eval_scores = {}
     for sub_stage, sub_stage_eval_data in eval_data.items():
@@ -10,13 +9,31 @@ def summarize_eval_execute(eval_data):
         }
         sub_stage_scores = []
         for aspect in sub_stage_eval_data:
-            aspect_scores = []
+            clean_scores = []
             for rubric_id, rubric_info in sub_stage_eval_data[aspect].items():
-                aspect_scores.append(rubric_info['score'])
-            aspect_avg = sum(aspect_scores)/len(aspect_scores)
+                raw_score = rubric_info.get('score')
+                # Safely attempt to convert the score to a float
+                try:
+                    clean_scores.append(float(raw_score))
+                except (ValueError, TypeError):
+                    # If the LLM output "N/A" or something weird, we just skip it
+                    continue 
+            
+            # Calculate average, protecting against division by zero
+            if clean_scores:
+                aspect_avg = sum(clean_scores) / len(clean_scores)
+            else:
+                aspect_avg = 0.0
+                
             eval_scores[f"execute_{sub_stage}"]["aspect_scores"][aspect] = aspect_avg
             sub_stage_scores.append(aspect_avg)
-        eval_scores[f"execute_{sub_stage}"]["avg_score"] = sum(sub_stage_scores)/len(sub_stage_scores)
+            
+        # Calculate sub-stage average, protecting against division by zero
+        if sub_stage_scores:
+            eval_scores[f"execute_{sub_stage}"]["avg_score"] = sum(sub_stage_scores) / len(sub_stage_scores)
+        else:
+            eval_scores[f"execute_{sub_stage}"]["avg_score"] = 0.0
+            
     return eval_scores
 
 def _to_float_or_none(x):
@@ -30,6 +47,7 @@ def _to_float_or_none(x):
             return None
         return float(s)  # will still raise if it's something else
     return None
+
 def summarize_eval_scores(study_path, evaluator_model="gpt-4o"):
     stages = ["extract", "design", "execute", "interpret"]
     eval_summary = {}
@@ -49,6 +67,11 @@ def summarize_eval_scores(study_path, evaluator_model="gpt-4o"):
             eval_json = json.load(f)
             
         if stage == "execute":
+            # If the LLM suffered from prompt leakage and hallucinated the wrong schema, 
+            # gracefully skip it or handle it instead of crashing.
+            if "evaluate_design" not in eval_json or "execute" not in eval_json:
+                print(f"[WARNING] Schema mismatch in {stage_file_path}! The LLM hallucinated the wrong JSON structure. Skipping execution scoring.")
+                continue
             eval_data = {
                 "design": eval_json["evaluate_design"],
                 "execute": eval_json["execute"] 
