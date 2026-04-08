@@ -12,7 +12,7 @@ def summarize_eval_execute(eval_data):
         for aspect in sub_stage_eval_data:
             aspect_scores = []
             for rubric_id, rubric_info in sub_stage_eval_data[aspect].items():
-                aspect_scores.append(rubric_info['score'])
+                aspect_scores.append(_to_float_or_none(rubric_info['score']))
             aspect_avg = sum(aspect_scores)/len(aspect_scores)
             eval_scores[f"execute_{sub_stage}"]["aspect_scores"][aspect] = aspect_avg
             sub_stage_scores.append(aspect_avg)

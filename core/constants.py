@@ -113,15 +113,15 @@ GENERATE_EXECUTE_REACT_CONSTANTS = {
 EVALUATE_GENERATE_EXECUTE_CONSTANTS = {
     "prompt_template": "templates/prompts/execute_eval.txt",
     "claim_files": {
-        "input/original_paper.pdf": "The pdf file containing the full text of the original paper",
+        # "input/original_paper.pdf": "The pdf file containing the full text of the original paper",
         "input/initial_details.txt": "Details about the claim from the original paper to be replicated",
-        "input/replication_data": "The folder containing the data that can potentially be used for the replication. There may also be useful code to help you with the replication. But if not, you have to generate the replication code yourself in Python.",
+        "input/replication_data": "The folder containing the data and code that the agent used and generated during the execution process.",
     },
     "agent_files": {
         "input/post_registration.json": "A structured document with key extracted information about the original paper and the claim to be replicated.",
-        "input/_log/": "Folder contain the logs of the agent replication attempt. Focus on the logs of the design and the execute stage for this evaluation.",
-        "input/replication_info.json": "Final structured report of the design stage by the agent.",
-        "input/execution_results.json": "Final strcuterd report of the execution stage by the agent."
+        "input/replication_info.json": "Structured report of the design stage (where agent plans for the replication) by the agent.",
+        "input/execution_results.json": "Structured report of the execution stage (happening after design stage where agent runs and debugs code) by the agent.",
+        "input/_log/": "Folder contain the logs of the agent replication attempt. Focus on the log files of the design and the execute stage for this evaluation.",
     },
     "json_template": "templates/evaluate_execute_schema.json"
 }
