@@ -60,7 +60,7 @@ evaluate-summary: check-deps
 evaluate-pipeline-easy: evaluate-extract evaluate-design evaluate-execute evaluate-interpret evaluate-summary
 
 # Evaluate all stages
-evaluate-pipeline: evaluate-extract evaluate-design evaluate-execute evaluate-interpret
+evaluate-pipeline: evaluate-extract evaluate-design evaluate-execute evaluate-interpret evaluate-summary
 
 # test suite
 test: check-deps
