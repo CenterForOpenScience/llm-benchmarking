@@ -101,7 +101,7 @@ RUN POLICY (DESIGN)
 - If the original code is incompatible with the data, rewrite the code so that it is compatible. 
 - Set the executed entrypoint to the Python rewrite (or a Python wrapper that runs the translated scripts in order).
 - Preserve logic, outputs, and seeds as closely as possible.
-- Make sure that replication_info.json reflects the change. All docker related information must also be compatible with Python execution.
+- Make sure that the changes are reflected in the your structured report. All docker related information must also be compatible with Python execution.
  """.strip(),
  }
 

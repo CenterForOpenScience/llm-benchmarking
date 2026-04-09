@@ -348,7 +348,7 @@ def run_react_loop(system_prompt: str, known_actions: dict, tool_definitions: li
                         if func_name.startswith("get_dataset") or func_name == "load_dataset":
                              observation = func(bot.session_state, **func_args)
                         # inject study_path to restrict access to outside folders
-                        elif func_name == "list_files_in_folder":
+                        elif func_name in ["list_files_in_folder", "read_html"]:
                             func_args["study_path"] = study_path 
                             observation = func(**func_args)
                         else:

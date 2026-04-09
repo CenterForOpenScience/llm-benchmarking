@@ -15,6 +15,7 @@ from core.tools import (
     get_dataset_columns,
     get_dataset_variable_summary,
     read_and_summarize_pdf,
+    read_html
 )
 
 def base_known_actions() -> dict:
@@ -48,6 +49,7 @@ def base_known_actions() -> dict:
         "read_file": read_file,
         "edit_file": edit_file,
         "write_file": write_file,
+        "read_html": read_html
     }
 
 def get_tool_definitions() -> list:
@@ -134,6 +136,20 @@ def get_tool_definitions() -> list:
                     "type": "object",
                     "properties": {
                         "file_path": {"type": "string", "description": "Path to the image file."}
+                    },
+                    "required": ["file_path"]
+                }
+            }
+        },
+         {
+            "type": "function",
+            "function": {
+                "name": "read_html",
+                "description": "Extracts content from an html file into text under Markdown format. Any images found in the html will be saved separately.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": {"type": "string", "description": "Path to the .html file."}
                     },
                     "required": ["file_path"]
                 }

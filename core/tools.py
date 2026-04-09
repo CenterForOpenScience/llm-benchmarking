@@ -9,6 +9,8 @@ from typing import Dict, Any, Optional, Tuple
 import io # Add this import at the top of your file
 from pathlib import Path
 import difflib
+from bs4 import BeautifulSoup
+from markdownify import markdownify as md
 
 from pypdf import PdfReader
 
@@ -581,3 +583,55 @@ def read_and_summarize_pdf(file_path: str, summarizer_model: str="gpt-4o", for_d
 
     except Exception as e:
         return f"Error reading or summarizing PDF: {e}"
+    
+    
+
+def read_html(study_path, file_path):
+    # 1. Load the HTML
+    with open(file_path, 'r', encoding='utf-8') as f:
+        soup = BeautifulSoup(f, 'html.parser')
+
+    # 2. Setup image directory
+    img_dir = os.path.join(study_path, "replication_data", "extracted_images")
+    if not os.path.exists(img_dir):
+        os.makedirs(img_dir)
+
+    # 3. Find all images with base64 data
+    img_tags = soup.find_all('img')
+    print(f"Found {len(img_tags)} images. Processing...")
+
+    for i, img in enumerate(img_tags):
+        src = img.get('src', '')
+        
+        # Check if it's a base64 string
+        if src.startswith('data:image'):
+            try:
+                # Split the header from the actual base64 data
+                # Format is usually: data:image/png;base64,iVBOR...
+                header, encoded = src.split(",", 1)
+                
+                # Determine file extension (png, jpeg, etc)
+                ext = header.split('/')[1].split(';')[0]
+                img_filename = f"image_{i}.{ext}"
+                img_path = os.path.join(img_dir, img_filename)
+
+                # Decode and save the file
+                with open(img_path, "wb") as f_img:
+                    f_img.write(base64.b64decode(encoded))
+                
+                # IMPORTANT: Replace the giant string in the HTML 
+                # with the local filename before converting to Markdown
+                img['src'] = img_path
+                print(f"Saved: {img_path}")
+                
+            except Exception as e:
+                print(f"Could not process image {i}: {e}")
+
+    # 4. Convert the "cleaned" HTML to Markdown
+    # This will now use the local file paths we just created
+    markdown_text = md(str(soup), heading_style="ATX")
+
+    # 5. Save the Markdown file
+    # with open(output_md_file, 'w', encoding='utf-8') as f_out:
+    #     f_out.write(markdown_text)
+    return markdown_text
