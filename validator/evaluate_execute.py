@@ -209,7 +209,7 @@ class Agent:
                 observation = known_actions[action](self.session_state, **parsed)
             elif action == "list_files_in_folder":
                 func = known_actions[action]
-                parsed["study_path"] = study_path + "input/"
+                parsed["study_path"] = os.path.join(study_path, "input")
                 print("CALLING LIST FOLDER", parsed)
                 observation = func(**parsed)
             else:
@@ -223,7 +223,7 @@ class Agent:
                     func = known_actions[action]
                     print("CALLING LIST FOLDER 2", parsed)
                     parsed_args = {
-                        "study_path": study_path + "input/",
+                        "study_path": os.path.join(study_path, "input"),
                         "folder_path": parsed
                     }
                     # parsed["study_path"] = study_path 
