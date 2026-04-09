@@ -32,7 +32,7 @@ def run_design(study_path, show_prompt: bool = False, tier: str = "easy", code_m
     
     system_prompt = build_system_prompt(code_mode)
     
-    question = f"""The goal is to create replication_info.json. 
+    question = f"""
     
     You will have access to the following documents:
     {build_file_description(GENERATE_REACT_CONSTANTS['files'], study_path)}
@@ -60,7 +60,7 @@ def run_design(study_path, show_prompt: bool = False, tier: str = "easy", code_m
     PAUSE
     ----- FORMAT 2 (For when you are ready to give a final response)-------
     Thought: [Your thinking/planning process for completing the task based on interactions so far]
-    Answer: [Execute necessary next action to help you solve the task]
+    Answer: [Final Answer with the filled out JSON]
     """.strip()
     print(f"starting design phase with {model_name}\n")
     tool_definitions = get_tool_definitions()

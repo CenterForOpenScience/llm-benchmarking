@@ -1,28 +1,54 @@
+suppressPackageStartupMessages(library(lavaan))
+has_semPlot <- requireNamespace("semPlot", quietly = TRUE)
+has_lavaanPlot <- requireNamespace("lavaanPlot", quietly = TRUE)
+suppressPackageStartupMessages(library(psych))
+has_apaTables <- requireNamespace("apaTables", quietly = TRUE)
+if (!has_semPlot) message("semPlot not installed; skipping path diagrams.")
+if (!has_lavaanPlot) message("lavaanPlot not installed; skipping measurement model diagrams.")
+if (!has_apaTables) message("apaTables not installed; falling back to CSV for correlations.")
+
+# Read datasets from mounted volume
+Popper_Data.for.CFA <- read.csv('replication_data/Popper Replication Data Files/Popper_Data for CFA and SEM.csv')
+Popper.Data.for.Correlations <- read.csv('replication_data/Popper Replication Data Files/Popper Data for Correlations.csv')
+# Drop NA-only columns for correlations
+Popper.Data.for.Correlations <- Popper.Data.for.Correlations[, colSums(!is.na(Popper.Data.for.Correlations)) > 0]
+
 Cordata<-Popper.Data.for.Correlations
 
 
-apa.cor.table(
-  Cordata,
-  filename = "PopperAmitCorr1.doc",
-  table.number = 1,
-  show.sig.stars = TRUE,
-  landscape = TRUE
-)
+if (has_apaTables) {
+  apaTables::apa.cor.table(
+    Cordata,
+    filename = "/app/data/PopperAmitCorr1.doc",
+    table.number = 1,
+    show.sig.stars = TRUE,
+    landscape = TRUE
+  )
+} else {
+  # Fallback: save Pearson correlation matrix as CSV
+  cmat <- suppressWarnings(cor(Cordata, use = "pairwise.complete.obs"))
+  write.csv(cmat, "/app/data/PopperAmitCorr1.csv", row.names = TRUE)
+}
 
-##Scale Reliabilities
-AttachAlpha<-data.frame(Popper_Data.for.CFA[,2:19])
-alpha(AttachAlpha)
+##Scale Reliabilities##Scale Reliabilities
+# Compute reliability (Cronbach's alpha) using available parcel indicators per construct.
+reliability_alpha <- function(df, cols, label) {
+  missing <- setdiff(cols, names(df))
+  if (length(missing) == 0) {
+    cat(sprintf("Computing alpha for %s on %d indicators...\n", label, length(cols)))
+    print(psych::alpha(df[, cols], warnings = FALSE))
+  } else {
+    cat(sprintf("Skipping alpha for %s; missing columns: %s\n", label, paste(missing, collapse = ", ")))
+  }
+}
 
-AnxAlpha<-data.frame(Popper_Data.for.CFA[,20:39])
-alpha(AnxAlpha)
-
-OpenAlpha<-data.frame(Popper_Data.for.CFA[,40:59])
-alpha(OpenAlpha)
-
-LeadAlpha<-data.frame(Popper_Data.for.CFA[,60:66])
-alpha(LeadAlpha)
+reliability_alpha(Popper_Data.for.CFA, c("AvoidC_Par1","AvoidD_Par2","AttachX_Par3"), "ATTACH")
+reliability_alpha(Popper_Data.for.CFA, c("STAI_Par1","STAI_Par2","STAI_Par3"), "ANXIETY")
+reliability_alpha(Popper_Data.for.CFA, c("Open_Par1","Open_Par2","Open_Par3"), "OPEN")
+reliability_alpha(Popper_Data.for.CFA, c("Lead_Par1","Lead_Par2","Lead_Par3"), "LEAD")
 
 
+##Confirmatory Factor Analysis for study variables
 ##Confirmatory Factor Analysis for study variables
 
 PopperModel<-'ATTACH=~ AvoidC_Par1 + AvoidD_Par2 + AttachX_Par3
@@ -38,9 +64,11 @@ standardizedsolution(fitPopper)
 modindices(fitPopper)
 
 ##Visualize measurement model
-lavaanPlot(model = fitPopper, node_options = 
-             list(shape = "box", fontname =  "Helvetica"), 
-           edge_options = list(color = "grey"), coefs = TRUE, covs=TRUE)
+if (has_lavaanPlot) {
+  lavaanPlot::lavaanPlot(model = fitPopper, node_options = 
+               list(shape = "box", fontname =  "Helvetica"), 
+             edge_options = list(color = "grey"), coefs = TRUE, covs=TRUE)
+}
 
 
 ###One-Factor CFA
@@ -56,9 +84,11 @@ standardizedsolution(fitOneFactor)
 modindices(fitOneFactor)
 
 ##Visualize measurement model
-lavaanPlot(model = fitOneFactor, node_options = 
-             list(shape = "box", fontname =  "Helvetica"), 
-           edge_options = list(color = "grey"), coefs = TRUE, covs=TRUE)
+if (has_lavaanPlot) {
+  lavaanPlot::lavaanPlot(model = fitOneFactor, node_options = 
+               list(shape = "box", fontname =  "Helvetica"), 
+             edge_options = list(color = "grey"), coefs = TRUE, covs=TRUE)
+}
 
 ##Chi square difference test to compare 4 factor and 1 factor models
 round(cbind(Model=inspect(fitPopper, 'fit.measures'),
@@ -89,7 +119,7 @@ fitModel1 <- sem(Model1, data = Popper_Data.for.CFA)
 summary(fitModel1, standardized=TRUE, fit.measures=TRUE)
 
 
-semPaths(fitModel1, whatLabels = "std", layout = "tree")
+if (has_semPlot) semPlot::semPaths(fitModel1, whatLabels = "std", layout = "tree")
 
 ##Define constructs; "Par" indicates parcel
 Model2<- 'ATTACH=~ AvoidC_Par1 + AvoidD_Par2 + AttachX_Par3
@@ -113,7 +143,7 @@ cd:=c*d'
 fitModel2 <- sem(Model2, data = Popper_Data.for.CFA)
 summary(fitModel2, standardized=TRUE, fit.measures=TRUE)
 
-semPaths(fitModel2, whatLabels = "std", layout = "tree")
+if (has_semPlot) semPlot::semPaths(fitModel2, whatLabels = "std", layout = "tree")
 
 ##Chi square difference test to compare Model 1 and Model 2
 round(cbind(Model=inspect(fitModel1, 'fit.measures'),
@@ -138,7 +168,7 @@ LEAD~ATTACH + OPEN + ANXIETY
 fitModel3 <- sem(Model3, data = Popper_Data.for.CFA)
 summary(fitModel3, standardized=TRUE, fit.measures=TRUE)
 
-semPaths(fitModel3, whatLabels = "std", layout = "tree")
+if (has_semPlot) semPlot::semPaths(fitModel3, whatLabels = "std", layout = "tree")
 
 ##Chi square difference test to compare Model 1 and Model 3
 round(cbind(Model=inspect(fitModel1, 'fit.measures'),
@@ -169,7 +199,7 @@ cd:=c*d
 fitModel4 <- sem(Model4, data = Popper_Data.for.CFA)
 summary(fitModel4, standardized=TRUE, fit.measures=TRUE)
 
-semPaths(fitModel4, whatLabels = "std", layout = "tree")
+if (has_semPlot) semPlot::semPaths(fitModel4, whatLabels = "std", layout = "tree")
 
 ##Chi square difference test to compare Model 1 and Model 4
 round(cbind(Model=inspect(fitModel1, 'fit.measures'),
@@ -200,7 +230,7 @@ cd:=c*d
 fitModel5 <- sem(Model5, data = Popper_Data.for.CFA)
 summary(fitModel5, standardized=TRUE, fit.measures=TRUE)
 
-semPaths(fitModel5, whatLabels = "std", layout = "tree")
+if (has_semPlot) semPlot::semPaths(fitModel5, whatLabels = "std", layout = "tree")
 
 ##Chi square difference test to compare Model 1 and Model 5
 round(cbind(Model=inspect(fitModel1, 'fit.measures'),
@@ -231,7 +261,7 @@ bc:= b*c
 fitModel6 <- sem(Model6, data = Popper_Data.for.CFA)
 summary(fitModel6, standardized=TRUE, fit.measures=TRUE)
 
-semPaths(fitModel6, whatLabels = "std", layout = "tree")
+if (has_semPlot) semPlot::semPaths(fitModel6, whatLabels = "std", layout = "tree")
 
 ##Chi square difference test to compare Model 1 and Model 6
 round(cbind(Model=inspect(fitModel1, 'fit.measures'),
@@ -258,7 +288,7 @@ ANXIETY~LEAD
 fitModel7 <- sem(Model7, data = Popper_Data.for.CFA)
 summary(fitModel3, standardized=TRUE, fit.measures=TRUE)
 
-semPaths(fitModel7, whatLabels = "std", layout = "tree")
+if (has_semPlot) semPlot::semPaths(fitModel7, whatLabels = "std", layout = "tree")
 
 ##Chi square difference test to compare Model 1 and Model 3
 round(cbind(Model=inspect(fitModel1, 'fit.measures'),
