@@ -1,0 +1,99 @@
+{
+  "replication_study": {
+    "hypothesis": "At the U.S. county level, a higher 2016 Trump vote share is associated with lower social distancing during March 19\u201328, 2020. Operationally: per 1-IQR (\u224820.3 percentage points) increase in county Trump vote share, the change in the stay-at-home share relative to a pre-COVID reference period (Feb 16\u201329, 2020) will be negative.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "Unacast-derived county mobility (transportation.csv) + ACS/MIT/Census covariates (county_variables.csv) from replication_data",
+      "source_type": "Aggregated mobility database (Unacast) merged with public administrative/statistical sources (ACS 2014\u20132018 5-year, MIT Election Data and Science Lab 2016 county presidential returns, 2010 Census rurality).",
+      "wave_or_subset": "Reference period: 2020-02-16 to 2020-02-29; March analysis window: 2020-03-19 to 2020-03-28; August window also present but not focal.",
+      "sample_size": "Approximately 3,000 counties (final analytic N determined after merges and listwise deletion).",
+      "unit_of_analysis": "County",
+      "access_details": "Data provided in replication_data as transportation.csv and county_variables.csv; for execution, place these files under /app/data in the container.",
+      "qualification": {
+        "explanation": "This dataset contains the same constructs as the original study during the same focal windows. It allows recomputing the county-level social distancing measure (as change in stay-at-home share) and testing the association with Trump 2016 vote share, controlling for the same set of covariates with state fixed effects. Thus it is qualified for a close replication of the focal claim.",
+        "similarity_to_original": "Sources match those described in post_registration.json: Unacast mobility; ACS 2014\u20132018 5-year; MIT Election Data and Science Lab 2016 results; 2010 Census rurality (post_registration.json: original_study.data.source and wave_or_subset). The replication_data files contain: transportation.csv with daily county mobility fields including pop_home/pop_not_home for constructing stay-at-home rates (list_files + get_dataset_columns), and county_variables.csv with trump_share, income_per_capita, demographic shares, industry employment shares, and percent_rural (get_dataset_columns). The modeling approach mirrors the original (OLS with state fixed effects; post_registration.json: original_study.method.models).",
+        "deviation_from_original": "The original paper\u2019s headline result is expressed using change in average distance traveled (where negative indicates more distancing; post_registration.json notes). Our replication operationalizes social distancing as the change in stay-at-home share (prop_home) derived from pop_home/(pop_home+pop_not_home) in transportation.csv (see kavanagh_analysis_original.R and our Python). This is a monotonic transformation but reverses sign relative to mobility-based measures; we account for this in interpretation and comparison. Also, our March window is 2020-03-19 to 2020-03-28 as in post_registration.json, whereas the provided R script included 2020-04-01; our Python aligns with the prereg window."
+      },
+      "notes": "Variables are a mix of proportions and percentages; the Python code standardizes: income_per_capita expressed in thousands; percent_college converted to proportion; other percentages kept as percentages; state fixed effects via C(state). All I/O must use /app/data. Ensure transportation.csv and county_variables.csv are placed there. Any missing values are handled by listwise deletion before modeling."
+    },
+    "planned_method": {
+      "steps": [
+        "Load /app/data/transportation.csv and /app/data/county_variables.csv.",
+        "Compute prop_home = pop_home / (pop_home + pop_not_home) by county-date.",
+        "Define periods: Reference (2020-02-16 to 2020-02-29) and March (2020-03-19 to 2020-03-28).",
+        "Aggregate by county and period to mean prop_home.",
+        "Compute prop_home_change for March: 100 * (prop_home_March / prop_home_Reference - 1).",
+        "Prepare covariates: income per capita (thousands), trump_share, demographics (percent_male, percent_black, percent_hispanic, percent_college as proportion), industry shares (percent_retail, percent_transportation, percent_hes), percent_rural, age shares, and state code.",
+        "Merge outcome with covariates on FIPS; ensure state factor is available; apply listwise deletion.",
+        "Fit OLS with state fixed effects (C(state)) and HC1 robust SE: prop_home_change_March ~ trump_share + controls + C(state).",
+        "Compute IQR of trump_share and scale the coefficient to obtain the IQR effect with 95% CI.",
+        "Export regression summaries and IQR-scaled effect to /app/data."
+      ],
+      "models": "OLS with state fixed effects and HC1 robust standard errors.",
+      "outcome_variable": "prop_home_change_March (percentage-point change in stay-at-home share relative to Reference)",
+      "independent_variables": "trump_share (2016 vote share for Donald Trump)",
+      "control_variables": "income_per_capita_thousands; percent_male; percent_black; percent_hispanic; percent_college_prop; percent_retail; percent_transportation; percent_hes; percent_rural; age shares: percent_under_5, percent_5_9, percent_10_14, percent_15_19, percent_20_24, percent_25_34, percent_35_44, percent_45_54, percent_55_59, percent_60_64, percent_65_74, percent_75_84, percent_85_over; state fixed effects via C(state).",
+      "tools_software": "Python 3.10; pandas==1.5.3; numpy==1.23.5; statsmodels==0.13.5; patsy==0.5.3.",
+      "planned_estimation_and_test": {
+        "estimation": "Coefficient on trump_share and its IQR-scaled effect (coef * IQR of trump_share).",
+        "test": "Two-sided t-test on trump_share coefficient with HC1 robust SE; 95% CI for IQR-scaled effect via delta method (SE * IQR)."
+      },
+      "missing_data_handling": "Listwise deletion after casting numeric types and excluding rows with missing outcome, predictors, or state.",
+      "multiple_testing_policy": "Not applicable for the focal test; if adding August as a secondary analysis, treat as exploratory without multiplicity correction or apply Holm-Bonferroni if formalized.",
+      "inference_criteria": "Primary: the IQR-scaled effect of trump_share on prop_home_change_March is negative and statistically significant at alpha = 0.05. For comparability to the original mobility-based sign, invert sign when comparing magnitudes to the reported 4.1 pp decrease."
+    },
+    "codebase": {
+      "files": {
+        "replicate_social_distancing__py.py": "Main Python analysis script. Loads /app/data/transportation.csv and /app/data/county_variables.csv, constructs prop_home_change_March, fits OLS with state fixed effects and HC1 SE, and exports results (regression_results_summary.csv, iqr_effects_trump_share.csv, model_summary_March.txt) to /app/data.",
+        "replication_data/transportation.csv": "Daily county-level mobility counts: pop_home, pop_not_home, trips by distance buckets; used to compute stay-at-home share and period changes.",
+        "replication_data/county_variables.csv": "County covariates: trump_share (2016), income_per_capita, demographics, education, industry employment shares, rurality, and state_po.",
+        "replication_data/kavanagh_analysis.R": "Wrapper that shells out to run the Python script; not used as the entrypoint in this replication.",
+        "replication_data/kavanagh_analysis_original.R": "Original R analysis illustrating construction of prop_home_change and felm models; provides methodological reference.",
+        "_runtime/Dockerfile": "Builds a Python 3.10 environment with required system packages and R base. Container mounts /app/data for all I/O.",
+        "initial_details.txt": "Focal claim and hypothesis to replicate.",
+        "post_registration.json": "Structured summary of the original study\u2019s data, model, and numerical results.",
+        "original_paper.pdf": "PDF of the original paper (for context and verification)."
+      },
+      "notes": "All I/O must occur in /app/data. Ensure the two CSV files are copied there with the exact filenames. The R wrapper references /workspace paths; do not rely on it\u2014use the Python script directly. The Python script installs exact package versions at runtime if missing."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas==1.5.3",
+          "numpy==1.23.5",
+          "statsmodels==0.13.5",
+          "patsy==0.5.3"
+        ],
+        "other": [
+          "git",
+          "wget",
+          "r-base-core"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": [
+        "Build and run the Docker image defined in _runtime/Dockerfile or use an equivalent Python 3.10 environment.",
+        "Place transportation.csv and county_variables.csv into the host ./data directory so they appear as /app/data inside the container.",
+        "Inside the container, run: python /workspace/replicate_social_distancing__py.py",
+        "Outputs will be written to /app/data: regression_results_summary.csv, iqr_effects_trump_share.csv, model_summary_March.txt.",
+        "Interpret the IQR-scaled effect on trump_share. For comparison to the original mobility-based claim (4.1 pp decrease in social distancing per IQR), invert the sign of the stay-at-home IQR effect."
+      ],
+      "comparison_metrics": [
+        "Direction: trump_share IQR effect should indicate reduced social distancing (negative for stay-at-home outcome; positive for mobility outcome).",
+        "Magnitude: absolute IQR-scaled effect close to 4.1 percentage points.",
+        "Statistical significance: p < 0.05; ideally p < 0.001 as in the original.",
+        "Confidence interval overlap: 95% CI for the inverted stay-at-home effect overlapping the original [3.0, 5.2] pp range."
+      ]
+    }
+  }
+}

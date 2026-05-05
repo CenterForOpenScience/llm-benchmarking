@@ -1,0 +1,81 @@
+{
+  "replication_study": {
+    "hypothesis": "Across countries, the interaction between cultural tightness and government efficiency is negatively associated with the COVID-19 infection growth rate, when the growth rate is operationalized as the country-level slope of the log of total cases per million over time (restricted to days after the country first exceeds 1 case per million and up to 2020-03-30), controlling for GDP per capita, median age, and Gini.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "gelfand_replication_data.csv (replication data)",
+      "source_type": "Daily country-level COVID-19 surveillance (ECDC-derived) merged with World Bank/IMF/CIA indicators and Gelfand tightness index",
+      "wave_or_subset": "Country-days where total_covid_per_million > 1, restricted to 2019-12-31 through 2020-03-30 for growth-rate estimation",
+      "sample_size": "63 countries present in the dataset; the analysis sample will be the subset with valid efficiency, tightness, and covariates and at least 3 days in the filtered window",
+      "unit_of_analysis": "Country (growth rates aggregated from country-day panel)",
+      "access_details": "Provided locally in replication_data; analysis script assumes all data files are mounted/available at /app/data",
+      "qualification": {
+        "explanation": "The dataset includes country-day COVID-19 cases/deaths and country-level cultural (tightness), institutional (government efficiency), and demographic/economic indicators necessary to reproduce the original study\u2019s core infection growth rate analysis with the focal tightness \u00d7 efficiency interaction.",
+        "similarity_to_original": "The original study uses ECDC cases/deaths, World Bank Government Efficiency, Gelfand tightness, and economic/demographic controls (post_registration.json; original_paper.pdf summary). The provided dataset contains the same constructs: cases/deaths and cumulative totals (gelfand_replication_data.csv; gelfand_6708_data_dictionary.tsv), government efficiency (efficiency), cultural tightness (tightness), GDP per capita (gdp), Gini (gini_val/alternative_gini), and median age (median_age). The data dictionary explicitly notes filtering logic for \u2018total_covid_per_million > 1\u2019 and the early window (gelfand_6708_data_dictionary.tsv).",
+        "deviation_from_original": "The replication restricts to dates up to 2020-03-30 based on data dictionary notes (obs_count_original) referencing the original period (gelfand_6708_data_dictionary.tsv). Some countries have missing efficiency (Kazakhstan, Sweden; data dictionary) and Gini values; we impute Gini from alternative_gini where available, mirroring notes in the data dictionary. The provided replication dataset includes 63 countries (get_dataset_variable_summary for country), which may be fewer than the 141 countries in the original (post_registration.json; original_paper.pdf summary), making this a partial sample replication."
+      },
+      "notes": "Negative daily values may appear for cases/deaths for a few country-days per the data dictionary; the growth rate is computed from the log of total cases per million, which is positive by construction after filtering. Efficiency has NAs for some countries; Gini is constructed from gini_val else alternative_gini per data dictionary guidance. All IO is performed under /app/data. Weights are the number of included country-days per country during the filtered period."
+    },
+    "planned_method": {
+      "steps": [
+        "Load /app/data/gelfand_replication_data.csv.",
+        "Filter to country-days with total_covid_per_million > 1 and date <= 2020-03-30.",
+        "For each country with at least 3 filtered days, regress log(total_covid_per_million) on a time index to estimate the country-level infection growth rate (slope).",
+        "Merge country-level predictors: cultural tightness, government efficiency, GDP per capita, median age, and Gini (using alternative_gini if gini_val is missing).",
+        "Standardize predictors (z-scores) and create the interaction term tightness_z \u00d7 efficiency_z.",
+        "Run weighted OLS of growth_rate on tightness_z, efficiency_z, their interaction, and controls (gdp_z, median_age_z, gini_z), weighting by the number of country-days contributing to the growth-rate estimate; use robust (HC1) SEs.",
+        "Produce predicted growth rates at +/-1 SD combinations of tightness and efficiency with controls at means.",
+        "Save model summary and JSON outputs to /app/data."
+      ],
+      "models": "Weighted OLS with robust (HC1) standard errors; dependent variable is country-level growth rate (slope of log cases per million over time).",
+      "outcome_variable": "Country-level infection growth rate estimated as the slope from OLS of log(total cases per million) on time within each country.",
+      "independent_variables": "tightness_z, efficiency_z, and their interaction (tight_x_eff_z).",
+      "control_variables": "gdp_z, median_age_z, gini_z (constructed from gini_val or alternative_gini).",
+      "tools_software": "Python 3.10+, pandas, numpy, statsmodels",
+      "planned_estimation_and_test": {
+        "estimation": "Coefficient for the interaction term (tight_x_eff_z) in the weighted OLS regression",
+        "test": "t-test on the interaction coefficient (two-sided), robust (HC1) SEs"
+      },
+      "missing_data_handling": "Listwise deletion for missing key predictors or growth rate; use alternative_gini when gini_val is missing as per data dictionary.",
+      "multiple_testing_policy": "Not applicable (single focal interaction test in the primary model).",
+      "inference_criteria": "Significance at alpha=0.05; expected direction is negative interaction."
+    },
+    "codebase": {
+      "files": {
+        "gelfand_replication_analysis__py.py": "Entry-point Python script. Reads /app/data/gelfand_replication_data.csv, filters to days with total_covid_per_million > 1 and date <= 2020-03-30, computes per-country infection growth rates, merges predictors, standardizes variables, estimates weighted OLS with robust SEs including tightness \u00d7 efficiency and controls, outputs summary to /app/data/gelfand_replication_results.txt and structured results to /app/data/gelfand_replication_results.json."
+      },
+      "notes": "Ensure the CSV gelfand_replication_data.csv is available at /app/data when running. The script uses statsmodels WLS with HC1 SEs and follows the original early-period filtering logic described in the dataset documentation."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=1.5.0",
+          "numpy>=1.23.0",
+          "statsmodels>=0.13.5"
+        ],
+        "other": [
+          "wget",
+          "curl"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "2"
+      },
+      "volumes": [
+        "./data/original/19/0202_gpt5_nocode/replication_data:/app",
+        "./data/original/19/0202_gpt5_nocode/replication_data:/app/code",
+        "./data/original/19/0202_gpt5_nocode/replication_data:/app/replication_data",
+        "./data/original/19/0202_gpt5_nocode/replication_data:/workspace",
+        "./data/original/19/0202_gpt5_nocode:/input",
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "1) Place gelfand_replication_data.csv at /app/data. 2) Run: python /app/code/gelfand_replication_analysis__py.py (or python data/original/19/0202_gpt5_nocode/replication_data/gelfand_replication_analysis__py.py inside the container with volumes mounted). 3) Inspect outputs at /app/data/gelfand_replication_results.txt and /app/data/gelfand_replication_results.json.",
+      "comparison_metrics": "Compare sign and significance of the tightness \u00d7 efficiency interaction, and the relative magnitudes/signs of tightness and efficiency main effects to the original (expected negative interaction; see initial_details.txt and post_registration.json). Optionally compare predicted growth rates at high vs low combinations."
+    }
+  }
+}

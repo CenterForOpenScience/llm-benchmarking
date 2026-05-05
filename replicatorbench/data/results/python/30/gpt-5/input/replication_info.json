@@ -1,0 +1,85 @@
+{
+  "replication_study": {
+    "hypothesis": "In five-player public infrastructure investment games, downstream (tail-ender) participants increase investments in public infrastructure more when their prior-round share of appropriation (downloads/tokens) is higher; operationalized as a positive coefficient on the interaction between position (pstn=5 vs. baseline) and lagged prior-round share of appropriation (shr) in a mixed-effects model of individual-round investments (nvst).",
+    "study_type": "Experimental",
+    "data_plan": {
+      "dataset_identifier": "Full_long.dta and Full_wide.dta (oTree export) — ASU bandwidth/irrigation experiment replication dataset",
+      "source_type": "Laboratory experiment dataset (oTree export)",
+      "wave_or_subset": "Five-player groups; all available sessions and groups in replication_data; analysis uses rounds > 2 (i.e., rounds 3–12), aligning with Analysis.do.",
+      "sample_size": "70 participants (Full_wide has 70 rows), 840 player-round observations (Full_long). Effective analysis sample ~630 player-rounds after restricting to rounds > 2 and applying a 1-period lag for shr (approx. 9 rounds per participant).",
+      "unit_of_analysis": "Individual-by-round (panel), with random intercepts at the group (grp = Session*100 + groupid_in_subsession) level.",
+      "access_details": "Data provided in the repository under data/original/30/input/replication_data; analysis assumes the main dataset will be available at /app/data/Full_long.dta inside the container.",
+      "qualification": {
+        "explanation": "This dataset replicates the same laboratory task and institutional design as the original study: a two-stage public infrastructure (bandwidth) provision and appropriation (file downloads/tokens) game with positional asymmetry (upstream/downstream). It therefore provides an independent sample collected under similar conditions to test robustness of the focal interaction.",
+        "similarity_to_original": "Matches the original design detailed in original_paper.pdf: five-player groups, asymmetric access by position (A–E), repeated rounds, token endowments, and sigmoidal production of bandwidth. post_registration.json also confirms lab setting and modeling approach (hierarchical/mixed models). The replication_data/Analysis.do shows the exact operationalization for the focal interaction using lagged prior-round share and position — the Python translation follows it closely.",
+        "deviation_from_original": "initial_details.txt cites Janssen et al. (2011) result for six five-player groups (coefficient 3.836, SE 0.836, p < .01). The replication dataset contains 70 participants (Full_wide head shows 70 rows), implying 14 five-person groups (70/5) across multiple sessions (Session ranges 1–4; groupid_in_subsession ranges 1–4). Rounds range 1–12 in this dataset, whereas the original paper mentions 10 rounds. The provided Analysis.do uses playercollected_tokens to compute appropriation shares, whereas initial_details.txt describes prior-round share of downloaded files; operationally the Stata code uses tokens (dwnldpyff) as the numerator rather than counts of files."
+      },
+      "notes": "Key variables present: playerrole (A–E -> position), round (1–12), playerinvestment (investment), playerdownloaded_files (downloads), playercollected_tokens (tokens earned), groupbandwidth, groupid_in_subsession, Session, id. Analysis.do constructs shares of investment and appropriation (using tokens), collapses to group sums, computes shares, and lags the appropriation share by one round within player id. The Python translation preserves the logic, including equal-split fallback (0.2) when denominators are zero, restricts analysis to rounds > 2, and fits a mixed model with group random intercepts. Minor deviation from claim phrasing: share of downloads is implemented as share of tokens earned from downloads."
+    },
+    "planned_method": {
+      "steps": [
+        "Place Full_long.dta into /app/data/Full_long.dta.",
+        "Load the long-format dataset.",
+        "Filter to rounds > 2 and construct variables: nvst=playerinvestment; dwnldpyff=playercollected_tokens.",
+        "Map playerrole A–E to pstn=1–5; compute adjusted round index rnd=round-2.",
+        "Create group identifier grp=Session*100 + groupid_in_subsession.",
+        "Compute group sums by (grp, rnd): grpnvst and grpdwnldpyff.",
+        "Compute individual shares shrnvst=nvst/grpnvst and shrdwnld=dwnldpyff/grpdwnldpyff, with fallback 0.2 if denominator==0.",
+        "Compute lagged prior-round appropriation share shr = L1(shrdwnld) within player id.",
+        "Drop rows with missing shr (first effective round per player) to define the estimation sample.",
+        "Fit a linear mixed-effects model: nvst ~ C(pstn)*shr + C(rnd) with random intercepts at grp (REML).",
+        "Extract the coefficient for the interaction between tail-ender position (pstn=5) and shr, and report its estimate, SE, t, and p-value."
+      ],
+      "models": "Linear mixed-effects model with random intercepts by group (grp), implemented via statsmodels.mixedlm. Formula: nvst ~ C(pstn) * shr + C(rnd).",
+      "outcome_variable": "nvst (tokens invested in public infrastructure in a given round).",
+      "independent_variables": "pstn (categorical position A–E mapped to 1–5), shr (lagged prior-round individual share of appropriation based on tokens), and their interaction C(pstn)*shr.",
+      "control_variables": "Round fixed effects (C(rnd)); random intercept for group grp capturing within-group correlation.",
+      "tools_software": "Python 3.10; pandas, numpy, statsmodels.",
+      "planned_estimation_and_test": {
+        "estimation": "The focal parameter is the interaction coefficient for tail-ender (pstn=5) with shr (C(pstn)[T.5]:shr) in the mixed-effects model.",
+        "test": "Wald t-test on the interaction coefficient; two-sided p-value reported, with directional interpretation (expect positive)."
+      },
+      "missing_data_handling": "Listwise deletion after construction of lagged variables (rows missing shr after lag are dropped).",
+      "multiple_testing_policy": "Single focal interaction; no multiple-comparison correction planned.",
+      "inference_criteria": "Replication is supported if the interaction between pstn=5 and shr is positive and statistically significant at alpha=0.05 (two-sided), directionally matching Janssen et al. (2011)."
+    },
+    "codebase": {
+      "files": {
+        "/workspace/data/original/30/input/replication_data/Analysis__py.py": "Python translation of Analysis.do. Reads /app/data/Full_long.dta; constructs investment and appropriation share variables; computes lagged prior-round share (shr); fits mixed-effects model nvst ~ C(pstn)*shr + C(rnd) with random intercepts at grp; writes outputs to /app/data (processed_full_long_v2.csv, nvst_mixedlm_results.txt, nvst_mixedlm_results.csv, focal_interaction_tailender.txt)."
+      },
+      "notes": "All IO is restricted to /app/data. The script replicates the logic in replication_data/Analysis.do, including the fallback share of 0.2 (equal split among 5 players) when group-level denominators are zero, and uses REML as in the Stata code. The script expects the Stata long-format dataset to be available at /app/data/Full_long.dta."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=1.5.0",
+          "numpy>=1.23.0",
+          "statsmodels>=0.13.5",
+          "scipy>=1.9.0"
+        ],
+        "other": [
+          "git",
+          "wget"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "2"
+      },
+      "volumes": [
+        "../../../..:/workspace",
+        "./replication_data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": [
+        "Ensure data and script are located in ./replication_data on the host so they appear at /app/data inside the container.",
+        "Run: python /app/data/Analysis__py.py",
+        "Inspect outputs in ./replication_data (mounted at /app/data): nvst_mixedlm_results.txt, nvst_mixedlm_results.csv, focal_interaction_tailender.txt."
+      ],
+      "comparison_metrics": "Compare sign and statistical significance of the tail-ender interaction (C(pstn)[T.5]:shr) to the original (positive, p<0.01). Optionally compare magnitude to the benchmark unstandardized coefficient reported (3.836; initial_details.txt), acknowledging differences in sample size and rounds."
+    }
+  }
+}

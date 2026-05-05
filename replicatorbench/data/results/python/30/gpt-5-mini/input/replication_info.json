@@ -1,0 +1,80 @@
+{
+  "replication_study": {
+    "hypothesis": "In the 5-player public infrastructure investment game (operationalized using the provided Full_long.dta), a player's position (pstn, coded 1=A ... 5=E) positively moderates the effect of the previous-round share of downloaded files (lagged shrdwnld) on tokens invested in public infrastructure (nvst). Specifically, the interaction coefficient for pstn \u00d7 lagged_shrdwnld is expected to be positive: downstream (higher pstn) players who received a larger share of previous-round downloads will invest more in the next round.",
+    "study_type": "Experimental (laboratory game data)",
+    "data_plan": {
+      "dataset_identifier": "Full_long.dta (derived from Janssen et al. experiment) \u2014 packaged version at data/original/30/input/replication_data/Full_long.dta",
+      "source_type": "Laboratory experiment / game session data (per-round panel data)",
+      "wave_or_subset": "Rounds 3-12 (the original Analysis.do drops rounds 1-2 and collapses analyses on rounds > 2). We will replicate using rounds > 2 subset as in the original code.",
+      "sample_size": "Full_long.dta contains 840 observations and 56 variables in long format. After subsetting round > 2, effective N for analysis will be lower; (the dataset contains 168 observations per playerrole across rounds as seen in playerrole frequency). Exact analysis N will be reported after processing; subset by round >2 yields  (840 * fraction of rounds >2).",
+      "unit_of_analysis": "Individual player-round (panel) observations; some analyses aggregate to group-round (grprnd) level for share computations.",
+      "access_details": "Data included in the replication package at data/original/30/input/replication_data/Full_long.dta; no external access request required.",
+      "qualification": {
+        "explanation": "This dataset is the original experiment data (packaged in the replication folder) used to generate the focal interaction claim (position \u00d7 previous-round share). It contains per-round investments, downloads, player roles, group bandwidth, and identifiers needed to recreate lagged shares and run multilevel models. The original study described laboratory experiments with similar variables and rounds; post_registration.json documents the same data source and variables (see post_registration.json 'data' and 'method' sections). The initial_details.txt explicitly states the focal interaction and coefficient to replicate (3.836, SE .836, p < .01) for the 5-player game (table 8 in the paper).",
+        "similarity_to_original": "High-fidelity: Variables match those used in the original Analysis.do and the post-registration description: playerinvestment, playerdownloaded_files, playercollected_tokens, playerrole (A-E), groupbandwidth, round, Session, groupid_in_subsession (see files: data/original/30/input/replication_data/Full_long.dta and post_registration.json). The Analysis.do references these same variable names and constructs (e.g., nvst from playerinvestment, shrdwnld from dwnldpyff), confirming alignment (see replication_data/Analysis.do).",
+        "deviation_from_original": "None substantial: this supplied Full_long.dta appears to be the same data used by the original authors (packaged within replication_data). The main deviation is that the replication will run in Python (statsmodels) rather than Stata mixed models; however, the data, variable construction, and modeling intent (mixed-effects with group random intercepts) are preserved. Original code ran mixed models in Stata; our replication translates Analysis.do to Python (see replication_data/Analysis__py.py)."
+      },
+      "notes": "Caveats: the original Analysis.do used Stata mixed and xtset L1. to produce lagged variables; the translation relies on groupby shift to create lag (df.groupby('id')['shrdwnld'].shift(1)). Round indexing and id/grp construction follow the .do logic. The Python mixed model (statsmodels MixedLM) uses maximum likelihood via different optimizers and may produce slightly different estimates than Stata; REML option is available in statsmodels but implementations vary. All IO paths are set to /app/data for runtime; processed data and outputs are saved to /app/data/Full_long_v2.csv and /app/data/regression_results.txt by the script. Ensure /app/data is mounted when running inside Docker."
+    },
+    "planned_method": {
+      "steps": [
+        "1) Load Full_long.dta from /app/data (fallback to packaged path data/original/30/input/replication_data/Full_long.dta if not present).",
+        "2) Recreate derived variables as in Analysis.do: nvst (playerinvestment for rounds>2), pstn (map A-E to 1-5), rnd = round - 2 for rounds>2, dwnld, pyff, grp (Session*100+groupid_in_subsession), idrnd, grprnd, dwnldpyff, bndwdth.",
+        "3) Subset to rounds > 2 and compute group-round sums: grpnvst (sum nvst), grpdwnldpyff (sum dwnldpyff).",
+        "4) Compute shares: shrnvst = nvst / grpnvst (0.2 if grpnvst==0), shrdwnld = dwnldpyff / grpdwnldpyff (0.2 if grpdwnldpyff==0).",
+        "5) Create lagged previous-round share by player (shr = L1.shrdwnld) using groupby(id).shift(1).",
+        "6) Construct interaction terms: pstn \u00d7 shr and pstn \u00d7 shrnvst.",
+        "7) Run mixed-effects models (random intercept for grp) matching the Analysis.do model specifications: nvst ~ pstn * shr + rnd (REML and ML versions), and dwnldpyff ~ bndwdth + pstn * shrnvst + rnd (REML and ML).",
+        "8) Save processed dataset and regression output summaries to /app/data.",
+        "9) Extract the interaction coefficient for pstn \u00d7 shr from the nvst model and compare to the original reported coefficient (3.836, SE .836), and report p-values and directionality."
+      ],
+      "models": "Multilevel mixed-effects linear regression (random intercepts at the group level). Equivalent to Stata's mixed command. We'll fit both ML and REML versions where appropriate using statsmodels.MixedLM.",
+      "outcome_variable": "Primary: nvst (tokens invested in infrastructure by player in a round). Secondary: dwnldpyff (playercollected_tokens aggregated per round used in downloads analysis).",
+      "independent_variables": "Primary: pstn (position coded 1-5), lagged previous-round share of downloads (shr), and their interaction pstn \u00d7 shr. Additional: shrnvst as needed for other models.",
+      "control_variables": "Round (rnd) entered as a numeric control. Group random intercepts (grp) to account for clustering within groups. Additional controls (e.g., participant fixed effects or group composition) can be added if required but follow original Analysis.do.",
+      "tools_software": "Python 3.10+, pandas, numpy, statsmodels; script saved as data/original/30/input/replication_data/Analysis__py.py. Execution expects file I/O in /app/data.",
+      "planned_estimation_and_test": {
+        "estimation": "Estimate the interaction coefficient (beta) for pstn \u00d7 shr in the multilevel model; report coefficient, standard error, t/z-statistic, and 95% confidence interval.",
+        "test": "Test significance of the interaction term using t-test (or z-test from MixedLM summary). Compare p-value to conventional thresholds (e.g., \u03b1=0.05)."
+      },
+      "missing_data_handling": "Follow Analysis.do logic: Derived variables (nvst, dwnldpyff, etc.) only defined for rounds > 2; where group sums are zero, shares default to 0.2. For other missing values, primary plan is listwise deletion in model fitting (statsmodels handles NaNs by dropping rows).",
+      "multiple_testing_policy": "Primary focus is on the prespecified interaction hypothesis; no correction planned for multiple testing beyond reporting all tested models. If additional outcomes or multiple interactions are tested exploratory, apply Benjamini-Hochberg FDR correction.",
+      "inference_criteria": "Declare replication of the direction and statistical significance of the focal interaction if (a) estimated coefficient for pstn \u00d7 shr is positive and (b) p < 0.05. Report effect size and compare magnitude to original coefficient (3.836). Discuss differences in estimation method (Stata mixed vs statsmodels) that may affect point estimates/SEs."
+    },
+    "codebase": {
+      "files": {
+        "Analysis__py.py": "Python translation of replication_data/Analysis.do. Reads Full_long.dta (prefers /app/data/Full_long.dta but falls back to packaged path), constructs derived variables (nvst, pstn, rnd, dwnldpyff, shrnvst, shrdwnld, lagged shr), computes interaction terms, fits mixed-effects models (statsmodels.MixedLM), and writes processed data to /app/data/Full_long_v2.csv and regression summaries to /app/data/regression_results.txt. This is the main entrypoint for replication analysis.",
+        "Full_long.dta": "Primary replication data (located at data/original/30/input/replication_data/Full_long.dta or expected at /app/data/Full_long.dta at runtime). Contains per-round individual-level observations for the laboratory game; required by Analysis__py.py."
+      },
+      "notes": "The Analysis__py.py script was written to follow the Stata Analysis.do logic precisely. It uses statsmodels MixedLM which has slightly different default optimizers/parameterizations compared to Stata; both ML and REML fittings are attempted to mirror the .do lines. All file I/O in the script writes to /app/data when possible to comply with runtime policy. If executing in a container, mount the host data directory to /app/data."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=1.4.0",
+          "numpy>=1.23.0",
+          "statsmodels>=0.14.0",
+          "pyreadstat>=1.1.0"
+        ],
+        "other": [
+          "git",
+          "make",
+          "wget"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "1) Ensure Full_long.dta is available at /app/data/Full_long.dta (or rely on packaged copy). 2) Run Python 3.10 environment with required packages installed. 3) Execute data/original/30/input/replication_data/Analysis__py.py. 4) Review outputs: /app/data/Full_long_v2.csv (processed data) and /app/data/regression_results.txt (model summaries). 5) Extract the coefficient and SE for the pstn \u00d7 shr interaction from the nvst model and compare to the original reported coefficient (3.836, SE .836). 6) Document any discrepancies and sensitivity checks (e.g., alternative lag definitions, fixed effects, clustering SEs).",
+      "comparison_metrics": "Compare point estimate of pstn \u00d7 shr interaction, standard error, t/z-statistic, p-value, and 95% CI between the replication and original. Also compare direction (sign) and relative magnitude (ratio of replication coefficient to original coefficient). Report model fit indicators (AIC/BIC) and note differences between ML vs REML fits."
+    }
+  }
+}

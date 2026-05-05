@@ -1,0 +1,288 @@
+---
+title: "Bischetti Analysis"
+author: "Erin M. Buchanan"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r}
+library(rio, quietly = T) # import data
+library(lme4, quietly = T) # mlm
+library(lmerTest, quietly = T) # mlm
+library(reshape, quietly = T) # wide to long
+library(openssl, quietly = T) #make anonymous IDs
+library(optimx, quietly = T) #try other optimizers
+library(emmeans, quietly = T) #get marginal means
+
+
+# Reproduce this analysis
+R.version
+packageVersion("rio")
+packageVersion("lme4")
+packageVersion("lmerTest")
+packageVersion("reshape")
+packageVersion("openssl")
+packageVersion("optimx")
+packageVersion("emmeans")
+```
+
+# Deidentify the Data
+
+In order for the data to be opened in something like Excel, we should remove the `-` sign from the beginning of the session codes. Otherwise, Excel replaces them with `#NAME`, and you lose that information. 
+
+```{r eval = FALSE}
+#import both halves
+DF1 <- import("../Data/Bischetti_Survey_Part1_raw.csv")
+DF2 <- import("../Data/Bischetti_Survey_Part2_raw.csv")
+
+# Deal with = sign at beginning of session codes
+DF1$session <- gsub("^-*", "", DF1$session)
+DF2$session <- gsub("^-*", "", DF2$session)
+
+# Create new anonymous IDs
+DF1$participant_id <- sha256(paste0(DF1$session, DF1$PROLIFIC_PID))
+DF2$participant_id <- sha256(paste0(DF2$session, DF2$PROLIFIC_PID))
+
+# write that data out without prolific ID
+write.csv(DF1[ , -6], "../Data/Bischetti_Survey_Part1_deidentify.csv", row.names = F)
+write.csv(DF2[ , -6], "../Data/Bischetti_Survey_Part2_deidentify.csv", row.names = F)
+```
+
+# Import the Data
+
+```{r}
+DF1 <- import("../Data/Bischetti_Survey_Part1_deidentify.csv")
+DF2 <- import("../Data/Bischetti_Survey_Part2_deidentify.csv")
+```
+
+# Clean the Data
+
+First, we will remove all the test sessions before we started collecting data.
+
+*NOTE*: If you have opened this document in Excel, it *will* change the date format. You can use the first section to recreate the analysis. 
+
+```{r}
+#if you opened in Excel
+# DF1 <- subset(DF1, 
+#              as.POSIXct(DF$created, 
+#                         format = "%m/%d/%Y %H:%M", 
+#                         tz = "America/New_York") > 
+#                as.POSIXct("1/19/21 17:52", 
+#                           format = "%m/%d/%Y %H:%M", 
+#                           tz = "America/New_York"))
+
+#else
+DF1 <- subset(DF1, 
+             as.POSIXct(DF1$created, tz = "America/New_York") > 
+               as.POSIXct("2021-01-19 17:52:38", tz = "America/New_York"))
+
+#if you opened in Excel
+# DF2 <- subset(DF2, 
+#              as.POSIXct(DF$created, 
+#                         format = "%m/%d/%Y %H:%M", 
+#                         tz = "America/New_York") > 
+#                as.POSIXct("1/19/21 17:55", 
+#                           format = "%m/%d/%Y %H:%M", 
+#                           tz = "America/New_York"))
+
+#else
+DF2 <- subset(DF2, 
+             as.POSIXct(DF2$created, tz = "America/New_York") > 
+               as.POSIXct("2021-01-19 17:55:15", tz = "America/New_York"))
+```
+
+During our study, the server hosting the survey crashed. We will remove duplicates that happened because participants refreshed or submitted several times. We noted these by prolific ID but will use session codes to remove them. 
+
+```{r}
+dup_sessions_df1 <- c(
+  "dEIKIEZjfqKnR3bmcoY0Rq632NPKZzBaZG0N9MbrClcoNQzABbRrWTM-mMXcqBaA",
+  "YSdWgcq0kXYLaOhQICQzvoR1LIC6dlyHKHYSBS2QdyFGNOdRzZNNWW4OqTo_b6iD",
+  "ZhatO1n-jYHy8fQF6bjPO7uZd8QALHYTeoreTqm7ZnMUNSlVAjmo7hBV0DvBK5X6",
+  "4LncX-IkOeCFswRTVFSDziA_pmrPlT_J-ZmJ2taVpTBQR5MyUTiBRia6nHzdfmOb",
+  "AOFumF5G7PnGXvDSF--iTzqfMhOdn2LRnKC9afgNv2Z-ma9Ys04in-IQ6MPFvQZ",
+  "siIhNfxufG5mgRhoh83gjQDovoLYW6hyxYlodxDVOxfbKeiQLSzb8imziGbRBgyE",
+  "IgfQuiR3_5tkWsTQLoxreacq2Qft7RmlQ_33FzVago57gjFCu-iWvyqPTKAl3dY3",
+  "WSwbfsdIUxGgZwBJwae6w6P1TmZ9SWfvRfGTiPQ285dFVvHuocWpobDvPos70Lth",
+  "q1AB2knhU51WOXi2G0kR6xeF1TFdDdQulKD4LKkBlYuKtrwblDOpiUgy_x99k86X",
+  "DdPkJGKV85s2-BAKHUMJVpwKEDjTC3Vc3CLwWTqDKEaWmX-X1WBt4lRN5iGsDLN7",
+  "j-Y7EzrQtB-BbLWm-nOlwZQAhla0XdkxfTZK8c5fucm9JPYL7j9_iGFA8TkqtYYI",
+  "fyqo5_m2-R2GP9Fy2q-NmjOHdNTydfVvBwbNa3geTvxWAcb39F6y0nntsnYXUPEI",
+  "hyO2zASfAcHHakf3dtaUf-JBMomrM48bIA-xzw5sdo5CM0bYKvQ2u7okS-vHD5ni",
+  "eBQR4lbqnEsMf_0fUm81EfWRtH1z-SC9uCgPmuFKxOFIjzvQ92YRWVz6YZHWcckI",
+  "Jh0qMTBGuDh9FqkpIMtNexhvMwsHwpG_pWPLzMRBDz5pXwCUkk1Wrl8xf0cuwn1G",
+  "ytbpiwNFnKp7Fd_OEN2FyHp91kH0scjaSf51WsN1Mngt568JJu5r_lXieprEa4Gx",
+  "MgeRCyHRtWa9w4W9zLxpJjiElKtExcuC1eoI7aapp6Bh6Az0d1dRD4arv-PLClWw",
+  "igz_gwcZUiZR57i1ppLrz5scr52behWxTHOvrkY5nZaQcN-Ptqwuf4E171iwaYNp",
+  "gE71E8WJYVkM_VJt4Jg2h8IgyTAG2QCAI3FgDG3A6KZpbr4tJhAHMrBjU5lasYMZ",
+  "KEYHWyJXfqbT4Q5HOxydoaLg9dT1lws-x7wj5OCIlbCkmm15BbRXETA3XwMGfukG",
+  "ogxwoZH4ow72cF1NtopPkd_Z82iYMWlKcPj8kFkEPPw9gsvZIJcq-g_YEBktoYHu",
+  "heRk5JJ3XheCkdLFmJvjii1wqYbmM3ae7RjixeQALvj4GnYKt7pA7iOswaisn2e8",
+  "DDYQZ7Y3zvRaNkalQW-k2dDB_7sGW4e8BI62NDtjrPADDs06I0MjW1W6-FOYfLTu",
+  "Nko_OzBbdP0CYQ1AwgsFwgK9s8rvVz9ijBYZdXFnpApr-YuNCKG6MnDz9I6q5VfA",
+  "HwPjb4O2xyekEua4aY6uQ43-6h6K8uzLf5GRTSvlBjjzH73V_6Y8VLnnYSr9htQZ",
+  "76vAPX6NAS3AspsW7ltPSzpxEhsxp3Ggjjj0fmD4LD0xjxCETNTlE0nc_V4LP8Iw",
+  "kws2JU87h9aboWB5dWoPWOndvD8TyLMDMIBSzh_430LffiJvPKG_PJpW1IZMuqzV",
+  "8zmIjmYPZBXOgdP1iPQNOHJTo09yaG4xfS0T1DpODioiiaC9iaNn9MtfUBuKP4eD",
+  "EprF6QXZXpuw2MDzB1lO-o8R9jG5aPMs0ItizJnrL25_2NSrIb8YAIQucoAmnrf_",
+  "7c6pT9y_ZfGYzfQXMmvlyzgxZxCBVx2sPz-nl5LqTh3f9YwOhi46BoMU4aAhn089",
+  "x5jLIJMyxdidPjg5mTqmGCjeCmX7vztLNHB0WgLmTkVg-Iob0XdxoOgyBA7Zl1lG",
+  "WvWiAsdjhaaSxHzF73p0x73xcJc8q7bKSaL-yQEqe3CiZ9yYI3w78oCKxyUkBIFR",
+  "lbLL8JJuyCpFBRShXPYWq7tce5hwd_uSrRH3LQ6_P1khdViGnYeXIfEXD3MFkixv",
+  "N2DkZbWz-rH6XVS-QSi1mb6y0bCRTPQN-DYFaC1l9ZY3woZm7MkAqN5rPwy1jNia",
+  "6zy5Vu3GAhR5MhA2M1KIB-0EL03Rov63StBNzWeEc74fUtqS6HowSsv78K8TMOCl",
+  "yMBRxYcUADj1V7xM8LsU6cWdcw3bvLLVRvgC1nAIYSxnDdA12tdDKjX9m8ubwOqg",
+  "0eEApIuC5W5hHBvrR1XPXk8XZwUd6xTv_0cHZ9h2H-FkSUT9zWYjFZxofRRQV0w3",
+  "2wkSJ5PMWi6cGbLOc_SWR1epxe_sRR1ZFTE4cokyJr1iHbyVPYGxJp7PxaW19JVM",
+  "9Xikb_wRF4yNcky5Y0kblQmoIR5B5p3EWzEEp2eRZvxKH8xZcvDui0jt4HGIzwNQ",
+  "b97CciYGxDyfH4227AG5PqeT40_5Fa-spSTP5g_UUd-6ncT-M5kVAgHSzDT86qqC",
+  "gQ3taoKS0aIbVZPAH22Heez_q8fVd-hBeEoE5vbMfYFDzOWfAbnJdrkn-jur_9oi",
+  "u1DMWID4mXOofHGZCTfBpM70JtO32KQkl1aixGJY62wHIt10yu8MFjsdDjfu5aFA",
+  "1IJlYYTug3mBWKi3B1MyGj6twkqzn4S3ojLrJJCtl-tFDHR_mC4jQEingQpIwavA",
+  "aUH7NDqbuxWGzERG0fnLip_dGp1AOaHAJ-H6TWaTWBB2XPxWsZ4KorKGJqCbShG",
+  "FQ-ndyY-IJEsTY4A1DC6cg6ygRqtT7WPmWGlC3JJUFjGY2wpvsBdUscmr2aDJ4pa"
+  )
+
+DF1 <- subset(DF1, !(session %in% dup_sessions_df1))
+
+dup_sessions_df2 <- c(
+  "WfPBjT3LLdCnAd_SnWCAtjlFxejfzc7bWHpwAqVnidTIvDkpF0UVCDmRAAzL_Kwf",
+  "dEIKIEZjfqKnR3bmcoY0Rq632NPKZzBaZG0N9MbrClcoNQzABbRrWTM-mMXcqBaA",
+  "K1s1puMF2VKsPhYQd2UhR0c66NiUfnPJtD_00ShaKZZZjpvIIpcjCmNw7dxdKOIx",
+  "ZhatO1n-jYHy8fQF6bjPO7uZd8QALHYTeoreTqm7ZnMUNSlVAjmo7hBV0DvBK5X6",
+  "qGh_KomlOrEBpB46eI7odWKkHAHUlZj-pAL8C0LAkl5gci-z5ugtr4VQ-vYjK6n_",
+  "IWA90z1Z-HvepgT7ohRontKwJdaAgiPizoCfX34f6MODmy2cguYH-WGb5DE1haD3",
+  "eUXLsRk3CU2sZxX3-dmIF88Dv7w_g75F04DPaFge5Kv9hIlZWye4mSOGau7aP8xU",
+  "R3O6k0JzkgAcDMZcBfp1yZFleLpeqe5dxvIuV7-AZsJY3LB2uv4vyKkk0TfI6iG9",
+  "4XW87ScIvHwc96U78-ajBeM6HOIVuEIOGbe9KezdRcTWFqtovGpS1EAJUUN6mmIN",
+  "cD8BBo7-tDuNaPeOyX730gQ8TjmGCMNegX8MbjA1IZTPpuawLkr1wmJoR4aM4js3",
+  "jToYpO9g5HBIe5aegnMGtSlTiQ6SOuTcJ7ewzT-Ndo2pBv2Jt2dztgBEto7DMB7",
+  "gFl9kH41gXyVe-hFNHj2Uk4v8XHP0AI7_73uGQjRM1NbKCNhu4sgLkzmWmDMCaWQ"
+  )
+
+DF2 <- subset(DF2, !(session %in% dup_sessions_df2))
+```
+
+One participant sent her state information via email.
+
+```{r}
+DF1$state[DF1$session == "xJrsmgxNXYZtnr6XkJhnW_ZxjQH8FIs-49eQgBBlJBDOd4VhfJG1McTTFLC12gpp"] <- "CO"
+```
+
+Last, we will merge the data based on our deidentified participant number, which includes session code, helping match when the Prolific ID was not present due to server crash. Our data has 1324 rows. The server crash caused participants not to be able to complete the study, and we paused the study as soon as it happened (so no new participants could get into the study). If they had completed half the study, we paid them for partially completing the study. Once all partial and complete payments were done, we used the remaining participant funds to pay for as many participants as would allow. We ended up with more *rows* than the original 1000 recruited because all partial surveys (even open and close type answers) are recorded. The usable participants are detailed below. 
+
+```{r}
+# Keep all data because all ratings count 
+DF <- merge(DF1, DF2, by = "participant_id", all = T)
+
+nrow(DF)
+```
+
+# Data Restructuring
+
+```{r}
+# wide to long
+# select columns we need
+DF <- DF[ , grepl("disturbing|participant_id|state|age", colnames(DF))]
+DFlong <- melt(DF, id.vars = c("participant_id", "state", "age"))
+colnames(DFlong)[4:5] <- c("name", "Aversiveness")
+
+# make matching variable
+DFlong$name <- gsub("disturbing", "anote", DFlong$name)
+
+# figure out picture label
+meta_data <- import("../Method/Bischetti_Survey_Part1.xlsx")
+meta_data2 <- import("../Method/Bischetti_Survey_Part2.xlsx")
+meta_data <- rbind(meta_data, meta_data2)
+
+# merge picture name with original dataset
+DFlong <- merge(DFlong, meta_data[ , c("name", "label")], by = "name")
+
+# clean this up
+DFlong$label <- gsub("<img src ='http://formr.thedoomlab.com/img/", "", DFlong$label)
+DFlong$label <- gsub("-[0-9]*.jpg'>", "", DFlong$label)
+
+# Aversive in their data is 0 to 6, others is 1 to 7
+DFlong$Aversiveness <- DFlong$Aversiveness - 1
+
+head(DFlong)
+summary(DFlong)
+```
+
+Final participant numbers:
+
+```{r}
+#state missing is coded as ""
+DFlong$state[DFlong$state == ""] <- NA
+
+nomissing <- na.omit(DFlong)
+nrow(nomissing) #number points
+length(unique(nomissing$participant_id)) #number people
+
+#reorder so covid verbal is comparison
+table(DFlong$label)
+DFlong$label <- factor(DFlong$label, 
+                       levels = c("covid-text", "covid-meme", "covid-strip", "non-text"),
+                       labels = c("covid-verbal", "covid-meme", "covid-strip", "non-verbal"))
+table(DFlong$label)
+
+#rescale age to age not year born
+DFlong$age <- 2021 - DFlong$age
+```
+
+# Multilevel model 
+
+```{r}
+mm <- model.matrix(~ 1 + label, DFlong) # to make the || command work we need numeric contrast matrices
+head(mm)
+
+hcovA <- mm[,2]
+memeA <- mm[,3]
+bittA <- mm[,4]
+
+# original
+# Amod0<-lmer(Aversiveness~Type+
+#               (1+hcovA|Id)+(0+memeA+bittA||Id)+(1+Age|It) + (1|Province),
+#             data=Avedat, REML=FALSE,control = lmerControl(calc.derivs=FALSE))
+# Aversiveness = rating, using the same name
+# Type = picture type = label
+# Id = participant number = Prolific ID
+# Age = age
+# It = item number = name
+# Province = area of Italy = state
+
+# meme.model <-lmer(Aversiveness ~ label +
+#                     (1+hcovA|participant_id) + 
+#                     (0+memeA+bittA||participant_id) + 
+#                     (1+age|name) + 
+#                     (1|state),
+#                   data = DFlong, 
+#                   REML = FALSE, 
+#                   control = lmerControl(calc.derivs = FALSE))
+# 
+# #Model failed to converge with 1 negative eigenvalue: -5.6e+01
+# 
+# summary(meme.model)
+
+#add one parameter at a time to figure out the bad one
+#model runs with everything but age 
+meme.simple <- lmer(Aversiveness ~ label + 
+                      (1+hcovA|participant_id) + 
+                      (0+memeA+bittA||participant_id) + 
+                      (1|name) + 
+                      (1|state),
+                    data = DFlong,
+                    REML = FALSE, 
+                  control = lmerControl(calc.derivs = FALSE))
+
+summary(meme.simple)
+
+emmeans(meme.simple, "label")
+```
+
+

@@ -1,0 +1,81 @@
+{
+  "replication_study": {
+    "hypothesis": "At the country level, the interaction between cultural tightness and government efficiency (efficiency * tightness) is negatively associated with the COVID-19 infection growth rate (operationalized as the country-specific exponential growth slope of log(total_covid_per_million) over the first 30 days after cases exceed 1 per million).",
+    "study_type": "Observational (cross-national time-series aggregated to country-level slopes, then cross-sectional country regression)",
+    "data_plan": {
+      "dataset_identifier": "gelfand_replication_data.csv (provided in data/original/19/0205_gpt5-mini/replication_data)",
+      "source_type": "Compiled cross-national dataset (CSV) with daily COVID-19 counts from ECDC combined with country-level covariates such as cultural tightness and World Bank Government Effectiveness Index; provided as a CSV file.",
+      "wave_or_subset": "Country-level daily data up to the dates included in gelfand_replication_data.csv. The original paper used a cross-national snapshot up to March 2020 (post_registration.json). The provided CSV contains daily rows per country and the replication pipeline keeps the first 30 days after each country's total_covid_per_million exceeds 1 (consistent with the provided Analysis_script_v2.do).",
+      "sample_size": "CSV raw shape: 13,566 rows, 63 unique countries (see data/original/19/0205_gpt5-mini/replication_data/gelfand_replication_data.csv). After excluding the six countries specified in the .do (Belgium, France, New Zealand, Norway, Pakistan, Venezuela), the analysis uses 57 countries. Time-series estimation uses up to 30 days per country (57 * 30 = 1,710 rows used to estimate country-specific slopes); the second-stage cross-country regression is therefore at the country level with n = 57.",
+      "unit_of_analysis": "Country (for second-stage regression). Time-series rows per country are used to estimate country-specific growth slopes (first-stage).",
+      "access_details": "Data are included in the repository (data/original/19/0205_gpt5-mini/replication_data/gelfand_replication_data.csv). No additional access requests required for replication of the provided CSV. Original sources (ECDC, World Bank, cultural tightness sources) were used to compile this CSV (see post_registration.json for original data sources).",
+      "qualification": {
+        "explanation": "This CSV contains the core variables required to operationalize the original claim: country-level cultural tightness, government efficiency, daily total cases per million enabling computation of country-specific exponential growth slopes, and control covariates (gdp, gini or alternative_gini, median_age). The included Analysis_script_v2.do shows the same analytical approach as the published work (first-stage slope estimation per country, then cross-country regression of slopes on eff*tight and controls). The Python translation replicates those steps and therefore provides a qualified dataset for replication.",
+        "similarity_to_original": "The original study used ECDC case/death data, World Bank Government Effectiveness Index, and published tightness indices and regressed log-transformed infection growth rates on tightness, efficiency, their interaction, and controls (post_registration.json). The provided CSV and .do replicate that structure: the CSV contains total_covid_per_million, efficiency, tightness, gdp, gini_val/alternative_gini, and median_age, and the .do implements the two-step approach (see data/original/19/0205_gpt5-mini/post_registration.json and data/original/19/0205_gpt5-mini/replication_data/Analysis_script_v2.do). Variable presence is confirmed in the CSV (see data/original/19/0205_gpt5-mini/replication_data/gelfand_replication_data.csv and the dataset inspection outputs).",
+        "deviation_from_original": "The original paper reports analyses on an empirical snapshot of cases up to March 2020 and describes samples of ~141 countries for descriptive totals but reports regressions using a subset (post_registration.json). The replication CSV lists 63 countries initially and the provided .do explicitly excludes six countries (Belgium, France, New Zealand, Norway, Pakistan, Venezuela) to match the authors' original analytic sample (Analysis_script_v2.do). Thus the effective replication sample (57 countries) and the two-stage estimation pipeline mirror the original analyses, but may differ in exact date ranges or pre-processing choices if the CSV was created with slightly different ECDC fetch dates or variable construction. Evidence: post_registration.json describes original sources/dates; Analysis_script_v2.do documents the six-country exclusion and the 30-day window per country; the CSV shows 63 unique countries and the data fields (data/original/19/0205_gpt5-mini/replication_data/gelfand_replication_data.csv and data/original/19/0205-gpt5-mini/Analysis_script_v2.do)."
+      },
+      "notes": "Caveats and important notes: (1) The Python translation follows the .do's forward-fill of missing daily totals and gdp (tsfill/replace l.total_covid_per_million if .). This assumes the CSV has contiguous or reconcilable date ranges per country. (2) The .do uses 'gini_val' with fallback to 'alternative_gini' \u2014 script implements that. (3) The CSV contains 'date' strings that require parsing; the Python script uses pandas.to_datetime with errors='coerce' and forward-filling. (4) The dataset contains 63 countries in the CSV but the analysis intentionally drops 6 specific countries to match the original sample of 57 (Analysis_script_v2.do). (5) If the CSV differs from original ECDC snapshot (e.g., slightly different end dates), small numerical differences can arise, but the pipeline preserves logic and seeds where applicable. File paths and IO in the Python script are set to use /app/data as required by the execution environment."
+    },
+    "planned_method": {
+      "steps": [
+        "Run the replication Python script replication_data/Analysis_script_v2__py.py (it performs all preprocessing and analyses).",
+        "Drop the six countries excluded by the corresponding author (Belgium, France, New Zealand, Norway, Pakistan, Venezuela) as in Analysis_script_v2.do.",
+        "Parse dates and for each country reindex to fill missing days between the country's min and max dates (tsfill equivalent). Forward-fill total_covid_per_million and gdp when missing (as in the .do script).",
+        "Keep only rows where total_covid_per_million > 1 (first day threshold).",
+        "Compute ltotalcases = log(total_covid_per_million) and create a country-specific time variable (day 1, day 2, ...).",
+        "Keep observations where time <= 30 (first 30 days after threshold).",
+        "For each country, estimate an OLS regression of ltotalcases on time (ltotalcases ~ time) and save the slope (this is the country-specific exponential growth rate estimate).",
+        "Construct a country-level dataset by selecting one representative row per country (first row after threshold) and merging in the estimated slope for each country.",
+        "Create eff_tight = efficiency * tightness and run a cross-country OLS: slope ~ eff_tight + gdp + gini + median_age + efficiency + tightness.",
+        "Save outputs: country slopes (CSV) and final regression summary (text file)."
+      ],
+      "models": "First stage: OLS of log(total_covid_per_million) on time per country to estimate exponential growth slope. Second stage: cross-country OLS of the estimated slopes on eff_tight (interaction) and controls. This mirrors the two-step approach in Analysis_script_v2.do and the methods described in post_registration.json.",
+      "outcome_variable": "Primary: country-specific exponential growth slope of log(total_covid_per_million) (named coeffs1 in the .do, 'coeffs1' in the Python replication).",
+      "independent_variables": "Primary: interaction eff_tight = efficiency * tightness. Also include baseline terms efficiency and tightness to estimate interaction effects.",
+      "control_variables": "gdp, gini (or alternative_gini fallback), median_age (as implemented in Analysis_script_v2.do).",
+      "tools_software": "Python 3.9+; pandas; numpy; statsmodels for OLS; the provided Python script is replication_data/Analysis_script_v2__py.py and must be executed with the working directory and mounted data accessible at /app/data.",
+      "planned_estimation_and_test": {
+        "estimation": "Estimate the coefficient on eff_tight from the cross-country OLS (coefficient magnitude and sign).",
+        "test": "t-test on the null hypothesis that eff_tight coefficient = 0 (two-sided). Report coefficient, standard error, t-statistic, and p-value."
+      },
+      "missing_data_handling": "Time-series missing days between a country's min and max date are filled via reindexing and forward-fill (tsfill equivalent). For per-country regressions, observations beyond the first 30 days are dropped. For the final cross-country OLS, listwise deletion is applied (observations with missing coeffs1 or missing covariates will be dropped by statsmodels' default behavior); gini uses 'gini_val' with fallback to 'alternative_gini' to reduce missingness.",
+      "multiple_testing_policy": "Primary replication focuses on a single pre-specified interaction (eff_tight). No multiple-testing corrections planned for the primary test. If multiple secondary outcomes (e.g., mortality likelihood) or many exploratory models are run, apply Bonferroni or Benjamini-Hochberg corrections and report adjusted p-values \u2014 but primary inference uses unadjusted p < 0.05.",
+      "inference_criteria": "Primary criterion: two-sided p < 0.05 for the eff_tight coefficient indicates statistical significance. The hypothesized direction is negative (eff_tight coefficient < 0). Report coefficient sign, 95% confidence interval, and p-value. Emphasize effect size and substantive interpretation (cases per million differences) when comparing to the original study."
+    },
+    "codebase": {
+      "files": {
+        "replication_data/Analysis_script_v2__py.py": "Python translation of the original Stata Analysis_script_v2.do. It: (1) reads the CSV from /app/data/data/original/19/0205_gpt5-mini/replication_data/gelfand_replication_data.csv, (2) drops the six countries excluded by the author, (3) parses and fills missing dates, forward-fills total_covid_per_million and gdp, (4) keeps rows with total_covid_per_million > 1 and time <= 30, (5) estimates country-specific OLS slopes of log(total_covid_per_million) on time and saves them, (6) constructs eff_tight, (7) runs the cross-country OLS of slopes on eff_tight and controls, and (8) saves outputs in /app/data (estimatedcoefficients_replication.csv and regression_summary_replication.txt).",
+        "replication_data/gelfand_replication_data.csv": "Primary input dataset containing daily country-level COVID counts and country covariates (tightness, efficiency, gdp, gini, median_age, etc.). The Python script reads this file from /app/data/data/original/19/0205-gpt5-mini/replication_data/ (the script uses /app/data path per execution environment requirements).",
+        "replication_data/Analysis_script_v2.do": "Original Stata script included for reference. Not executed directly in the replication environment; logic and steps were translated to the Python script above (Analysis_script_v2__py.py)."
+      },
+      "notes": "Execution entrypoint is replication_data/Analysis_script_v2__py.py. The script writes outputs to /app/data (estimatedcoefficients_replication.csv and regression_summary_replication.txt). All IO in the Python script is relative to /app/data to satisfy execution environment constraints. The original .do is preserved as-is for auditability. The Python script mirrors the .do workflow and variable names where possible. Dependencies: pandas, numpy, statsmodels. The script performs forward-filling for missing daily totals; verify that forward-fill is appropriate in your context."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=1.4.0",
+          "numpy>=1.22.0",
+          "statsmodels>=0.13.0"
+        ],
+        "other": [
+          "git",
+          "wget",
+          "unzip"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "1) Ensure the repository is mounted so that /app/data points to the project root containing data/original/19/0205_gpt5-mini/replication_data/gelfand_replication_data.csv. 2) Install Python dependencies: pip install pandas numpy statsmodels. 3) Run: python data/original/19/0205_gpt5-mini/replication_data/Analysis_script_v2__py.py. 4) Outputs will be created at /app/data/estimatedcoefficients_replication.csv and /app/data/regression_summary_replication.txt. 5) Examine regression_summary_replication.txt for the coefficient on eff_tight, its SE, t-stat, and p-value. 6) Compare the interaction coefficient and inference to the original reported result (initial_details.txt reports interaction b = -0.17, SE = 0.07, t(41) = -2.23, p = 0.031; post_registration.json provides additional context on model specification and controls).",
+      "comparison_metrics": "Compare the replication and original on: (1) coefficient estimate for eff_tight (magnitude and sign), (2) standard error and t-statistic, (3) p-value, (4) 95% confidence interval, (5) sample (n countries) used for second-stage regression, and (6) substantive effect-size comparisons (e.g., change in predicted growth rate or cases per million). Report whether the replication yields the same direction and statistical significance as the original and compute absolute and percent differences in coefficient estimates."
+    }
+  }
+}

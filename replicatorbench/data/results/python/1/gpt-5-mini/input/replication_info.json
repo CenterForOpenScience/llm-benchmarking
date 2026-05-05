@@ -1,0 +1,82 @@
+{
+  "replication_study": {
+    "hypothesis": "At the U.S. county level, higher 2016 Trump vote share is associated with reduced social distancing (smaller declines in mobility) during March 19-28, 2020; specifically, an interquartile-range increase in Trump vote share will be associated with an increase in county-level prop_home_change_March (i.e., less negative change) of approximately 4 percentage points, replicating the original finding.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "Replication files in ./data/original/1/python/replication_data (county_variables.csv v1, transportation.csv v1)",
+      "source_type": "Aggregated mobility records (Unacast-type) and county-level sociodemographic data (ACS/MIT election data style), provided as CSV files.",
+      "wave_or_subset": "Mobility observations spanning dates that include reference period (2020-02-16 to 2020-02-29), March window (2020-03-19 to 2020-04-01), and August window (2020-08-16 to 2020-08-29). We will follow the original paper and focus on March 19-28 (script uses March 19-April 1).",
+      "sample_size": "County-level: up to 3,142 rows in county_variables.csv (3142 counties present); transportation.csv contains ~1.95M daily county observations. The analysis script samples 5% of counties (seed=2982) to mirror the original R script behavior, producing a smaller analytic sample; full-sample replication is possible by removing the sample_frac step.",
+      "unit_of_analysis": "County-day aggregated to county-level averages per time period (unit of analysis for regressions: county).",
+      "access_details": "Data files are provided locally in the repository under ./data/original/1/python/replication_data. No external access required. If using original external sources (Unacast, ACS, MIT Election Data), follow each source's access procedures (Unacast provided data for research in original paper).",
+      "qualification": {
+        "explanation": "The available datasets provide the same operational variables required to test the focal claim: county-level Trump vote share ('trump_share' in county_variables.csv), county-level per-capita income ('income_per_capita'), and county-level mobility/home-staying measures derived from pop_home and pop_not_home in transportation.csv. These match the constructs used in the original paper (original paper methods; see original_paper.pdf) and the post-registration summary (post_registration.json). The transportation.csv includes dates that allow constructing the March outcome window and the reference week. (See county_variables.csv columns: 'trump_share', 'income_per_capita', 'percent_black', 'percent_college'; See transportation.csv columns: 'prop_home' constructed from 'pop_home' and 'pop_not_home'.)",
+        "similarity_to_original": "High fidelity: The original study used county-level Unacast mobility data and ACS / MIT Election Data for trump share and covariates. The replication data supplies an analogous mobility measure (pop_home and pop_not_home from transportation.csv) and county covariates (county_variables.csv) including trump_share and income_per_capita. Evidence: original paper (original_paper.pdf) describes these exact data sources; the post-registration.json documents the same data sources and variables. Specific file references: original_paper.pdf Methods section (Mobility from Unacast; ACS and MIT Election Data), post_registration.json 'data' section, and local CSV files county_variables.csv and transportation.csv (column lists confirmed via dataset inspection).",
+        "deviation_from_original": "Differences include scope and sampling: the provided county_variables.csv contains 3,142 county rows (slightly different from the 3,037 counties reported in the paper), and the supplied R script samples 5% of counties (seed=2982) before merging—this modifies sample composition relative to the original full-sample analysis. The transportation.csv file and county_variables.csv may represent pre-processed or differently-coded variables compared to original raw sources (e.g., percent_college appears to be stored in 0-1 or 0-100 formats). These differences are documented here: inspection of county_variables.csv columns (see get_dataset_info output) and the R script header (kavanagh_analysis.R). The post_registration.json notes the original used 3,037 counties and Unacast estimates based on 15-17 million users; our local transport data is provided as aggregated counts per county-date and likely is a subset or preprocessed version (transportation.csv available in replication_data).",
+        "deviation_reference_docs": "county_variables.csv and transportation.csv (local dataset inspection via get_dataset_info); kavanagh_analysis.R (script sampling behavior and variable transformations); original_paper.pdf and post_registration.json (original data descriptions)."
+      },
+      "notes": "Caveats: the provided analysis script samples 5% of counties—this reduces statistical power and changes point estimates; variable scaling differs across files (some percent_ variables are 0-1 and require scaling). The R script constructs outcome as 100*(prop_home/first(prop_home) - 1); the Python translation mirrors this. Some age-bin variable names may differ and require verification (e.g., ten_nineteen vs percent_15_19). Spatial-autocorrelation analysis in the original R script requires spatial packages not translated here; replication focuses on OLS with state fixed effects. All file I/O in the translated Python script uses /app/data."
+    },
+    "planned_method": {
+      "steps": [
+        "1) Read county_variables.csv and transportation.csv from /app/data/original/1/python/replication_data/.",
+        "2) Compute prop_home = pop_home / (pop_home + pop_not_home) for each county-date and define time periods: reference (2020-02-16 to 2020-02-29), March (2020-03-19 to 2020-04-01), August (2020-08-16 to 2020-08-29).",
+        "3) For each county, compute mean prop_home over each time period and then compute prop_home_change = 100*(prop_home / prop_home_reference - 1).",
+        "4) Reshape to have prop_home_change_March and prop_home_change_August at county-level and merge with county_variables.csv by 'fips'.",
+        "5) Apply variable scaling: multiply percent_ columns by 100 where needed, convert income_per_capita to thousands, and adjust percent_college as in the original script.",
+        "6) Estimate OLS regressions for prop_home_change_March (primary) and prop_home_change_August as robustness, including trump_share and income_per_capita as main predictors and controlling for demographic and labor market covariates, with state fixed effects (implemented via categorical state indicators).",
+        "7) Compute effect of one IQR in trump_share on the outcome by scaling the trump_share coefficient by the IQR computed from county_variables.csv and report estimate, standard error, confidence interval, and p-value.",
+        "8) Save regression summaries and IQR effect results to /app/data for inspection and comparison with original results."
+      ],
+      "models": "Ordinary Least Squares (OLS) regression at the county level with state fixed effects (implemented via C(state) or state dummy variables). Secondary analyses: spatial lag models (not implemented here) as in the original codebase.",
+      "outcome_variable": "prop_home_change_March: percentage-point change in average county 'prop_home' (share of population staying home) for March window relative to reference week; defined as 100*(prop_home / prop_home_reference - 1). Lower (more negative) values correspond to more reduction in mobility (more social distancing).",
+      "independent_variables": "Primary: trump_share (share of 2016 Trump voters), income_per_capita (per-capita income in thousands).",
+      "control_variables": "Percent male (male_percent), percent_black, percent_hispanic, percent_college, percent_retail, percent_transportation, percent_hes (health/education/social services), percent_rural, age distribution dummies (age bins such as ten_nineteen, twenty_twentynine, etc.), and state fixed effects.",
+      "tools_software": "Python 3.10+; pandas, numpy, statsmodels for regressions. The repository includes a translated script: kavanagh_analysis__py.py located in replication_data. The original R script kavanagh_analysis.R is provided for reference.",
+      "planned_estimation_and_test": {
+        "estimation": "Estimate regression coefficients (especially for trump_share and income_per_capita) and compute scaled effect for a one-IQR increase in trump_share (coefficient * IQR).",
+        "test": "Two-sided t-tests on OLS coefficients; compute p-values and 95% confidence intervals. For the IQR-scaled effect, compute t-statistic by scaling standard error and derive p-value."
+      },
+      "missing_data_handling": "Listwise deletion for regressions (drop counties with missing dependent variable or key covariates). The R script behavior is mirrored: regressions use available observations per model. Missingness of some demographic bins will reduce sample size for models accordingly.",
+      "multiple_testing_policy": "Primary hypothesis focuses on trump_share effect on prop_home_change_March. No correction planned for multiple testing; secondary analyses (August, income, other covariates) will be interpreted cautiously and flagged as exploratory.",
+      "inference_criteria": "Statistical significance at alpha = 0.05 (two-sided) for primary hypothesis, with attention to effect direction consistent with original (positive sign of trump_share coefficient implies less social distancing). Report effect size, 95% CI, and p-value."
+    },
+    "codebase": {
+      "entrypoint": "../run_replication.py",
+      "files": {
+        "kavanagh_analysis__py.py": "Translated Python script that performs data processing, constructs the March and August prop_home_change outcomes, merges with county-level covariates, runs OLS regressions with state fixed effects, computes the IQR-scaled effect for trump_share, and writes outputs to /app/data (regression_table.txt, regression_table.html, trump_iqr_effect.json).",
+        "kavanagh_analysis.R": "Original R analysis script included for reference; not executed in the replication container. It documents additional spatial analyses and exact variable transformations used in the paper (note: it samples 5% of counties before analysis).",
+        "county_variables.csv": "County-level covariates including trump_share, income_per_capita, demographic and industry shares used as predictors and controls.",
+        "transportation.csv": "County-date mobility records including pop_home and pop_not_home used to compute prop_home and derive the percent change outcomes for the specified time windows."
+      },
+      "notes": "Execution entrypoint should be kavanagh_analysis__py.py. The Python script is self-contained and reads from /app/data/original/1/python/replication_data and writes outputs to /app/data. Dependencies: pandas, numpy, statsmodels. If running inside a container, ensure these Python packages are installed. The script samples 5% of counties to mirror the original R script; remove sampling line in the Python script to run full-sample analysis."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=1.3.0",
+          "numpy>=1.21.0",
+          "statsmodels>=0.13.0"
+        ],
+        "other": [
+          "git",
+          "wget",
+          "unzip"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "Run python /app/data/original/1/python/replication_data/kavanagh_analysis__py.py. This will produce regression_table.txt, regression_table.html, and trump_iqr_effect.json in /app/data. Inspect regression_table.txt for OLS coefficient estimates and compare the trump_share scaled estimate to the original reported ~4.1 percentage points per IQR. If the 5% sampling was applied, consider removing the sampling step in the Python script to reproduce full-sample estimates. For robust checks, run models without sampling and/or with alternative scaling of percent_college (script currently follows R transformations).",
+      "comparison_metrics": "Primary comparison: coefficient for trump_share scaled by its IQR (mimicking 'an interquartile increase in support for Trump resulted in a 4.1 percentage point decrease in social distancing' reported in the paper). Compare point estimate, 95% confidence interval, and p-value between original and replication. Secondary: coefficient for income_per_capita (IQR-scaled), R-squared, and sample N."
+    }
+  }
+}

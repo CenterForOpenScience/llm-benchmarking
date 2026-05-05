@@ -1,0 +1,94 @@
+---
+title: "Bischetti Analysis"
+author: "Erin M. Buchanan"
+date: "8/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+
+```{r}
+library(rio, quietly = T) # import data
+library(lme4, quietly = T) # mlm
+library(lmerTest, quietly = T) # mlm
+library(reshape, quietly = T) # wide to long
+```
+
+# Import the Data
+
+```{r}
+# The data is two surveys
+DF1 <- import("../Data/Bischetti_Survey_Part1_example.csv")
+DF2 <- import("../Data/Bischetti_Survey_Part2_example.csv")
+
+# Merge by prolific ID
+# Keep all data because all ratings count 
+DF <- merge(DF1, DF2, by = "PROLIFIC_PID", all = T)
+```
+
+# Data Restructuring
+
+```{r}
+# wide to long
+# select columns we need
+DF <- DF[ , grepl("disturbing|PROLIFIC_PID|state|age", colnames(DF))]
+DFlong <- melt(DF, id.vars = c("PROLIFIC_PID", "state", "age"))
+colnames(DFlong)[4:5] <- c("name", "Aversiveness")
+
+# make matching variable
+DFlong$name <- gsub("disturbing", "anote", DFlong$name)
+
+# figure out picture label
+meta_data <- import("../Method/Bischetti_Survey_Part1.xlsx")
+meta_data2 <- import("../Method/Bischetti_Survey_Part2.xlsx")
+meta_data <- rbind(meta_data, meta_data2)
+
+# merge picture name with original dataset
+DFlong <- merge(DFlong, meta_data[ , c("name", "label")], by = "name")
+
+# clean this up
+DFlong$label <- gsub("<img src ='http://formr.thedoomlab.com/img/", "", DFlong$label)
+DFlong$label <- gsub("-[0-9]*.jpg'>", "", DFlong$label)
+
+head(DFlong)
+summary(DFlong)
+```
+
+# Multilevel model 
+
+```{r}
+mm <- model.matrix(~ 1 + label, DFlong) # to make the || command work we need numeric contrast matrices
+head(mm)
+
+hcovA <- mm[,2]
+memeA <- mm[,3]
+bittA <- mm[,4]
+
+# original
+# Amod0<-lmer(Aversiveness~Type+
+#               (1+hcovA|Id)+(0+memeA+bittA||Id)+(1+Age|It) + (1|Province),
+#             data=Avedat, REML=FALSE,control = lmerControl(calc.derivs=FALSE))
+# Aversiveness = rating, using the same name
+# Type = picture type = label
+# Id = participant number = Prolific ID
+# Age = age
+# It = item number = name
+# Province = area of Italy = state
+
+meme.model <-lmer(Aversiveness ~ label +
+                    (1+hcovA|PROLIFIC_PID) + (0+memeA+bittA||PROLIFIC_PID) + 
+                    (1+age|name) + (1|state),
+                  data = DFlong, 
+                  REML=FALSE, 
+                  control = lmerControl(calc.derivs=FALSE))
+
+summary(meme.model)
+```
+
+
+
+

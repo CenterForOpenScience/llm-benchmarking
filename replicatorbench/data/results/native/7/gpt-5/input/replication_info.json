@@ -1,0 +1,97 @@
+{
+  "replication_study": {
+    "hypothesis": "In U.S. state-year panel data, logged state-level CO2 emissions from fossil fuel combustion (EPA) are positively associated with logged average weekly working hours per worker (BLS), conditional on standard political, economic, and demographic controls and two-way effects.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "Fitzgerald_replication_compiled (state-year panel, 2007–2016)",
+      "source_type": "Compiled state-level administrative datasets (EPA emissions; BLS working hours; BEA and other U.S. government sources); provided as Stata .dta files",
+      "wave_or_subset": "Annual state-year observations, 2007–2016 (original focal period 2007–2013; extended years 2014–2016 for out-of-sample replication)",
+      "sample_size": "Expected N≈500 (50 states × 10 years, 2007–2016) prior to listwise deletion; final analytic N may be lower due to missing data and merges",
+      "unit_of_analysis": "U.S. state-year",
+      "access_details": "Provided in the replication_data folder: compiled.dta, epa.dta, hhsize.dta (no special access restrictions); code updated to read from /app/data",
+      "qualification": {
+        "explanation": "The dataset closely mirrors the original study’s structure and variables (state-level panel with EPA CO2 emissions and BLS working hours), but extends the time frame beyond the original period. This provides an independent yet comparable sample to assess the robustness of the focal association across additional years.",
+        "similarity_to_original": "Both original and replication use state-level panels with EPA CO2 emissions (outcome) and average weekly working hours from BLS (key predictor), along with standard economic and demographic controls. This is supported by post_registration.json (original sources and covariates) and by the replication R script which operationalizes epa (EPA CO2 emissions) and wrkhrs (working hours) with controls and two-way effects (Fitzgerald 2018 Script_clean v2.R). The original paper context and methods (fixed/random effects; PCSE; AR(1)) are described in original_paper.pdf and echoed in the script via panelAR with pcse and psar1.",
+        "deviation_from_original": "The replication dataset includes additional years (2014–2016) beyond the original 2007–2013 period (post_registration.json vs. the R script’s year handling with 7–16 indicating 2007–2016 in Fitzgerald 2018 Script_clean v2.R). Also, the replication script’s core models do not explicitly include a time-invariant environmentalism control used in some original specifications (post_registration.json notes LCV 1990–2005), though this may be present in compiled.dta; our main planned models follow the script’s specification. These deviations generate a new, quasi-out-of-sample test while maintaining high fidelity for the core relationship."
+      },
+      "notes": "Files present: compiled.dta (main panel), epa.dta (EPA emissions), hhsize.dta (household size, reshaped long). The script log-transforms key continuous variables. Data encodings and column names appear to follow Stata conventions. The compiled.csv exists but is not used by the R script. Listwise deletion (complete.case=TRUE) is used; merging and log transforms may reduce N."
+    },
+    "planned_method": {
+      "steps": [
+        "Load compiled.dta, epa.dta, and hhsize.dta from /app/data using readstata13.",
+        "Reshape hhsize from wide to long and create a year index consistent with 2007–2016 (coded 7–16).",
+        "Merge hhsize and epa into the main compiled dataset by State and year.",
+        "Construct controls: emppop_pct = emppop / (pop*1000) * 100; manu_gdp = manuf / gdp * 100.",
+        "Log-transform epa, wrkhrs, emppop_pct, laborprod, pop, manu_gdp, energy, hhsize, workpop.",
+        "Run panelAR models with PCSE and AR(1), including State and factor(year) to account for two-way effects.",
+        "Estimate: (a) full 2007–2016 model; (b) original-period subset 2007–2013; (c) extended-period subset 2014–2016 (may be underpowered).",
+        "Extract and compare the elasticity of epa with respect to wrkhrs across specifications; assess significance and direction."
+      ],
+      "models": "Two-way fixed-effects style panel regression via panelAR (PCSE with psar1 autocorrelation). Formula: log(epa) ~ log(wrkhrs) + log(emppop_pct) + log(laborprod) + log(pop) + log(manu_gdp) + log(energy) + log(hhsize) + log(workpop) + State + factor(year).",
+      "outcome_variable": "epa (logged): State-level CO2 emissions from fossil fuel combustion (EPA; in million metric tons, per original).",
+      "independent_variables": "wrkhrs (logged): Average weekly working hours per worker (BLS Current Employment Statistics).",
+      "control_variables": "emppop_pct (logged), laborprod (logged), pop (logged), manu_gdp (logged), energy (logged), hhsize (logged), workpop (logged); State and year effects. If available, add environmentalism (LCV index, time-invariant) for models comparable to original random/hybrid specifications.",
+      "tools_software": "R (>=4.0); packages: readstata13, tidyverse, reshape2, prais, panelAR, foreign.",
+      "planned_estimation_and_test": {
+        "estimation": "Elasticity coefficient on log(wrkhrs) in log(epa) regressions (coefficient interpreted as percent change in emissions per 1% change in work hours).",
+        "test": "t-test (or z under PCSE) for coefficient significance; two-sided tests; AR(1) correction and PCSE for inference."
+      },
+      "missing_data_handling": "Listwise deletion via complete.case=TRUE in panelAR; document the final N per model.",
+      "multiple_testing_policy": "Primary focus on the wrkhrs coefficient in the main specification; no formal multiple-testing correction applied; secondary specifications considered robustness checks.",
+      "inference_criteria": "Statistical significance at alpha=0.05 (two-sided) and positive sign for log(wrkhrs) consistent with the original; secondary consideration of effect size proximity to original (≈0.55–0.68)."
+    },
+    "codebase": {
+      "files": {
+        "Fitzgerald 2018 Script_clean v2.R": "End-to-end replication workflow in R: reads Stata files (compiled.dta, hhsize.dta, epa.dta) from /app/data; reshapes hhsize to long; merges datasets by State-year; computes emppop_pct and manu_gdp; log-transforms continuous variables; and estimates panelAR models with PCSE and psar1. Includes full-period and subset analyses (original years 2007–2013 and extended 2014–2016).",
+        "run_analysis.sh": "Bash wrapper to execute the R script using 'R -f' to avoid reliance on Rscript binary."
+      },
+      "notes": "I updated file paths to use /app/data for all read.dta13() calls, per run policy. I also set group_var <- \"State\" to avoid deprecated/fragile dplyr::groups usage during sampling. The script currently prints model summaries to console and does not write results to disk; this is acceptable for interactive replication. Ensure the listed R packages are installed in the Docker image prior to execution."
+    },
+    "docker_specs": {
+      "base_image": "rocker/verse:4.3.1",
+      "packages": {
+        "python": [],
+        "r": [
+          "readstata13",
+          "tidyverse",
+          "reshape2",
+          "prais",
+          "panelAR",
+          "foreign"
+        ],
+        "other": [
+          "git",
+          "make",
+          "wget",
+          "r-base",
+          "r-base-core",
+          "r-base-dev"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": [
+        "Ensure data files compiled.dta, epa.dta, and hhsize.dta are in ./data so that they are mounted at /app/data inside the container.",
+        "Start the Docker container with the specified image and mount ./data to /app/data.",
+        "Install required R packages (readstata13, tidyverse, reshape2, prais, panelAR, foreign) if not preinstalled.",
+        "Run the R script (e.g., bash \"data/original/7/input/replication_data/run_analysis.sh\").",
+        "Review console output for model summaries: key coefficient is on log(wrkhrs) for outcome log(epa).",
+        "Optionally, add a line to save model results to /app/data if artifacts are desired."
+      ],
+      "comparison_metrics": [
+        "Sign and statistical significance of the log(wrkhrs) coefficient (expect positive and significant).",
+        "Effect size proximity to original elasticity estimates (≈0.55–0.68), especially in the 2007–2013 subset.",
+        "Robustness of the association across full period (2007–2016) and original-period subset (2007–2013).",
+        "If available, compare inclusion/exclusion of environmentalism control to assess sensitivity relative to original RE/hybrid models."
+      ]
+    }
+  }
+}

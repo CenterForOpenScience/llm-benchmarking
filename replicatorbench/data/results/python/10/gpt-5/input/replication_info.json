@@ -1,0 +1,80 @@
+{
+  "replication_study": {
+    "hypothesis": "In a country-year panel, lagged Imports from the South (IMS), scaled by GDP, is positively associated with national affluence (NAff = GDP per capita), controlling for lagged Exports to the South, lagged unemployment, country fixed effects, and five-year period dummies.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "finaldata_noNA.csv (replication_data folder)",
+      "source_type": "Assembled macroeconomic panel (constructed from OECD-related sources per post_registration.json)",
+      "wave_or_subset": "Country-year observations spanning 1965\u20132018 (replication dataset); includes years beyond original 1970\u20132003 window.",
+      "sample_size": "784 rows prior to outlier exclusion; final N after robust outlier removal determined during preprocessing.",
+      "unit_of_analysis": "Country-year",
+      "access_details": "Provided in the replication_data folder; no external access required.",
+      "qualification": {
+        "explanation": "The replication dataset contains the operational ingredients required to test the focal relationship: GDP, population, total imports/exports with the South, unemployment, country and year identifiers. We can reconstruct the dependent (national affluence) and key independent variables (imports from the South) exactly as defined in the do-file, apply similar outlier screening, and estimate a comparable two-way FE panel model.",
+        "similarity_to_original": "The original paper analyzes country-year panels with OECD macroeconomic/trade variables and uses two-way fixed effects and robust corrections (post_registration.json: original_study.data.wave_or_subset; method.models). The replication data includes country, year, GDP, population, unemployment, total imports/exports to/from the South (KMYR.do constructs IMS, EXS from totalimport/totalexport and GDP; columns confirmed in finaldata_noNA.csv via tools: country, year, gdp, pop, unemp, totalimport, totalexport). The model structure (lagged IMS, EXS, unemp; country FE; five-year dummies) is documented in KMYR.do.",
+        "deviation_from_original": "Temporal coverage deviates: replication data span 1965\u20132018 (get_dataset_variable_summary on year shows min=1965, max=2018), whereas the original focuses on 1970\u20132003 (post_registration.json original_study.data.wave_or_subset). The replication will include earlier (1965\u20131969) and later (2004\u20132018) periods, and updated five-year dummies are added in KMYR.do for these ranges (DUM70to74 through DUM15to18). We will apply a robust outlier procedure approximating Hadi via robust Mahalanobis distance (since hadimvo is Stata-specific) rather than the exact Hadi algorithm."
+      },
+      "notes": "Variables required for focal test are present: GDP, population, totalimport, totalexport, unemp, country, year. IMS and EXS will be constructed as in KMYR.do. NAff = gdp/pop. Outlier detection via Hadi is approximated with robust Mahalanobis distance from MinCovDet at a stringent cutoff. The original xtgls with psar1 cannot be replicated exactly; we will estimate entity and time FE via linearmodels PanelOLS with cluster-robust standard errors by country and time. The dataset likely mixes units/currencies implicit in KMYR.do scaling (gdp*10000); we will follow the same scaling to align with the do-file."
+    },
+    "planned_method": {
+      "steps": [
+        "Load /app/data/finaldata_noNA.csv.",
+        "Compute NAff = gdp / pop.",
+        "Compute IMS = totalimport / (gdp * 10000) and EXS = totalexport / (gdp * 10000) as in KMYR.do.",
+        "Run robust multivariate outlier detection on [NAff, IMS, EXS, unemp] using MinCovDet; drop flagged outliers (approximation to Hadi).",
+        "Create five-year period dummies: DUM70to74, DUM75to79, DUM80to84, DUM85to89, DUM90to94, DUM95to99, DUM00to04, DUM05to09, DUM10to14, DUM15to18. Set DUM70to74=1 for 1970\u20131974 and similarly for others; 1965\u20131969 serve as baseline.",
+        "Within each country, create one-period lags: L.IMS, L.EXS, L.unemp by sorting by year and shifting by one.",
+        "Restrict regression sample to rows where lagged covariates are non-missing.",
+        "Estimate a two-way fixed-effects panel regression via linearmodels.PanelOLS: NAff_it = a_i + tau_t + b1*L.IMS_it + b2*L.EXS_it + b3*L.unemp_it + sum(period dummies), with entity (country) and time effects included. Use cluster-robust SEs by country and year (two-way clustering) if feasible; otherwise cluster by country.",
+        "Save regression summary and key coefficients (b1 for L.IMS) to /app/data outputs."
+      ],
+      "models": "Two-way fixed-effects (entity and time) linear panel regression via linearmodels PanelOLS with cluster-robust standard errors; entity_effects=True, time_effects=True. This approximates xtgls with FE and robust corrections used in the original Stata code.",
+      "outcome_variable": "NAff (national affluence) = gdp/pop",
+      "independent_variables": "Lagged IMS (imports from the South scaled by GDP), lagged EXS (exports to the South scaled by GDP), lagged unemployment rate, country fixed effects, five-year period dummies.",
+      "control_variables": "Five-year period dummies for 1970\u20132018; country fixed effects; lagged EXS; lagged unemployment.",
+      "tools_software": "Python 3.10+, pandas, numpy, scikit-learn (MinCovDet for robust outliers), linearmodels, statsmodels (fallback), scipy.",
+      "planned_estimation_and_test": {
+        "estimation": "Coefficient b1 on lagged IMS in the NAff equation.",
+        "test": "t-test on b1 with cluster-robust SEs; report estimate, SE, p-value, and sign."
+      },
+      "missing_data_handling": "Listwise deletion after constructing lags and dummies; rows with missing lagged covariates dropped automatically.",
+      "multiple_testing_policy": "Not applicable; focal single-coefficient replication.",
+      "inference_criteria": "Two-sided alpha=0.05. Replication is consistent if b1 > 0 and statistically significant at p<0.05; also report magnitude compared to original (initial_details.txt b=0.910, SE=0.104, p<.001)."
+    },
+    "codebase": {
+      "files": {
+        "KMYR__py.py": "Python translation of KMYR.do. Reads /app/data/finaldata_noNA.csv; constructs NAff, IMS, EXS; applies robust Mahalanobis outlier detection (MinCovDet) on [NAff, IMS, EXS, unemp]; drops outliers; creates five-year period dummies and within-country lags for IMS, EXS, unemp; fits two-way FE panel regression NAff ~ L.IMS + L.EXS + L.unemp + country FE + time FE using linearmodels PanelOLS with clustered SEs; writes regression summary to /app/data/replication_results.txt and coefficients JSON to /app/data/replication_estimates.json."
+      },
+      "notes": "All IO confined to /app/data. The robust outlier detection approximates Stata's hadimvo. Exact xtgls(psar1) is not directly replicated; we use FE with clustered SEs as a defensible approximation."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=2.0.0",
+          "numpy>=1.24.0",
+          "scikit-learn>=1.2.0",
+          "linearmodels>=5.4",
+          "statsmodels>=0.14.0",
+          "scipy>=1.10.0"
+        ],
+        "other": [
+          "git",
+          "wget"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "1) Place finaldata_noNA.csv at /app/data. 2) Run: python KMYR__py.py. 3) Inspect /app/data/replication_results.txt and /app/data/replication_estimates.json for the coefficient on L.IMS. 4) Compare sign, magnitude, and significance to the original b=0.910, SE=0.104, p<.001.",
+      "comparison_metrics": "Sign match (positive), statistical significance at alpha=0.05, and relative magnitude compared to original (ratio of replicated b1 to 0.910)."
+    }
+  }
+}

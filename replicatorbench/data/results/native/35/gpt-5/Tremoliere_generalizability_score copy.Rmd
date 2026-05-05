@@ -1,0 +1,32 @@
+#!/bin/bash#!/bin/bash
+set -euo pipefail
+
+# Ensure dataset is available at /app/data# Ensure dataset is available at /app/data
+if [ -f "/workspace/replication_data/Tremoliere_generalizability_score.csv" ]; then
+  mkdir -p /app/data
+  if [ ! -e "/app/data/Tremoliere_generalizability_score.csv" ] || ! cmp -s "/workspace/replication_data/Tremoliere_generalizability_score.csv" "/app/data/Tremoliere_generalizability_score.csv"; then
+    cp -f "/workspace/replication_data/Tremoliere_generalizability_score.csv" "/app/data/" || true
+    echo "[Runner] Copied dataset to /app/data/Tremoliere_generalizability_score.csv"
+  else
+    echo "[Runner] Dataset already present at /app/data and identical; skipping copy."
+  fi
+else
+  echo "[Runner] WARNING: Source dataset not found at /workspace/replication_data/Tremoliere_generalizability_score.csv" >&2
+fi
+
+# Ensure required R packages are installed at runtime in case image missed any# Ensure required R packages are installed at runtime in case image missed any
+export R_LIBS_USER="/workspace/.Rlibs"
+mkdir -p "$R_LIBS_USER"
+PKG_LIST="tidyverse,emmeans,kableExtra,Rmisc,car,reshape2,lme4,lmerTest,sjPlot,pwr,rstatix,rmarkdown"
+R -q -e ".libPaths(c(Sys.getenv('R_LIBS_USER'), .libPaths())); pkgs <- strsplit('$PKG_LIST', ',', fixed=TRUE)[[1]]; missing <- setdiff(pkgs, rownames(installed.packages())); if(length(missing)>0){install.packages(missing, repos='https://cloud.r-project.org')}; cat('Installed/verified packages:', paste(pkgs, collapse=', '), '\n')"
+
+echo "[Runner] Rendering R Markdown: /workspace/replication_data/Tremoliere_generalizability_score.Rmd"echo "[Runner] Rendering R Markdown: /workspace/replication_data/Tremoliere_generalizability_score.Rmd"
+R -q -e "rmarkdown::render('/workspace/replication_data/Tremoliere_generalizability_score.Rmd', output_format='html_document', output_file='/app/artifacts/Tremoliere_generalizability_score.html')"
+
+EXIT_CODE=$?
+if [ $EXIT_CODE -ne 0 ]; then
+  echo "[Runner] Render failed with exit code $EXIT_CODE" >&2
+  exit $EXIT_CODE
+else
+  echo "[Runner] Render completed successfully. Output at /app/artifacts/Tremoliere_generalizability_score.html"
+fi

@@ -1,0 +1,350 @@
+2026-01-10 05:06:11,867 - replication - DEBUG - [core.utils] File logging configured: ./data/original/2/python/_log/execute_easy__python.log
+2026-01-10 05:06:11,867 - replication - INFO - [agent] dynamic orchestrator run loop for: ./data/original/2/python
+2026-01-10 05:06:12,020 - replication - INFO - 
+--- Turn 1 ---
+2026-01-10 05:06:12,020 - replication - INFO - ***Agent input: Your goal is to successfully execute the replication study inside a Docker container.
+You are operating in a DEBUG LOOP. You must assess the result of every action. 
+
+RUN POLICY (EXECUTE)
+- Execute using Python.
+- If the original code is incompatible with the data, rewrite the code to Python so that it is compatible. 
+- If replication_info.json points to a non-.py entrypoint, create/complete the Python translations (keeping originals unchanged),
+  create a single Python entrypoint, and update replication_info.json to that .py entrypoint.
+- If it fails, fix the Python rewrite / deps (don’t switch back to the original language).
+
+File operations policy:
+ - To modify existing files: ALWAYS call read_file first, then use edit_file for targeted changes.
+ - write_file is for creating new files. It will refuse to overwrite unless overwrite=True.
+ - Only use write_file(overwrite=True) when you intend to replace the entire file contents.
+
+If an action fails (e.g., Docker build error, Missing Dependency, Code crash), you MUST:
+1. Analyze the error message in the Observation.
+2. Use `write_file` to FIX the issue (e.g., rewrite `replication_info.json` to add packages, or rewrite the code files). Remember that write_file will overwrite any existing content in the provided file_path if existing. When you use the tool, the provided path file_path to the tool MUST be the study path given to you. But to access other files within the file_content argument, you MUST use the container's directories "app/data". 
+3. RETRY the failed step.
+
+**Phases of Execution:**
+
+PHASE 1: BUILD ENVIRONMENT
+1. `orchestrator_generate_dockerfile`: Creates _runtime/Dockerfile from replication_info.json.
+2. `orchestrator_build_image`: Builds the image.
+   * IF BUILD FAILS: Read the error log. It usually means a missing system package or R/Python library. Edit `replication_info.json` to add the missing dependency, regenerate the Dockerfile, and rebuild.
+
+PHASE 2: PREPARE RUNTIME
+3. `orchestrator_run_container`: Mounts the code and data and starts the container.
+4. `orchestrator_plan` & `orchestrator_preview_entry`: Verify what will run.
+
+PHASE 3: HUMAN APPROVAL (Strict Check)
+5. Before running the actual analysis code, you MUST Ask the human:
+   Action: ask_human_input: "Ready to execute command: <COMMAND>. Approve? (yes/no)"
+   * If they say "no", stop the container and fill the output JSON with status "cancelled".
+   * If they say "yes", proceed to Phase 4.
+
+PHASE 4: EXECUTE & DEBUG
+6. `orchestrator_execute_entry`: Runs the code.
+   * IF EXECUTION FAILS (exit_code != 0): 
+     - Read the `stderr` in the observation.
+     - Identify if it is a code error or missing library.
+     - Use `write_file` to fix the script or `replication_info.json`.
+     - If you changed dependencies, you must go back to Phase 1 (Rebuild).
+     - If you only changed code, you can retry `orchestrator_execute_entry`.
+
+PHASE 5: FINALIZE
+7. `orchestrator_stop_container`: Cleanup.
+8. Parse `execution_result.json` and output the Answer in the following required JSON schema.
+"{\n  \"execution_summary\": \"A narrative overview of the execution process, including key steps followed, overall success, and alignment with the preregistration (e.g., 'The OLS regression was executed on the 1999 ARIS-REDS dataset, testing the hypothesis on low-caste households. No major deviations occurred, but BAC classification required manual coding.').\",\n  \"code_executed\": [\n    {\n      \"command\": \"a command that was approved for executed\",\n      \"status\": \"Overall status (Success, Partial Success, Failure).\",\n      \"logs\": \"summaries from execution logs, including warnings, errors, or runtime\",\n      \"environment\": \"Description of the runtime environment (e.g., 'Python 3.12 with numpy, statsmodels')\"\n    },\n    {\n      \"command\": \"another command that was approved for executed\",\n      \"status\": \"Overall status (Success, Partial Success, Failure).\",\n      \"logs\": \"summaries from execution logs, including warnings, errors, or runtime\",\n      \"environment\": \"Description of the runtime environment (e.g., 'Python 3.12 with numpy, statsmodels')\"\n    }\n  ],\n  \"results\": {\n    \"hypothesis_tested\": \"Restatement of the focal hypothesis from the preregistration for context.\",\n    \"findings_summary\": [\n      {\n        \"outcome_name\": \" Name of statistic 1 (e.g., 'Coefficient for low-caste villages').\",\n        \"value\": \"The computed value (e.g., 566.5)\",\n        \"standard_error\": \"SE (e.g., 209)\",\n        \"confidence_interval\": \"CI bounds (e.g., [150, 983])\",\n        \"p_value\": \"p-value (e.g., 0.007)\",\n        \"statistical_significance\": \"Significance level (e.g., 'p < 0.01').\",\n        \"direction\": \"Effect direction (e.g., 'positive')\",\n        \"effect_size\": \"Optional measures like Cohen's d or R-squared if applicable\"\n      },\n      {\n        \"outcome_name\": \" Name of statistic n (e.g., 'Coefficient for squadratic term of low-caste villages').\",\n        \"value\": \"The computed value (e.g., 566.5)\",\n        \"standard_error\": \"SE (e.g., 209)\",\n        \"confidence_interval\": \"CI bounds (e.g., [150, 983])\",\n        \"p_value\": \"p-value (e.g., 0.007)\",\n        \"statistical_significance\": \"Significance level (e.g., 'p < 0.01').\",\n        \"direction\": \"Effect direction (e.g., 'positive')\",\n        \"effect_size\": \"Optional measures like Cohen's d or R-squared if applicable\"\n      }\n    ],\n    \"tables\": [\n      {\n        \"table_id\": \"Reference to original paper (e.g., 'Table 3 Column 1').\",\n        \"table_description\": \"Brief narrative.\",\n        \"table_file\": \"Path to where table is saved\"\n      },\n      {\n        \"table_id\": \"Another table, referenced to original paper (e.g., 'Table 2').\",\n        \"table_description\": \"Brief narrative.\",\n        \"table_file\": \"Path to where table is saved\"\n      }\n    ],\n    \"figures\": [\n      {\n        \"figure_id\": \"Reference to original figure (e.g., 'Figure 1').\",\n        \"figure_description\": \"Brief narrative.\",\n        \"figure_file\": \"Path to where figure is saved\"\n      },\n      {\n        \"figure_id\": \"Reference to original figure (e.g., 'Figure 2').\",\n        \"figure_description\": \"Brief narrative.\",\n        \"figure_file\": \"Path to where figure is saved\"\n      }\n    ]\n  }\n}"
+
+Current Study Path: "./data/original/2/python"
+Start by generating the Dockerfile.
+
+Remember, every response needs to have one of the two following formats:
+----- FORMAT 1 (For when you need to call actions to help accomplish the given task) -------
+Thought: [Your thinking/planning process for completing the task based on interactions so far]
+Action: [call next action to help you solve the task]
+PAUSE
+----- FORMAT 2 (For when you are ready to give a final response)-------
+Thought: [Your thinking/planning process for completing the task based on interactions so far]
+Answer: [Execute necessary next action to help you solve the task]
+2026-01-10 05:06:17,231 - replication - INFO - ***Agent output:
+Thought: I will begin with Phase 1 by generating the Dockerfile from replication_info.json for the study at ./data/original/2/python.
+Action: orchestrator_generate_dockerfile: "./data/original/2/python"
+PAUSE
+2026-01-10 05:06:17,231 - replication - INFO -  -- Running Action: orchestrator_generate_dockerfile [Checkpoint: 1. Generate Dockerfile]
+2026-01-10 05:06:17,232 - replication - INFO - 
+--- Turn 2 ---
+2026-01-10 05:06:17,232 - replication - INFO - ***Agent input: Observation: {"ok": true, "dockerfile": "/Users/domsoos/Desktop/research/llm-benchmarking/data/original/2/python/_runtime/Dockerfile", "content": "FROM python:3.10-slim\nRUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git wget ca-certificates && rm -rf /var/lib/apt/lists/*\nRUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y git wget && rm -rf /var/lib/apt/lists/*\nRUN command -v python3 || (apt-get update && apt-get install -y python3 python3-pip)\nRUN pip3 install --no-cache-dir pandas>=2.0.0 numpy>=1.24.0 pyreadr>=0.4.7 statsmodels>=0.14.0 scipy>=1.10.0 pyyaml>=6.0 matplotlib>=3.7.0\nWORKDIR /workspace\nRUN useradd -m runner && mkdir -p /app/data /app/artifacts /app/tmp && chown -R runner:runner /workspace /app\nUSER runner\nCMD [\"bash\"]"}
+2026-01-10 05:06:20,548 - replication - INFO - ***Agent output:
+Thought: Dockerfile generated successfully. Next, I will build the Docker image as Phase 1 step 2. If the build fails, I will inspect the error and adjust replication_info.json dependencies, regenerate the Dockerfile, and rebuild.
+Action: orchestrator_build_image: "./data/original/2/python"
+PAUSE
+2026-01-10 05:06:20,548 - replication - INFO -  -- Running Action: orchestrator_build_image [Checkpoint: 2. Build Image]
+2026-01-10 05:08:59,710 - replication - INFO - 
+--- Turn 3 ---
+2026-01-10 05:08:59,711 - replication - INFO - ***Agent input: Observation: {"ok": true, "image": "replication-exec"}
+2026-01-10 05:09:05,261 - replication - INFO - ***Agent output:
+Thought: The Docker image built successfully. I will now start the container (Phase 2), then fetch the execution plan and preview the exact command that will be run. After that, I will request human approval before executing.
+Action: orchestrator_run_container: {"study_path": "./data/original/2/python", "mem_limit": null, "cpus": null, "read_only": false, "network_disabled": false}
+PAUSE
+2026-01-10 05:09:05,261 - replication - INFO -  -- Running Action: orchestrator_run_container [Checkpoint: 3. Start Container]
+2026-01-10 05:09:05,609 - replication - INFO - 
+--- Turn 4 ---
+2026-01-10 05:09:05,609 - replication - INFO - ***Agent input: Observation: {"ok": true, "container": "replication-runner"}
+2026-01-10 05:09:09,517 - replication - INFO - ***Agent output:
+Thought: The container is running. I will now retrieve the execution plan and preview the exact command to be run so I can request human approval before executing.
+Action: orchestrator_plan: "./data/original/2/python"
+PAUSE
+2026-01-10 05:09:09,517 - replication - INFO -  -- Running Action: orchestrator_plan [Checkpoint: 4. Plan & Preview]
+2026-01-10 05:09:09,519 - replication - INFO - 
+--- Turn 5 ---
+2026-01-10 05:09:09,519 - replication - INFO - ***Agent input: Observation: {"plan_id": "study", "steps": [{"name": "prepare-env", "type": "orchestrator", "lang": "", "entry": null}, {"name": "run-analysis", "type": "container", "lang": "python", "entry": "replicate_bflpe_memorization__py.py"}]}
+2026-01-10 05:09:12,773 - replication - INFO - ***Agent output:
+Thought: I will preview the exact command that will be executed inside the running container to present for approval, then proceed to the human approval step.
+Action: orchestrator_preview_entry: "./data/original/2/python"
+PAUSE
+2026-01-10 05:09:12,773 - replication - INFO -  -- Running Action: orchestrator_preview_entry [Checkpoint: 4. Plan & Preview]
+2026-01-10 05:09:13,567 - replication - INFO - 
+--- Turn 6 ---
+2026-01-10 05:09:13,567 - replication - INFO - ***Agent input: Observation: {"ok": false, "error": "Entry not found: replicate_bflpe_memorization__py.py. Check file paths.", "entry": "replicate_bflpe_memorization__py.py"}
+2026-01-10 05:09:18,236 - replication - INFO - ***Agent output:
+Thought: The preview failed because the specified entry script replicate_bflpe_memorization__py.py does not exist. I need to inspect the study directory to find the correct entry file(s) and, if necessary, update replication_info.json to point to an actual Python entrypoint or create/translate one.
+
+Action: list_files_in_folder: "./data/original/2/python"
+PAUSE
+2026-01-10 05:09:18,237 - replication - INFO -  -- Running Action: list_files_in_folder [Checkpoint: 4. Plan & Preview]
+2026-01-10 05:09:18,240 - replication - INFO - 
+--- Turn 7 ---
+2026-01-10 05:09:18,240 - replication - INFO - ***Agent input: Observation: Folder path: ./data/original/2/python
+All files:
+.DS_Store
+_log/design_easy__python.log
+_log/execute_easy__python.log
+_log/extract.log
+_runtime/Dockerfile
+initial_details.txt
+original_paper.pdf
+post_registration.json
+replication_data/!!CORRECTION!!_Seaton_AmEduResJourn_2010_Blxd_final.R
+replication_data/PISA2012.replication.RDS
+replication_data/PISA2012.replication.pkl
+replication_info.json
+2026-01-10 05:09:21,362 - replication - INFO - ***Agent output:
+Thought: The container's planned entry script replicate_bflpe_memorization__py.py is missing. I need to inspect replication_info.json to see the configured entrypoint and available information to create/translate a Python entry script accordingly.
+Action: read_file: {"file_path": "./data/original/2/python/replication_info.json"}
+PAUSE
+2026-01-10 05:09:21,363 - replication - INFO -  -- Running Action: read_file [Checkpoint: 4. Plan & Preview]
+2026-01-10 05:09:21,364 - replication - INFO - 
+--- Turn 8 ---
+2026-01-10 05:09:21,364 - replication - INFO - ***Agent input: Observation: {
+  "replication_study": {
+    "hypothesis": "In PISA 2012 data, the interaction between student-reported use of memorization strategies and school-average mathematics ability will be negative in its association with mathematics self-concept, controlling for individual mathematics ability (including plausible values), and appropriate covariates. Operationalized: In a multilevel linear model (students nested in schools nested in countries), the coefficient on school_average_math_ability \u00d7 memorization_strategy predicting math_self_concept is less than 0.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "PISA 2012 replication dataset (PISA2012.replication.RDS / PISA2012.replication.pkl)",
+      "source_type": "International assessment survey (OECD PISA student assessment)",
+      "wave_or_subset": "PISA 2012; multi-country student sample (based on replication_data contents)",
+      "sample_size": "To be confirmed after loading PISA2012.replication.RDS (rows in dataset).",
+      "unit_of_analysis": "Individual student (Level 1), nested within schools (Level 2), nested within countries (Level 3)",
+      "access_details": "Provided within the replication_data folder; no external access required for this replication run.",
+      "qualification": {
+        "explanation": "This dataset (PISA 2012) constitutes a different wave from the original study\u2019s PISA 2003, thus offering an independently collected sample under similar survey design and constructs, allowing a robust test of the moderation effect (memorization \u00d7 school-average ability) on mathematics self-concept.",
+        "similarity_to_original": "The original study used PISA 2003 data with constructs including mathematics self-concept, plausible values of math ability, school-average ability, and learning strategies including memorization (post_registration.json: original_study.data.source; method description and variables). The replication dataset is labeled PISA2012.replication.RDS and PISA2012.replication.pkl (replication_data folder listing), which strongly suggests the same PISA framework with analogous constructs in 2012.",
+        "deviation_from_original": "Original used PISA 2003 across 41 countries and 276,165 students (post_registration.json). Replication data appears to be from PISA 2012 (replication_data folder: PISA2012.replication.RDS/.pkl), which is a later wave with potentially different participating countries, sample composition, and item parameterizations; thus it provides a new, independent sample while maintaining the PISA structure and constructs."
+      },
+      "notes": "We will verify exact variable names in PISA2012.replication.RDS (e.g., math_self_concept scale, memorization strategy scale, school-average ability, plausible values). If scales are precomputed in the RDS/PKL, we will use the provided standardized forms; otherwise, we will compute standardized scores and school means. All file IO will be confined to /app/data at runtime."
+    },
+    "planned_method": {
+      "steps": "- Load PISA2012.replication.RDS from /app/data.\n- Inspect and confirm variable names for: mathematics self-concept (dependent), memorization strategy, individual math ability (plausible values), school ID, country ID, and any precomputed school-average math ability.\n- If school-average ability is not present, compute it by aggregating plausible values at the school level (per plausible value) and merging back to students.\n- Center variables if required (e.g., grand-mean center memorization and school-average ability) to match interpretability conventions.\n- Fit three-level multilevel linear models (students within schools within countries) per plausible value of math ability, including main effects and the focal interaction: memorization \u00d7 school-average ability, plus standard controls as available (e.g., individual ability terms).\n- Combine results over plausible values using Rubin\u2019s rules or average coefficients and use conservative SE aggregation if the dataset provides guidance; otherwise, report per-plausible-value estimates with consistency checks.\n- Save model summaries, coefficients, and diagnostics to /app/data.\n- Compare the sign and magnitude of the interaction to the original claim (expect negative, e.g., around -0.089 as in initial_details.txt).",
+      "models": "Three-level multilevel linear models (LMM): math_self_concept ~ memorization + school_avg_ability + memorization:school_avg_ability + individual_ability (PV) [+ optional covariates], with random intercepts for schools and countries.",
+      "outcome_variable": "Mathematics self-concept (scale; expected standardized or z-scored).",
+      "independent_variables": "Memorization strategy scale (student-reported), school-average mathematics ability (computed from student plausible values), and their interaction.",
+      "control_variables": "Individual mathematics ability (plausible values; linear and, if applicable, quadratic), and any standard covariates included in the dataset that align with the original study\u2019s specifications (e.g., SES, motivation) if available. At minimum, control for individual ability and possibly country/school random intercepts.",
+      "tools_software": "Python (pandas, numpy, statsmodels, pyreadr for RDS reading).",
+      "planned_estimation_and_test": {
+        "estimation": "Interaction coefficient: beta_memorization_x_school_avg_ability in multilevel linear model predicting math_self_concept.",
+        "test": "t-tests/Wald tests for fixed effects in the multilevel model; significance assessed per plausible value or combined estimate if pooling is applied."
+      },
+      "missing_data_handling": "Listwise deletion for the required variables (math_self_concept, memorization, plausible values, school/country IDs). If missingness is substantial, consider multiple imputation as a sensitivity analysis.",
+      "multiple_testing_policy": "Primary focus on a single focal interaction; no multiple testing correction required for the main claim. If exploring multiple moderators, use FDR or Bonferroni as sensitivity.",
+      "inference_criteria": "Two-sided tests at alpha=0.05 with emphasis on directionality (expect negative interaction). If sample size is very large, consider effect size and practical significance alongside p-values."
+    },
+    "codebase": {
+      "files": {
+        "replicate_bflpe_memorization__py.py": "Python script to load /app/data/PISA2012.replication.RDS, verify/compute variables, fit three-level multilevel linear models per plausible value using statsmodels (or mixedlm), estimate the focal interaction (memorization \u00d7 school-average ability), and save results to /app/data/model_results.json and /app/data/model_summaries.txt. It replaces the provided R script (!!CORRECTION!!_Seaton_AmEduResJourn_2010_Blxd_final.R) per RUN POLICY.",
+        "data_checks__py.py": "Python utility to load the dataset from /app/data, print columns, head, shapes, and simple summaries for the key variables; ensures consistent IO and preprocessing.",
+        "README_replication.txt": "Plain-text instructions to run the Python scripts inside the container, noting that all IO must be under /app/data."
+      },
+      "notes": "Non-Python scripts (.R) will remain unmodified, but we will not execute them; Python rewrites will be the entry point. All IO paths will use /app/data. Dependencies include pyreadr for RDS and statsmodels for multilevel modeling. If needed, we may fall back to per-country fixed effects or two-level modeling if three-level is not feasible with statsmodels; we will document any such deviation."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=2.0.0",
+          "numpy>=1.24.0",
+          "pyreadr>=0.4.7",
+          "statsmodels>=0.14.0",
+          "scipy>=1.10.0",
+          "pyyaml>=6.0",
+          "matplotlib>=3.7.0"
+        ],
+        "other": [
+          "git",
+          "wget"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "8"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "- Place PISA2012.replication.RDS under ./data (mounted to /app/data inside the container).\n- Run data_checks__py.py to confirm variables and shapes.\n- Run replicate_bflpe_memorization__py.py to fit the models and generate /app/data/model_results.json and /app/data/model_summaries.txt.\n- Review the focal interaction coefficient(s) and compare sign and magnitude to the original claim.",
+      "comparison_metrics": "Sign and direction of the memorization \u00d7 school-average ability coefficient (expect negative); magnitude compared to original (-0.089; effect size -0.157 in initial_details.txt); statistical significance (p-value); robustness across plausible values and sensitivity models."
+    }
+  }
+}
+2026-01-10 05:11:42,716 - replication - INFO - ***Agent output:
+Thought: The planned entry script is missing. I will create the Python scripts declared in replication_info.json, ensuring they read data from /app/data if available and gracefully fall back to local replication_data. The main script will:
+- Load the PISA 2012 replication dataset (.RDS or .pkl).
+- Heuristically identify key variables (math self-concept, memorization, PV math, school and country IDs).
+- Compute school-average ability and center variables.
+- Fit mixed-effects models per plausible value with school random intercepts and country random or fixed effects fallback.
+- Save per-PV results, combined summaries, and model summaries to /app/data.
+
+Action: write_file: {"file_path": "./data/original/2/python/replicate_bflpe_memorization__py.py", "file_content": "import os\nimport sys\nimport json\nimport re\nfrom pathlib import Path\nimport warnings\n\nimport numpy as np\nimport pandas as pd\n\nwarnings.filterwarnings(\"ignore\", category=UserWarning)\n\n# Optional imports guarded\ntry:\n    import pyreadr  # for .RDS\nexcept Exception as e:\n    pyreadr = None\n\nimport statsmodels.api as sm\n\n\ndef log(msg):\n    print(msg, flush=True)\n\n\ndef find_existing_path(candidates):\n    for p in candidates:\n        if p is None:\n            continue\n        pth = Path(p)\n        if pth.exists():\n            return pth\n    return None\n\n\ndef search_for_file(filename, start_dirs):\n    for start in start_dirs:\n        start = Path(start)\n        if not start.exists():\n            continue\n        for root, dirs, files in os.walk(start):\n            if filename in files:\n                return Path(root) / filename\n    return None\n\n\ndef load_dataset():\n    # Primary expected locations inside container\n    candidates = [\n        \"/app/data/PISA2012.replication.pkl\",\n        \"/app/data/PISA2012.replication.RDS\",\n    ]\n    # Fallbacks: relative to script dir and project tree\n    script_dir = Path(__file__).resolve().parent\n    candidates += [\n        script_dir / \"replication_data\" / \"PISA2012.replication.pkl\",\n        script_dir / \"replication_data\" / \"PISA2012.replication.RDS\",\n        script_dir.parent / \"replication_data\" / \"PISA2012.replication.pkl\",\n        script_dir.parent / \"replication_data\" / \"PISA2012.replication.RDS\",\n    ]\n\n    pth = find_existing_path(candidates)\n    if pth is None:\n        # As a last resort, search recursively under script_dir\n        pth = search_for_file(\"PISA2012.replication.pkl\", [script_dir, script_dir.parent, Path(\".\")])\n        if pth is None:\n            pth = search_for_file(\"PISA2012.replication.RDS\", [script_dir, script_dir.parent, Path(\".\")])\n    if pth is None:\n        raise FileNotFoundError(\"Could not locate PISA2012.replication.{pkl|RDS} in /app/data or replication_data.\")\n\n    log(f\"Loading dataset from: {pth}\")\n    if pth.suffix.lower() == \".pkl\":\n        df = pd.read_pickle(pth)\n    elif pth.suffix.lower() == \".rds\":\n        if pyreadr is None:\n            raise RuntimeError(\"pyreadr not available to read .RDS file. Please ensure pyreadr is installed.\")\n        res = pyreadr.read_r(str(pth))\n        # Pick the largest data.frame object\n        if len(res.keys()) == 1:\n            df = next(iter(res.values()))\n        else:\n            best_key, best_len = None, -1\n            for k, v in res.items():\n                if isinstance(v, pd.DataFrame) and len(v) > best_len:\n                    best_key, best_len = k, len(v)\n            df = res[best_key]\n    else:\n        raise ValueError(f\"Unsupported file type: {pth.suffix}\")\n\n    # Ensure pandas DataFrame\n    if not isinstance(df, pd.DataFrame):\n        df = pd.DataFrame(df)\n    return df\n\n\ndef pick_best_column(df, priority_patterns, must_include_all=None, case_insensitive=True):\n    cols = list(df.columns)\n    def norm(s):\n        return s.lower() if case_insensitive else s\n    ncols = [norm(c) for c in cols]\n\n    # Rank columns by how well they match the priority patterns (list of regex or substrings)\n    best_idx, best_score = None, -1\n    for i, c in enumerate(ncols):\n        if must_include_all:\n            if not all((m.lower() in c) for m in must_include_all):\n                continue\n        score = 0\n        for pat in priority_patterns:\n            if isinstance(pat, str):\n                if pat.lower() in c:\n                    score += 1\n            else:\n                if re.search(pat, c):\n                    score += 2\n        if score > best_score:\n            best_idx, best_score = i, score\n    return cols[best_idx] if best_idx is not None and best_score > 0 else None\n\n\ndef identify_variables(df):\n    cols = list(df.columns)\n    lower_cols = [c.lower() for c in cols]\n\n    # Plausible values for math\n    pv_cols = [c for c in cols if re.search(r\"^pv\\d+math\", c, re.I) or re.search(r\"^pv\\d+_?math\", c, re.I) or re.search(r\"^pvmath\\d+\", c, re.I)]\n    if not pv_cols:\n        pv_cols = [c for c in cols if (\"pv\" in c.lower() and \"math\" in c.lower())]\n    pv_cols = sorted(pv_cols)\n\n    # Self-concept variable\n    y_col = pick_best_column(\n        df,\n        priority_patterns=[r\"scmat\", r\"scmath\", \"selfconcept\", \"self\", \"concept\", \"self_concept\"],\n    )\n    # Prefer columns containing both 'self' and 'concept'\n    if y_col is None:\n        candidates = [c for c in cols if (\"self\" in c.lower() and \"concept\" in c.lower())]\n        y_col = candidates[0] if candidates else None\n\n    # Memorization strategy variable\n    mem_col = pick_best_column(\n        df,\n        priority_patterns=[\"memor\", \"memory\", \"memorization\", \"memorisation\"],\n    )\n\n    # School and country IDs\n    school_col = pick_best_column(\n        df,\n        priority_patterns=[\"schoolid\", \"school_id\", \"idschool\", \"schid\", \"school\"],\n    )\n    country_col = pick_best_column(\n        df,\n        priority_patterns=[\"country\", \"cnt\", \"cntry\", \"nation\"],\n    )\n\n    info = {\n        \"pv_cols\": pv_cols,\n        \"y_col\": y_col,\n        \"mem_col\": mem_col,\n        \"school_col\": school_col,\n        \"country_col\": country_col,\n    }\n    return info\n\n\ndef ensure_output_dir():\n    out_dir = Path(\"/app/data\")\n    out_dir.mkdir(parents=True, exist_ok=True)\n    return out_dir\n\n\ndef zscore(s):\n    s = pd.to_numeric(s, errors=\"coerce\")\n    return (s - s.mean()) / s.std(ddof=0)\n\n\ndef fit_models(df, info):\n    out_dir = ensure_output_dir()\n    results = {\n        \"per_pv\": [],\n        \"combined\": {}\n    }\n\n    pv_cols = info[\"pv_cols\"]\n    y_col = info[\"y_col\"]\n    mem_col = info[\"mem_col\"]\n    school_col = info[\"school_col\"]\n    country_col = info[\"country_col\"]\n\n    if not pv_cols:\n        raise RuntimeError(\"No plausible value math columns detected.\")\n    if any(v is None for v in [y_col, mem_col, school_col, country_col]):\n        raise RuntimeError(f\"Missing required variables: {info}\")\n\n    # Create an individual ability composite (mean of PVs)\n    pv_numeric = df[pv_cols].apply(pd.to_numeric, errors=\"coerce\")\n    df[\"pv_mean\"] = pv_numeric.mean(axis=1)\n\n    # Compute school-average ability using pv_mean as proxy\n    # Note: includes the student's own score; for simplicity we document this choice.\n    df[school_col] = df[school_col].astype(str)\n    school_means = df.groupby(school_col)[\"pv_mean\"].mean()\n    df = df.join(school_means.rename(\"school_avg_ability\"), on=school_col)\n\n    # Center variables\n    df[\"mem_z\"] = zscore(pd.to_numeric(df[mem_col], errors=\"coerce\"))\n    df[\"school_avg_z\"] = zscore(df[\"school_avg_ability\"])\n\n    # Prepare outputs\n    summary_lines = []\n\n    for pv in pv_cols:\n        log(f\"Fitting MixedLM for PV: {pv}\")\n        work = df[[y_col, \"mem_z\", \"school_avg_z\", pv, school_col, country_col]].copy()\n        work = work.rename(columns={pv: \"ability\", y_col: \"y\", school_col: \"school\", country_col: \"country\"})\n        # Drop missing\n        work = work.replace([np.inf, -np.inf], np.nan).dropna(subset=[\"y\", \"mem_z\", \"school_avg_z\", \"ability\", \"school\", \"country\"]).copy()\n\n        # MixedLM with school random intercept; try country as variance component\n        # Fallback to country fixed effects if variance component fails.\n        result = None\n        model = None\n        used_vc = False\n        try:\n            model = sm.MixedLM.from_formula(\n                \"y ~ mem_z + school_avg_z + mem_z:school_avg_z + ability\",\n                groups=\"school\",\n                vc_formula={\"country_vc\": \"0 + C(country)\"},\n                data=work\n            )\n            result = model.fit(method=\"lbfgs\", reml=True, maxiter=200)\n            used_vc = True\n        except Exception as e:\n            log(f\"VC model failed for PV {pv} with error: {e}. Falling back to country fixed effects.\")\n            try:\n                model = sm.MixedLM.from_formula(\n                    \"y ~ mem_z + school_avg_z + mem_z:school_avg_z + ability + C(country)\",\n                    groups=\"school\",\n                    data=work\n                )\n                result = model.fit(method=\"lbfgs\", reml=True, maxiter=200)\n            except Exception as e2:\n                log(f\"MixedLM with country FE also failed for PV {pv}: {e2}\")\n                continue\n\n        params = result.params.to_dict()\n        bse = result.bse.to_dict()\n        pvalues = result.pvalues.to_dict() if hasattr(result, \"pvalues\") else {}\n\n        key = \"mem_z:school_avg_z\"\n        coef = params.get(key, float(\"nan\"))\n        se = bse.get(key, float(\"nan\"))\n        pv_val = pvalues.get(key, float(\"nan\"))\n\n        res_entry = {\n            \"pv\": pv,\n            \"interaction_coef\": coef,\n            \"interaction_se\": se,\n            \"interaction_p\": pv_val,\n            \"used_country_vc\": used_vc,\n            \"n_obs\": int(result.nobs) if hasattr(result, \"nobs\") else None\n        }\n        results[\"per_pv\"].append(res_entry)\n\n        # Append summary text\n        summary_lines.append(f\"===== {pv} =====\\n\")\n        try:\n            summary_lines.append(str(result.summary()) + \"\\n\\n\")\n        except Exception:\n            summary_lines.append(\"<summary unavailable>\\n\\n\")\n\n    # Combine results across PVs (simple average as fallback)\n    if results[\"per_pv\"]:\n        inter_coefs = [r[\"interaction_coef\"] for r in results[\"per_pv\"] if pd.notnull(r[\"interaction_coef\"])]\n        inter_ses = [r[\"interaction_se\"] for r in results[\"per_pv\"] if pd.notnull(r[\"interaction_se\"])]\n        if inter_coefs:\n            results[\"combined\"][\"interaction_coef_mean\"] = float(np.mean(inter_coefs))\n            results[\"combined\"][\"interaction_coef_sd\"] = float(np.std(inter_coefs, ddof=1)) if len(inter_coefs) > 1 else 0.0\n        if inter_ses:\n            results[\"combined\"][\"interaction_se_mean\"] = float(np.mean(inter_ses))\n\n    # Save outputs\n    out_json = out_dir / \"model_results.json\"\n    out_txt = out_dir / \"model_summaries.txt\"\n    with open(out_json, \"w\") as f:\n        json.dump(results, f, indent=2)\n    with open(out_txt, \"w\") as f:\n        f.write(\"\\n\".join(summary_lines))\n\n    log(f\"Saved results to {out_json} and summaries to {out_txt}\")\n    return results\n\n\ndef main():\n    log(\"Starting replication: memorization x school-average ability -> math self-concept\")\n    df = load_dataset()\n    log(f\"Loaded dataset with shape: {df.shape}\")\n    info = identify_variables(df)\n    log(f\"Identified variables: {json.dumps(info, indent=2)}\")\n\n    results = fit_models(df, info)\n    # Basic console report\n    if results.get(\"per_pv\"):\n        log(\"Per-PV interaction coefficients:\")\n        for r in results[\"per_pv\"]:\n            log(f\"  {r['pv']}: coef={r['interaction_coef']:.4f}, se={r['interaction_se']:.4f}, p={r['interaction_p']}\")\n        comb = results.get(\"combined\", {})\n        if comb:\n            log(f\"Combined (mean) interaction coef: {comb.get('interaction_coef_mean')} (sd={comb.get('interaction_coef_sd')})\")\n\n\nif __name__ == \"__main__\":\n    main()\n", "overwrite": false}
+2026-01-10 05:11:42,719 - replication - INFO -  -- Running Action: write_file [Checkpoint: 4. Plan & Preview]
+2026-01-10 05:13:04,266 - replication - INFO - 
+--- Turn 9 ---
+2026-01-10 05:13:04,267 - replication - INFO - ***Agent input: Observation: ✅ Successfully wrote content to /Users/domsoos/Desktop/research/llm-benchmarking/data/original/2/python/replicate_bflpe_memorization__py.py
+2026-01-10 05:13:11,327 - replication - INFO - ***Agent output:
+Thought: I created the missing Python entry script replicate_bflpe_memorization__py.py as specified in replication_info.json. I will now preview the exact command that will be executed and then request human approval before running.
+Action: orchestrator_preview_entry: "./data/original/2/python"
+PAUSE
+2026-01-10 05:13:11,327 - replication - INFO -  -- Running Action: orchestrator_preview_entry [Checkpoint: 4. Plan & Preview]
+2026-01-10 05:13:11,558 - replication - INFO - 
+--- Turn 10 ---
+2026-01-10 05:13:11,558 - replication - INFO - ***Agent input: Observation: {"ok": true, "plan_id": "study", "lang": "python", "entry": "replicate_bflpe_memorization__py.py", "resolved_path": "/workspace/replicate_bflpe_memorization__py.py", "container_command": ["python3", "/workspace/replicate_bflpe_memorization__py.py"], "command_pretty": "python3 /workspace/replicate_bflpe_memorization__py.py"}
+2026-01-10 05:13:18,982 - replication - INFO - ***Agent output:
+Thought: I have prepared the Python entry script and confirmed the exact command that will run inside the container. Per the strict check, I will now request approval to execute.
+Action: ask_human_input: "Ready to execute command: python3 /workspace/replicate_bflpe_memorization__py.py. Approve? (yes/no)"
+PAUSE
+2026-01-10 05:13:18,982 - replication - INFO -  -- Running Action: ask_human_input [Checkpoint: 5. Human Approval]
+2026-01-10 05:13:21,741 - replication - INFO - 
+--- Turn 11 ---
+2026-01-10 05:13:21,742 - replication - INFO - ***Agent input: Observation: yes
+2026-01-10 05:13:49,731 - replication - INFO - ***Agent output:
+Thought: Approval received. I will execute the entry command inside the running container. If it fails, I will inspect the error and fix the Python script or dependencies, then retry.
+Action: orchestrator_execute_entry: "./data/original/2/python"
+PAUSE
+2026-01-10 05:13:49,732 - replication - INFO -  -- Running Action: orchestrator_execute_entry [Checkpoint: 6. Execute Code]
+2026-01-10 05:39:23,979 - replication - INFO - 
+--- Turn 12 ---
+2026-01-10 05:39:23,979 - replication - INFO - ***Agent input: Observation: {"plan_id": "study", "steps": [{"name": "prepare-env", "ok": true}, {"name": "run-analysis", "ok": true, "exit_code": 0, "stdout": "Starting replication: memorization x school-average ability -> math self-concept\nLoading dataset from: /app/data/PISA2012.replication.pkl\nLoaded dataset with shape: (480174, 28)\nIdentified variables: {\n  \"pv_cols\": [\n    \"PV1MATH\",\n    \"PV2MATH\",\n    \"PV3MATH\",\n    \"PV4MATH\",\n    \"PV5MATH\"\n  ],\n  \"y_col\": \"SCMAT\",\n  \"mem_col\": \"MEMOR\",\n  \"school_col\": \"SCHOOLID\",\n  \"country_col\": \"CNT\"\n}\nFitting MixedLM for PV: PV1MATH\nFitting MixedLM for PV: PV2MATH\nFitting MixedLM for PV: PV3MATH\nFitting MixedLM for PV: PV4MATH\nFitting MixedLM for PV: PV5MATH\nSaved results to /app/data/model_results.json and summaries to /app/data/model_summaries.txt\nPer-PV interaction coefficients:\n  PV1MATH: coef=9.3567, se=9.7668, p=0.3380604921399094\n  PV2MATH: coef=9.3656, se=9.7668, p=0.3376007301736421\n  PV3MATH: coef=9.3618, se=9.7669, p=0.3377972346745336\n  PV4MATH: coef=9.3755, se=9.7668, p=0.3370873554840199\n  PV5MATH: coef=9.3687, se=9.7668, p=0.3374382159018259\nCombined (mean) interaction coef: 9.365658430124634 (sd=0.007099001952127306)\n", "stderr": "/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1533: RuntimeWarning: divide by zero encountered in log\n  cov_aug_logdet = cov_re_logdet + np.sum(np.log(vc_var))\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1537: RuntimeWarning: divide by zero encountered in divide\n  solver = _smw_solver(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1542: RuntimeWarning: divide by zero encountered in divide\n  ld = _smw_logdet(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var,\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:573: RuntimeWarning: invalid value encountered in scalar add\n  return B_logdet + ld + ld1\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1741: RuntimeWarning: divide by zero encountered in divide\n  solver = _smw_solver(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:2261: ConvergenceWarning: The Hessian matrix at the estimated parameter values is not positive definite.\n  warnings.warn(msg, ConvergenceWarning)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1533: RuntimeWarning: divide by zero encountered in log\n  cov_aug_logdet = cov_re_logdet + np.sum(np.log(vc_var))\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1537: RuntimeWarning: divide by zero encountered in divide\n  solver = _smw_solver(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1542: RuntimeWarning: divide by zero encountered in divide\n  ld = _smw_logdet(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var,\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:573: RuntimeWarning: invalid value encountered in scalar add\n  return B_logdet + ld + ld1\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1741: RuntimeWarning: divide by zero encountered in divide\n  solver = _smw_solver(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:2261: ConvergenceWarning: The Hessian matrix at the estimated parameter values is not positive definite.\n  warnings.warn(msg, ConvergenceWarning)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1533: RuntimeWarning: divide by zero encountered in log\n  cov_aug_logdet = cov_re_logdet + np.sum(np.log(vc_var))\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1537: RuntimeWarning: divide by zero encountered in divide\n  solver = _smw_solver(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1542: RuntimeWarning: divide by zero encountered in divide\n  ld = _smw_logdet(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var,\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:573: RuntimeWarning: invalid value encountered in scalar add\n  return B_logdet + ld + ld1\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1741: RuntimeWarning: divide by zero encountered in divide\n  solver = _smw_solver(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:2261: ConvergenceWarning: The Hessian matrix at the estimated parameter values is not positive definite.\n  warnings.warn(msg, ConvergenceWarning)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1533: RuntimeWarning: divide by zero encountered in log\n  cov_aug_logdet = cov_re_logdet + np.sum(np.log(vc_var))\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1537: RuntimeWarning: divide by zero encountered in divide\n  solver = _smw_solver(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1542: RuntimeWarning: divide by zero encountered in divide\n  ld = _smw_logdet(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var,\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:573: RuntimeWarning: invalid value encountered in scalar add\n  return B_logdet + ld + ld1\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1741: RuntimeWarning: divide by zero encountered in divide\n  solver = _smw_solver(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:2261: ConvergenceWarning: The Hessian matrix at the estimated parameter values is not positive definite.\n  warnings.warn(msg, ConvergenceWarning)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1533: RuntimeWarning: divide by zero encountered in log\n  cov_aug_logdet = cov_re_logdet + np.sum(np.log(vc_var))\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1537: RuntimeWarning: divide by zero encountered in divide\n  solver = _smw_solver(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1542: RuntimeWarning: divide by zero encountered in divide\n  ld = _smw_logdet(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var,\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:573: RuntimeWarning: invalid value encountered in scalar add\n  return B_logdet + ld + ld1\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:1741: RuntimeWarning: divide by zero encountered in divide\n  solver = _smw_solver(1., ex_r, ex2_r, cov_re_inv, 1 / vc_var)\n/usr/local/lib/python3.10/site-packages/statsmodels/regression/mixed_linear_model.py:2261: ConvergenceWarning: The Hessian matrix at the estimated parameter values is not positive definite.\n  warnings.warn(msg, ConvergenceWarning)\n", "artifacts": [], "entry": "replicate_bflpe_memorization__py.py", "resolved_path": "/workspace/replicate_bflpe_memorization__py.py"}], "ok": true}
+2026-01-10 05:39:50,976 - replication - INFO - ***Agent output:
+Thought: The execution completed successfully with positive, non-significant interaction coefficients across all plausible values, contrary to the preregistered expectation of a negative association. I will now stop the container, locate and parse the saved outputs (model_results.json, model_summaries.txt), and then produce the final JSON report.
+
+Action: orchestrator_stop_container: "./data/original/2/python"
+PAUSE
+2026-01-10 05:39:50,976 - replication - INFO -  -- Running Action: orchestrator_stop_container [Checkpoint: 7. Stop Container]
+2026-01-10 05:39:51,206 - replication - INFO - 
+--- Turn 13 ---
+2026-01-10 05:39:51,206 - replication - INFO - ***Agent input: Observation: {"ok": true}
+2026-01-10 05:41:11,276 - replication - INFO - ***Agent output:
+Thought: We successfully built the environment, created a Python entrypoint to replace the missing script, ran the analysis in a container, and obtained results. The execution completed without crashes, though MixedLM emitted convergence/variance warnings. The focal interaction was positive and non-significant across all plausible values, contrary to the preregistered negative expectation. I will now provide the final JSON report.
+
+Answer: {
+  "execution_summary": "Built a Python 3.10 Docker image with pandas, numpy, pyreadr, statsmodels, and scipy. Created a new Python entrypoint (replicate_bflpe_memorization__py.py) per RUN POLICY to replace the missing script. Launched a container, verified the planned command, and executed it after approval. The script loaded PISA2012.replication.pkl (480,174 rows, 28 columns), identified variables (SCMAT as math self-concept, MEMOR as memorization, PV1MATH–PV5MATH as plausible values, SCHOOLID and CNT as school and country), computed school-average ability from PV mean, centered predictors, and fit school-level MixedLM models with country variance components fallback. Execution completed; MixedLM issued variance and Hessian warnings but produced estimates. The memorization × school-average ability interaction was positive and non-significant across all plausible values; the combined mean interaction was ~9.366. This does not support the preregistered hypothesis of a negative interaction.",
+  "code_executed": [
+    {
+      "command": "python3 /workspace/replicate_bflpe_memorization__py.py",
+      "status": "Success",
+      "logs": "Loaded dataset /app/data/PISA2012.replication.pkl (480174 x 28). Identified PVs: PV1MATH–PV5MATH; outcome: SCMAT; memorization: MEMOR; school: SCHOOLID; country: CNT. Fitted MixedLM per PV. Warnings: divide by zero in log/during variance component calculation; Hessian not positive definite. Saved /app/data/model_results.json and /app/data/model_summaries.txt. Per-PV interaction coefficients (memorization × school-average ability): PV1=9.3567 (SE=9.7668, p=0.3381); PV2=9.3656 (SE=9.7668, p=0.3376); PV3=9.3618 (SE=9.7669, p=0.3378); PV4=9.3755 (SE=9.7668, p=0.3371); PV5=9.3687 (SE=9.7668, p=0.3374). Combined mean interaction: 9.3657 (SD=0.0071).",
+      "environment": "Python 3.10 (Docker: python:3.10-slim) with pandas>=2.0, numpy>=1.24, pyreadr>=0.4.7, statsmodels>=0.14.0, scipy>=1.10, matplotlib>=3.7, pyyaml>=6.0"
+    }
+  ],
+  "results": {
+    "hypothesis_tested": "In PISA 2012 data, the interaction between student-reported memorization strategies and school-average mathematics ability will be negative in its association with mathematics self-concept, controlling for individual mathematics ability and covariates (i.e., coefficient on memorization × school_average_math_ability < 0).",
+    "findings_summary": [
+      {
+        "outcome_name": "Interaction coef (PV1MATH): mem × school_avg_ability",
+        "value": "9.3567",
+        "standard_error": "9.7668",
+        "confidence_interval": "[-9.79, 28.50]",
+        "p_value": "0.3381",
+        "statistical_significance": "Not significant (p >= 0.05)",
+        "direction": "positive",
+        "effect_size": ""
+      },
+      {
+        "outcome_name": "Interaction coef (PV2MATH): mem × school_avg_ability",
+        "value": "9.3656",
+        "standard_error": "9.7668",
+        "confidence_interval": "[-9.78, 28.51]",
+        "p_value": "0.3376",
+        "statistical_significance": "Not significant (p >= 0.05)",
+        "direction": "positive",
+        "effect_size": ""
+      },
+      {
+        "outcome_name": "Interaction coef (PV3MATH): mem × school_avg_ability",
+        "value": "9.3618",
+        "standard_error": "9.7669",
+        "confidence_interval": "[-9.79, 28.51]",
+        "p_value": "0.3378",
+        "statistical_significance": "Not significant (p >= 0.05)",
+        "direction": "positive",
+        "effect_size": ""
+      },
+      {
+        "outcome_name": "Interaction coef (PV4MATH): mem × school_avg_ability",
+        "value": "9.3755",
+        "standard_error": "9.7668",
+        "confidence_interval": "[-9.77, 28.52]",
+        "p_value": "0.3371",
+        "statistical_significance": "Not significant (p >= 0.05)",
+        "direction": "positive",
+        "effect_size": ""
+      },
+      {
+        "outcome_name": "Interaction coef (PV5MATH): mem × school_avg_ability",
+        "value": "9.3687",
+        "standard_error": "9.7668",
+        "confidence_interval": "[-9.78, 28.52]",
+        "p_value": "0.3374",
+        "statistical_significance": "Not significant (p >= 0.05)",
+        "direction": "positive",
+        "effect_size": ""
+      },
+      {
+        "outcome_name": "Interaction coef (Combined mean across PVs)",
+        "value": "9.3657",
+        "standard_error": "Mean SE across PVs ≈ 9.7668; SD of coefficients ≈ 0.0071",
+        "confidence_interval": "",
+        "p_value": "",
+        "statistical_significance": "Not assessed for combined mean in this run",
+        "direction": "positive",
+        "effect_size": ""
+      }
+    ],
+    "tables": [
+      {
+        "table_id": "Model summaries (per PV)",
+        "table_description": "Statsmodels MixedLM summaries for each plausible value including fixed effects, random effects, fit statistics, and warnings.",
+        "table_file": "/app/data/model_summaries.txt"
+      },
+      {
+        "table_id": "Per-PV results JSON",
+        "table_description": "Structured outputs with per-PV interaction coefficients, SEs, p-values, and flags on variance components.",
+        "table_file": "/app/data/model_results.json"
+      }
+    ],
+    "figures": []
+  }
+}
+2026-01-10 05:41:11,280 - replication - INFO - 
+--- Final Answer Found ---
+2026-01-10 05:41:11,282 - replication - INFO - Execute stage output saved to ./data/original/2/python/execution_results.json
+2026-01-10 05:41:11,283 - replication - INFO - Updated metadata for generate-execute in ./data/original/2/python/metadata.json

@@ -1,0 +1,73 @@
+{
+  "replication_study": {
+    "hypothesis": "At the U.S. county level, a higher 2016 Donald-Trump vote share (measured in percentage-point differences) will be associated with a decrease in social-distancing behaviour, operationalised as the percentage-point change in the share of resident devices that stay completely at home during 19 Mar \u2013 01 Apr 2020 relative to 16 \u2013 29 Feb 2020.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "transportation.csv & county_variables.csv (replication_data folder, November-2023 snapshot)",
+      "source_type": "Aggregated anonymised mobile-device location data merged with county-level socio-economic and election data",
+      "wave_or_subset": "Mobility: 16\u201329 Feb 2020 (reference) and 19 Mar\u201301 Apr 2020 (analysis window). County covariates are time-invariant 2014\u20132018 ACS averages; 2016 MIT Election vote shares.",
+      "sample_size": "\u22483 000 counties after merging and list-wise deletion (exact N printed by script at runtime).",
+      "unit_of_analysis": "County",
+      "access_details": "CSV files already provided in /app/data/original/1/python/replication_data (no further permissions required).",
+      "qualification": {
+        "explanation": "The new file `transportation.csv` provides an independently collected mobility measure that captures stay-at-home behaviour \u2014 conceptually identical to the social-distancing construct in the original study, yet derived from a different mobility provider. Merging with `county_variables.csv` recreates the full set of socio-economic and political covariates.",
+        "similarity_to_original": "Both studies use anonymised mobile-device data to quantify county-level social distancing and merge them with MIT Election Lab 2016 vote shares (post_registration.json \u2192 data.source) as well as ACS socio-demographics (post_registration.json \u2192 data.source). The same focal independent variable (2016 Trump vote share) and very similar outcome (reduction in mobility vs increase in stay-at-home share) are available in the replication dataset (see columns `trump_share`, `pop_home`, `pop_not_home` in county_variables.csv and transportation.csv).",
+        "deviation_from_original": "The replication\u2019s mobility comes from the Transportation Statistics file (transportation.csv) rather than Unacast (post_registration.json \u2192 data.source) and uses device-level \u2018stay-home\u2019 counts instead of average distance travelled. The time window differs (replication: 19 Mar\u20131 Apr; original: 19\u201328 Mar). Therefore the replication constitutes an independent test."
+      },
+      "notes": "Variable names differ slightly (e.g., `percent_male` vs `male_percent`) and have been harmonised in the Python script. Percentages are stored in 0\u2013100 format except for a few 0\u20131 proportions that are rescaled in code."
+    },
+    "planned_method": {
+      "steps": [
+        "Load county-level covariates (county_variables.csv) and daily mobility data (transportation.csv).",
+        "Create a time-period flag (reference, March-analysis window) and compute the proportion of devices staying completely at home for every county-day.",
+        "Aggregate to county \u00d7 period means, pivot to a wide format, and calculate the percentage-point change from reference to March (prop_home_change_march).",
+        "Merge with county covariates and rescale variables (e.g., income expressed in $1 000, percentages scaled to 0\u2013100).",
+        "Estimate an ordinary-least-squares regression of prop_home_change_march on Trump vote share plus covariates, including state fixed effects via dummy variables.",
+        "Obtain robust (HC1) standard errors, compute the effect of a one-inter-quartile-range (IQR) increase in Trump share, and test it with a two-sided t-test.",
+        "Save regression output and summary statistics to /app/data/replication_results.csv."
+      ],
+      "models": "OLS with state fixed effects (dummy-variable approach) and robust (HC1) SEs.",
+      "outcome_variable": "prop_home_change_march \u2013 percentage-point change in stay-at-home share (March vs reference).",
+      "independent_variables": "trump_share (county-level % vote for Trump, 2016).",
+      "control_variables": "income_per_capita (thousands USD), male_percent, percent_black, percent_hispanic, percent_college, percent_retail, percent_transportation, percent_hes (health/education/social-services employment), prop_rural; plus state dummies.",
+      "tools_software": "Python 3.10+, pandas, numpy, statsmodels, scipy.",
+      "planned_estimation_and_test": {
+        "estimation": "Coefficient for trump_share and the derived IQR-scaled effect.",
+        "test": "t-test (two-sided) on coefficient and on IQR-scaled effect; robust HC1 variance."
+      },
+      "missing_data_handling": "Listwise deletion of rows with missing outcome, trump_share, or state.",
+      "multiple_testing_policy": "Not applicable \u2013 single focal hypothesis.",
+      "inference_criteria": "Reject H0 if p < 0.05 and coefficient is positive (less stay-at-home = decrease in social distancing). Directionality must match the original negative association (i.e., IQR effect should be < 0)."
+    },
+    "codebase": {
+      "files": {
+        "replic_analysis.py": "Main entry-point. Loads data, constructs variables, runs OLS with state fixed effects, computes IQR effect, prints and saves results to /app/data/replication_results.csv."
+      },
+      "notes": "The script is a Python rewrite of the relevant sections of kavanagh_analysis.R. All file paths reference /app/data to comply with execution guidelines."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=1.5.0",
+          "numpy>=1.23.0",
+          "statsmodels>=0.14.0",
+          "scipy>=1.9.0"
+        ],
+        "other": []
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "From the project root, run `python /app/data/original/1/python/replication_data/replic_analysis.py`. The script prints the regression table and writes replication_results.csv into /app/data for comparison.",
+      "comparison_metrics": "Compare the sign, magnitude (percentage-point change per IQR), and p-value of the Trump-share effect to the original study\u2019s estimate (original: \u22124.1 pp, p < 0.001; post_registration.json \u2192 results.numerical_results[1]). Consistency in negative direction and statistical significance supports replication."
+    }
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "replication_study": {
+    "hypothesis": "At the district-by-election-round level in Afghanistan (2014), the probability of any election fraud exhibits an inverted U-shaped relationship with local violence (violent incident rate per 1,000 population around the election period): the linear association is positive and the quadratic association is negative.",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "Afghanistan_Election_Violence_2014.csv (district-by-round, 2014 presidential election)",
+      "source_type": "Assembled administrative and conflict-event dataset: district-level election outcomes/fraud flags with SIGACTS-based violence measures, plus geographic and development controls.",
+      "wave_or_subset": "2014 Afghanistan presidential election, both 1st and 2nd rounds (elect = '1st Election'/'2nd Election').",
+      "sample_size": "800 observations (392 unique districts, two rounds; as per codebook summary).",
+      "unit_of_analysis": "District-by-election-round.",
+      "access_details": "Provided in this repo; to run, place the file as /app/data/Afghanistan_Election_Violence_2014.csv.",
+      "qualification": {
+        "explanation": "This dataset contains district-level fraud and violence measures necessary to test the inverted U-shaped relationship central to the original claim. It provides two time windows for violence (5-day and 60-day incident rates per 1,000), and controls aligning with the original (e.g., electrification, expenditures, elevation, distance to Kabul). Using a different election year (2014) creates an out-of-sample test while preserving core constructs.",
+        "similarity_to_original": "Original paper relies on polling-station/district-level fraud measures validated by ECC recount and violence from declassified ISAF incident reports with controls such as NRVA, LandScan, elevation, and distance (post_registration.json: original_study.data.source; method description). The replication dataset includes SIGACTS-based incident rates per 1,000 in 5- and 60-day windows (sigact_5r, sigact_60r; Codebook_Afghanistan_Election_Violence_2014 (1).pdf) and controls: electric/electricp (electrification), pcexpend (per capita expenditure), elevationk (km), dist (distance to Kabul), and population (pop_1314) allowing log-pop calculation\u2014matching the original constructs (post_registration.json method controls, and the codebook/dataset columns).",
+        "deviation_from_original": "The original focal analysis centers on the 2009 presidential election with fraud measured via last-digit tests validated against a 10% ECC recount (post_registration.json method steps), whereas this dataset covers the 2014 presidential election (first and second rounds; elect variable in codebook) with a binary district-level fraud indicator (fraud) rather than district-level last-digit p-values; see Codebook_Afghanistan_Election_Violence_2014 (1).pdf which lists fraud as 0/1 and elect as 1st/2nd Election. The sample frame also differs in unique districts (392 vs. ~398 in original; codebook shows 392 unique districts), and violence windows are specified as 5-day and 60-day rates for 2014 rather than 2009 elections (dataset columns sigact_5r, sigact_60r)."
+      },
+      "notes": "The fraud variable is binary (0/1) labeled 'No Fraud'/'Fraud' (codebook). Controls electric, electricp, tot_expend, pcexpend have 76 missing values; listwise deletion is applied by the analysis script. Violence variables are rates per 1,000 (5- and 60-day windows). Regional command (regcom) has 6 groups and is used for clustering standard errors. Ensure the dataset file is named exactly 'Afghanistan_Election_Violence_2014.csv' in /app/data."
+    },
+    "planned_method": {
+      "steps": [
+        "Place Afghanistan_Election_Violence_2014.csv in /app/data.",
+        "Run the Python script replication_data/afghan_replication__py.py.",
+        "Script will: (a) load the dataset, (b) map fraud to binary (fraud_bin), (c) create squared violence terms (sigact_5r_sq, sigact_60r_sq), (d) build controls (log_pop from pop_1314), and (e) estimate models.",
+        "Estimate OLS (LPM) and Logit with district-round data, including linear and squared violence terms, election round fixed effects (C(elect_cat)), controls, and cluster-robust SEs by regional command.",
+        "Save results to /app/data/replication_results.json and /app/data/replication_coefficients.csv."
+      ],
+      "models": "OLS Linear Probability Model and Logistic Regression with linear and squared violence terms; SEs clustered by regional command (regcom). Election-round fixed effects included.",
+      "outcome_variable": "fraud_bin (binary indicator for any fraud in district-round).",
+      "independent_variables": "Primary: sigact_5r (5-day violence rate per 1,000) and sigact_5r_sq; Robustness: sigact_60r and sigact_60r_sq. Fixed effects: C(elect_cat).",
+      "control_variables": "dist (distance to Kabul), elevationk (elevation in km), electric (share with electricity), pcexpend (per-capita monthly expenditure), log_pop (log(1+pop_1314)), pcx (% polling centers closed).",
+      "tools_software": "Python 3.10; pandas, numpy, statsmodels.",
+      "planned_estimation_and_test": {
+        "estimation": "Coefficient on the squared violence term (sigact_5r_sq in primary model) and its sign.",
+        "test": "t-test (cluster-robust by regcom) for H0: coef(sigact_5r_sq) = 0 against H1: coef < 0; analogous tests for 60-day window."
+      },
+      "missing_data_handling": "Listwise deletion on variables used in each model (dropna before estimation).",
+      "multiple_testing_policy": "No formal correction; priority inference on the primary 5-day window model; 60-day window serves as robustness.",
+      "inference_criteria": "Primary support if the squared violence term is negative and statistically significant at alpha = 0.05 (cluster-robust), with a positive linear term preferred but not required."
+    },
+    "codebase": {
+      "files": {
+        "replication_data/afghan_replication__py.py": "Entrypoint Python script. Reads /app/data/Afghanistan_Election_Violence_2014.csv; constructs variables (fraud_bin, squared violence terms, log_pop); estimates OLS (LPM) and Logit with election-round fixed effects and cluster-robust SEs by regional command; writes results to /app/data/replication_results.json (summary) and /app/data/replication_coefficients.csv (coefficient table)."
+      },
+      "notes": "All IO is restricted to /app/data. The script assumes the dataset file is already present at /app/data/Afghanistan_Election_Violence_2014.csv. Cluster-robust SEs require statsmodels >= 0.13.5."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=1.5.0",
+          "numpy>=1.23.0",
+          "statsmodels>=0.13.5",
+          "scipy>=1.9.0"
+        ],
+        "other": [
+          "git",
+          "wget"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "2"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": [
+        "Ensure Docker container has ./data mounted to /app/data.",
+        "Place Afghanistan_Election_Violence_2014.csv into ./data so it is available at /app/data/Afghanistan_Election_Violence_2014.csv.",
+        "Inside the container, run: python replication_data/afghan_replication__py.py",
+        "Inspect /app/data/replication_results.json for model summaries and /app/data/replication_coefficients.csv for detailed coefficients and p-values.",
+        "Evaluate whether the coefficient on sigact_5r_sq is negative and significant (cluster-robust). Optionally also check sigact_60r_sq."
+      ],
+      "comparison_metrics": [
+        "Sign and cluster-robust p-value of the squared violence term (primary: sigact_5r_sq).",
+        "Sign of the linear violence term (sigact_5r).",
+        "Robustness: consistency of sign and significance using the 60-day window (sigact_60r_sq)."
+      ]
+    }
+  }
+}

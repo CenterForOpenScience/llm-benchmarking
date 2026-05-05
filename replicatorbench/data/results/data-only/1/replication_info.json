@@ -1,0 +1,82 @@
+{
+  "replication_study": {
+    "hypothesis": "At the county level in the U.S., a higher 2016 Trump vote share is associated with less social distancing during March 19\u201328, 2020, operationalized as a more positive percent change in average distance traveled per person relative to matched weekdays in a pre-COVID baseline; specifically, an interquartile-range (0.203) increase in Trump share will increase the outcome by approximately +4.1 percentage points (less distancing).",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "Unacast-derived Mobility and County Variables (transportation.csv, county_variables.csv)",
+      "source_type": "Aggregated mobility database and county-level demographic/election data",
+      "wave_or_subset": "Outcome averaged for March 19\u201328, 2020 relative to matched weekdays in a pre-COVID baseline (operationalized as February 2020).",
+      "sample_size": "Target ~3,037 counties (after merges and listwise deletion; exact N saved in /app/data/replication_results.json).",
+      "unit_of_analysis": "County",
+      "access_details": "Local CSVs provided in the replication_data folder; for execution, place transportation.csv and county_variables.csv into /app/data inside the container or environment.",
+      "qualification": {
+        "explanation": "The provided datasets contain the necessary mobility and county-level political/socioeconomic covariates to recreate the original cross-sectional analysis with state fixed effects. They are sufficiently similar to the original sources to maintain fidelity while enabling a fresh replication using the same timeframe.",
+        "similarity_to_original": "Original paper uses Unacast mobility and county-level Trump vote share with ACS covariates (original_paper.pdf, Methods; post_registration.json original_study.data.source). The replication dataset transportation.csv includes per-county daily mobility distribution by trip distances and population at home/not home; county_variables.csv includes trump_share, income_per_capita, demographics, industries, and rurality (columns verified via dataset inspection). The focal time window is March 19\u201328, 2020 (original_paper.pdf Figure 1 and Table 1; post_registration.json).",
+        "deviation_from_original": "Baseline in the original is a pre-COVID-19 reference week with matched weekdays (original_paper.pdf Methods). In this replication, matched weekdays are computed using February 2020 (transportation.csv coverage verified), which is a close proxy but not necessarily the exact reference week. Also, average distance traveled per person is reconstructed from trip-distance bins using midpoint approximations, whereas the original Unacast measure may use proprietary distance computation; this could introduce measurement deviation. Finally, we scale the Trump-share coefficient by the original IQR (0.203) from post_registration.json to report a comparable effect size."
+      },
+      "notes": "Outcome sign convention matches the original: more negative values indicate greater social distancing. Data are large (~1.95M county-day rows; 3142 per day in transportation.csv). The computation approximates distances using midpoints for trip bins. Baseline uses February 2020 matched weekdays for practical reproducibility. Missing data are handled by listwise deletion in the final regression data. Ensure CSV encoding is UTF-8."
+    },
+    "planned_method": {
+      "steps": [
+        "Place transportation.csv and county_variables.csv into /app/data.",
+        "Compute daily average distance traveled per person for each county-day by summing trips in each distance bin multiplied by bin midpoints, dividing by (pop_home + pop_not_home).",
+        "Compute matched-weekday baseline means in February 2020 (pre-COVID proxy) per county-weekday.",
+        "Compute percent change vs. baseline for each county-day: (current - baseline)/baseline * 100.",
+        "Aggregate the outcome by averaging percent change over March 19\u201328, 2020 for each county.",
+        "Merge with county-level covariates including trump_share, income_per_capita, demographics, industry shares, rurality, and state_po.",
+        "Estimate OLS with state fixed effects (C(state_po)) and cluster-robust standard errors by state.",
+        "Extract the coefficient on trump_share and scale by IQR=0.203 to obtain percentage-point effect, with 95% CI and p-value.",
+        "Save analysis dataset and results to /app/data."
+      ],
+      "models": "Cross-sectional OLS with state fixed effects and standard errors clustered by state.",
+      "outcome_variable": "Percent change in average distance traveled per person (county-day) relative to matched weekdays in February 2020, averaged over 2020-03-19 to 2020-03-28 (negative = more social distancing).",
+      "independent_variables": "2016 county-level share of votes for President Trump (trump_share).",
+      "control_variables": "income_per_capita; percent_college; percent_male; percent_black; percent_hispanic; age shares (percent_under_5, percent_5_9, percent_10_14, percent_15_19, percent_20_24, percent_25_34, percent_35_44, percent_45_54, percent_55_59, percent_60_64, percent_65_74, percent_75_84, percent_85_over); employment shares (percent_retail, percent_transportation, percent_hes); percent_rural; state fixed effects (C(state_po)).",
+      "tools_software": "Python 3.10+; pandas, numpy, statsmodels, patsy.",
+      "planned_estimation_and_test": {
+        "estimation": "Coefficient on trump_share and its interquartile-range-scaled effect (IQR=0.203) in percentage points.",
+        "test": "Two-sided t-test on coefficient with cluster-robust SEs clustered by state."
+      },
+      "missing_data_handling": "Listwise deletion after merging and type coercion.",
+      "multiple_testing_policy": "Not applicable (single focal effect).",
+      "inference_criteria": "Primary criteria: sign (positive coefficient indicating less distancing), statistical significance at alpha=0.05, and IQR-scaled effect size close to +4.1 pp with 95% CI overlapping the original (3.0\u20135.2 pp)."
+    },
+    "codebase": {
+      "files": {
+        "replicate_social_distancing.py": "Entry-point Python script. Reads /app/data/transportation.csv and /app/data/county_variables.csv; computes outcome using February 2020 matched-weekday baseline; merges covariates; runs OLS with state fixed effects and clustered SEs by state; outputs /app/data/regression_data.csv and /app/data/replication_results.json."
+      },
+      "notes": "All IO is hard-coded to /app/data. No non-Python scripts are used. Dependencies: pandas, numpy, statsmodels, patsy. A brief README is included (README_replicate_social_distancing.txt) but is not executed."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "numpy>=1.24.0,<2.0.0",
+          "pandas>=1.5.0,<2.2.0",
+          "statsmodels>=0.13.5,<0.15.0",
+          "patsy>=0.5.3,<0.6.0"
+        ],
+        "other": [
+          "bash"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": [
+        "Ensure transportation.csv and county_variables.csv are present in ./data on the host.",
+        "Run: python /app/data/original/1/data-only/replication_data/replicate_social_distancing.py (or copy the script into the container WORKDIR and execute).",
+        "Check outputs in /app/data: replication_results.json for summary metrics and regression_data.csv for the analysis dataset.",
+        "Compare the IQR-scaled effect and CI to the original (4.1 pp decrease in distancing per IQR increase in Trump share; 95% CI 3.0\u20135.2; p<0.001). Note that a positive coefficient on trump_share increases the outcome (which is defined so that negative indicates more distancing), thus indicating less distancing."
+      ],
+      "comparison_metrics": "Direction of effect (positive indicates less distancing), IQR-scaled effect magnitude (pp) vs. 4.1, 95% confidence interval overlap with (3.0, 5.2), and p-value threshold (alpha=0.05)."
+    }
+  }
+}

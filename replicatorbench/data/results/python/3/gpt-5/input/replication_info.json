@@ -1,0 +1,83 @@
+{
+  "replication_study": {
+    "hypothesis": "Across countries, a one-unit increase in the democracy index (EIU scale 0\u201310) is associated with a higher number of confirmed COVID-19 infections per one million people, measured over the post-original time window (2020-04-04 to 2020-08-11).",
+    "study_type": "Observational",
+    "data_plan": {
+      "dataset_identifier": "COVID replication.rds (country-level cross-section)",
+      "source_type": "Compiled cross-country dataset (ECDC COVID counts + population; EIU democracy via Gapminder; trade openness via World Bank; temperature averages).",
+      "wave_or_subset": "Use the post-original window: COVID.04.04_08.11 for cases between 2020-04-04 and 2020-08-11 (independent of the original 2020-04-03 snapshot).",
+      "sample_size": "To be determined at runtime from the dataset after listwise deletion (expected around 160 countries).",
+      "unit_of_analysis": "Country",
+      "access_details": "Provided locally in /app/data as 'COVID replication.rds'.",
+      "qualification": {
+        "explanation": "This dataset operationalizes the same constructs as the original paper (cases per million, democracy index, temperature, trade openness) but enables evaluation on a different time window not used in the original analysis, providing an independent sample to test robustness of the association.",
+        "similarity_to_original": "Variables align with the original study (post_registration.json: outcome Y is cases per million; predictors include democracy index, temperature, openness). In the dataset (replication_data), we have 'Democracy index (EIU)' for democracy, 'Annual_temp' for temperature, 'trade.2016' for openness, 'popData2019' for population, and COVID case counts per windows ('COVID.12.31_04.03', 'COVID.04.04_08.11', 'COVID.12.31_08.11').",
+        "deviation_from_original": "Original measured Y on 2020-04-03 (post_registration.json). Here, we will use a non-overlapping window after 2020-04-03, specifically 'COVID.04.04_08.11' (from the RDS columns), creating an independent sample in time while holding country units and measurement definitions constant. The do-file also documents dataset option 2 for this post-original window."
+      },
+      "notes": "Column names differ slightly from the .do file (e.g., Democracy index labeled 'Democracy index (EIU)', trade openness as 'trade.2016'). Democracy from Gapminder is on 0\u2013100 scale and should be divided by 10 to match EIU 0\u201310 (as noted in the .do file). No precipitation variable is present in the provided dataset; the .do file also excludes precipitation and population density following the original paper\u2019s findings. We will perform listwise deletion for missing values."
+    },
+    "planned_method": {
+      "steps": [
+        "Load '/app/data/COVID replication.rds'.",
+        "Select the independent replication time window by setting total_cases = COVID.04.04_08.11.",
+        "Compute cases_per_million = total_cases / popData2019 * 1e6.",
+        "Construct democracy = [Democracy index (EIU)] / 10 to map Gapminder 0\u2013100 to EIU 0\u201310.",
+        "Rename/prepare controls: temperature = Annual_temp; openness = trade.2016.",
+        "Restrict to rows with non-missing values for cases_per_million, democracy, temperature, and openness.",
+        "Estimate OLS: cases_per_million ~ democracy + temperature + openness.",
+        "Store coefficient, standard error, t-statistic, p-value for democracy; report model fit (R^2, n).",
+        "Run sensitivity using alternative time windows (optional): COVID.12.31_08.11 for robustness.",
+        "Export a CSV of regression results and a PDF/PNG of coefficient plot to /app/data."
+      ],
+      "models": "OLS linear regression with heteroskedasticity-robust (HC1/HC3) standard errors.",
+      "outcome_variable": "cases_per_million constructed from COVID.04.04_08.11 and popData2019.",
+      "independent_variables": "democracy (EIU 0\u201310), temperature (Annual_temp), openness (trade.2016).",
+      "control_variables": "temperature, openness.",
+      "tools_software": "Python 3.10; pandas, statsmodels, pyreadr (or pandas.read_stata if using .dta), numpy, matplotlib or seaborn.",
+      "planned_estimation_and_test": {
+        "estimation": "Coefficient on democracy (slope) in the OLS model predicting cases per million.",
+        "test": "t-test on the democracy coefficient (H0: beta_democracy = 0; HA: beta_democracy > 0)."
+      },
+      "missing_data_handling": "Listwise deletion on variables required for the main model.",
+      "multiple_testing_policy": "Not applicable for the focal claim; if multiple windows are analyzed, report unadjusted p-values and label as robustness.",
+      "inference_criteria": "Primary success criterion: democracy coefficient > 0 and statistically significant at alpha=0.05 (one-sided). Also report two-sided p-values."
+    },
+    "codebase": {
+      "files": {
+        "replicate_hossain2020__py.py": "Python translation of the provided Stata do-file logic focusing on the SCORE claim. Reads '/app/data/COVID replication.rds', constructs cases_per_million for the post-original window, prepares democracy (scaled to 0\u201310), temperature, and openness variables, runs OLS with robust SEs, and writes results and diagnostics to '/app/data'.",
+        "utils_io__py.py": "Helper functions for reading RDS and handling column standardization and saving outputs in '/app/data'.",
+        "README_replication.txt": "Instructions to run the replication script and a brief description of data fields used."
+      },
+      "notes": "All IO must use '/app/data'. Non-Python scripts are not executed; their logic is translated to Python per RUN POLICY. The code will handle column name differences (periods vs underscores) and democracy scaling."
+    },
+    "docker_specs": {
+      "base_image": "python:3.10-slim",
+      "packages": {
+        "python": [
+          "pandas>=2.0.3",
+          "numpy>=1.24.0",
+          "statsmodels>=0.14.0",
+          "pyreadr>=0.4.9",
+          "matplotlib>=3.7.2",
+          "seaborn>=0.12.2"
+        ],
+        "other": [
+          "git",
+          "wget"
+        ]
+      },
+      "hardware": {
+        "gpu_support": "false",
+        "min_gpu_memory_gb": "0",
+        "min_ram_gb": "4"
+      },
+      "volumes": [
+        "./data:/app/data"
+      ]
+    },
+    "analysis": {
+      "instructions": "1) Place 'COVID replication.rds' in ./data so it is accessible at /app/data. 2) Run: python replicate_hossain2020__py.py. 3) Inspect '/app/data/replication_results.csv' and '/app/data/coef_plot.png'.",
+      "comparison_metrics": "Compare sign and significance of the democracy coefficient; compare magnitude to original (86.76 per unit of democracy on 0\u201310 scale per unit people per million). Report coefficient, SE, t, p, R^2, and n."
+    }
+  }
+}
