@@ -10,6 +10,7 @@ from core.agent import run_react_loop, save_output
 from core.prompts import PREAMBLE_ROBUSTNESS, EXECUTE, EXAMPLE_ROBUSTNESS, ROBUSTNESS_EXECUTE_CODE_MODE_POLICY
 from core.utils import configure_file_logging, get_logger
 from info_extractor.file_utils import read_json
+from robustness.validator.execute_feedback import run_evaluate_execute_feedback
 
 # Execute-stage-only tools
 from robustness.executor.execute_tools import (
@@ -164,7 +165,8 @@ Answer: [Execute necessary next action to help you solve the task]
             ),
             model_name=model_name,
             logger=logger,
-            code_mode=code_mode
+            code_mode=code_mode,
+            feedback_function=run_evaluate_execute_feedback
         )
     finally:
         ROBUSTNESS_EXECUTE_CONSTANTS["files"] = prev_files

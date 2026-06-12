@@ -94,3 +94,8 @@ robustness-execute: check-deps
 evaluate-execute-capability: check-deps
 	python -m robustness.validator --stage evaluate-execute-capability  --study-path $(STUDY)  --model-name $(EVAL_MODEL)
 
+
+
+evaluate-execute-feedback: check-deps
+	python -m robustness.validator --stage evaluate-execute-feedback  --study-path $(STUDY)  --model-name $(EVAL_MODEL)
+

@@ -3,7 +3,8 @@ from core.constants import DEFAULT_CODE_MODE, CODE_MODE_CHOICES
 
 def main():
     p = argparse.ArgumentParser("generate")
-    p.add_argument("--stage", choices=["evaluate-execute-capability"], required=True)
+    p.add_argument("--stage", choices=["evaluate-execute-capability", 
+                                       "evaluate-execute-feedback"], required=True)
     p.add_argument("--tier", choices=["easy", "medium", "hard"], default="easy")
     p.add_argument("--study-path", required=True)
     p.add_argument("--templates-dir", default="./templates")
@@ -16,6 +17,14 @@ def main():
         from robustness.validator.evaluate_execute_capability import run_evaluate_execute_capability
         # run helper agent to generate input analysis for executor
         run_evaluate_execute_capability(args.study_path,
+        	tier=args.tier,
+        	code_mode=args.code_mode,
+        	model_name=args.model_name
+        )
+    elif args.stage == "evaluate-execute-feedback":
+        from robustness.validator.execute_feedback import run_evaluate_execute_feedback
+        # run helper agent to generate input analysis for executor
+        run_evaluate_execute_feedback(args.study_path,
         	tier=args.tier,
         	code_mode=args.code_mode,
         	model_name=args.model_name
