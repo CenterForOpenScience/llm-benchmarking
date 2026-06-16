@@ -266,7 +266,7 @@ def ask_human_input(question: str) -> str:
     return human_response
 
 
-def list_files_in_folder(study_path, folder_path: str = None) -> str:
+def list_files_in_folder(study_path, folder_path: str = None, strs2avoid = []) -> str:
     """
     Recursively lists all files within a specified folder and its subfolders.
     Automatically adapts to both OpenAI JSON tool calls and ReAct text parsers.
@@ -311,7 +311,8 @@ def list_files_in_folder(study_path, folder_path: str = None) -> str:
 
     file_paths = []
     # evals added to avoid cheating
-    strs2avoid = ["human_preregistration", "metadata.json", "human_report", "llm_eval", "expected_post_registration", "evals"]
+    # strs2avoid = ["human_preregistration", "metadata.json", "human_report", "llm_eval", "expected_post_registration", "evals"]
+    strs2avoid.extend(["human_preregistration", "metadata.json", "human_report", "llm_eval", "expected_post_registration", "evals"])
 
     # Walk through all directories and subdirectories
     for current_root, _, files in os.walk(folder_path):

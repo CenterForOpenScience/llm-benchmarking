@@ -151,7 +151,7 @@ EVALUATE_INTERPRET_CONSTANTS = {
 ### ROBUSTNESS CONSTANTS
 
 GEN_GOLD_ANALYSIS_CONSTANTS = {
-    "analysis_schema": "robustness/templates/analysis_info.json",
+    "analysis_schema": "robustness/templates/execute_in_schema.json",
 }
 
 
@@ -161,5 +161,6 @@ ROBUSTNESS_EXECUTE_CONSTANTS = {
         "analysis_info.json": "A structured document with plans for proposed analysis of the claim.",
         "data": "The folder containing the data and code that can be used for the replication.",
     },
-    "json_template": "templates/execute_schema.json"
+    "json_template": "robustness/templates/execute_out_schema.json"
+    
 }

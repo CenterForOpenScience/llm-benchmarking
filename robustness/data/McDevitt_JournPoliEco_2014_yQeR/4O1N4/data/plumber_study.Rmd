@@ -1,0 +1,347 @@
+---
+title: "Multi100 Study"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+### Claim: The average plumbing firm whose name begins with A or a number receives more service complaints than other firms.
+
+# Load packages
+
+```{r setup, include=TRUE}
+library(tidyverse)
+library(haven)
+library(stats)
+library(sandwich)
+library(msm)
+library(forcats)
+library(psych)
+library(MASS)
+library(lsr)
+
+library(pscl)
+
+library(boot)
+
+select <- dplyr::select
+```
+
+# Read data and get info
+
+```{r}
+df <- read_dta('final_data.dta')
+str(df)
+```
+```{r}
+summary(df)
+```
+
+
+# descriptives and histograms
+
+```{r}
+describe(df)
+```
+```{r}
+df %>% count(chicago)
+```
+```{r}
+df %>% count(first_A)
+```
+```{r}
+hist(df$emp_size)
+```
+```{r}
+hist(log(df$emp_size))
+```
+```{r}
+df %>% count(multiple_names)
+```
+
+```{r}
+hist(df$complaints_2008)
+```
+
+```{r}
+hist(df$ad_spending)
+```
+
+```{r}
+hist(df$firm_age)
+```
+
+
+# correlations
+
+```{r}
+temp <- data.frame(df[,c("first_A", "ad_spending","complaints_2008", "firm_age", "emp_size", "fixedfee", "hourlyrate", "total_price", "num_names_2008", "multiple_names")])
+correlate(temp, test = TRUE, p.adjust.method = 'none')
+```
+
+# center/factorize variables
+
+```{r}
+df <- df %>%
+  mutate(first_A = as.factor(first_A),
+         ad_spendingS = scale(ad_spending),
+         ad_spendingC = scale(ad_spending, scale = FALSE),
+         ad_spendinglogC = scale(log(ad_spending), scale = FALSE),
+         firm_ageC = scale(firm_age, scale = FALSE),
+         emp_sizeC = scale(log(emp_size), scale = FALSE),
+         fixedfeeC = scale(fixedfee, scale = FALSE),
+         hourlyrateC = scale(hourlyrate, scale = FALSE),
+         num_names_2008C = scale(num_names_2008, scale = FALSE),
+         multiple_names = as.factor(multiple_names),
+         chicago = as.factor(chicago),
+         total_priceC = scale(total_price, scale = FALSE),
+         has_fixed_fee = as.factor(has_fixed_fee),
+         on_google = as.factor(on_google),
+         emergency = as.factor(emergency)
+         )
+```
+
+# set contrasts
+
+I prefer effect coding
+
+```{r}
+contrasts(df$first_A) <- c(-.5, .5)
+contrasts(df$chicago) <- c(-.5, .5)
+contrasts(df$multiple_names) <- c(-.5, .5)
+contrasts(df$has_fixed_fee) <- c(-.5, .5)
+contrasts(df$on_google) <- c(-.5, .5)
+contrasts(df$emergency) <- c(-.5, .5)
+```
+
+# descriptive graphs
+
+```{r}
+ggplot(df, mapping = aes(x = first_A, y = complaints_2008)) +
+      stat_summary(fun.data = mean_cl_normal, geom = "bar", position = position_dodge()) +
+  stat_summary(geom = "errorbar", fun.data = mean_cl_normal, width = .5, position = position_dodge(.95))  +
+  labs(y = "# of complaints")+theme_gray(base_size = 18)
+```
+
+```{r}
+ggplot(df, mapping = aes(x = first_A, y = complaints_2008, group = chicago, fill = chicago)) +
+      stat_summary(fun.data = mean_cl_normal, geom = "bar", position = position_dodge()) +
+  stat_summary(geom = "errorbar", fun.data = mean_cl_normal, width = .5, position = position_dodge(.95)) + scale_fill_discrete(name = "chicago", labels = c("outside metro", "metro")) + labs(y = "# of complaints")+theme_gray(base_size = 18)
+```
+
+```{r}
+ggplot(df, mapping = aes(x = first_A, y = complaints_2008, group = on_google, fill = on_google)) +
+      stat_summary(fun.data = mean_cl_normal, geom = "bar", position = position_dodge()) +
+  stat_summary(geom = "errorbar", fun.data = mean_cl_normal, width = .5, position = position_dodge(.95)) + scale_fill_discrete(name = "on google", labels = c("no", "yes")) + labs(y = "# of complaints")+theme_gray(base_size = 18)
+```
+
+```{r}
+ggplot(df, mapping = aes(x = first_A, y = complaints_2008, group = has_fixed_fee, fill = has_fixed_fee)) +
+      stat_summary(fun.data = mean_cl_normal, geom = "bar", position = position_dodge()) +
+  stat_summary(geom = "errorbar", fun.data = mean_cl_normal, width = .5, position = position_dodge(.95)) + scale_fill_discrete(name = "has fixed fee", labels = c("no", "yes")) + labs(y = "# of complaints")+theme_gray(base_size = 18)
+```
+```{r}
+
+ggplot(df, mapping = aes(x = first_A, y = complaints_2008, group = emergency, fill = emergency)) +
+      stat_summary(fun.data = mean_cl_normal, geom = "bar", position = position_dodge()) +
+  stat_summary(geom = "errorbar", fun.data = mean_cl_normal, width = .5, position = position_dodge(.95)) + scale_fill_discrete(name = "emergency", labels = c("no", "yes")) + labs(y = "# of complaints")+theme_gray(base_size = 18)
+```
+
+```{r}
+ggplot(data = df, aes(x = total_price, y = complaints_2008)) + geom_point() + geom_smooth(method = "lm") + scale_color_brewer(palette = "Set1") + labs(x = "total price", y = "# of complaints") + theme_grey()
+```
+```{r}
+ggplot(data = df, aes(x = log(emp_size), y = complaints_2008)) + geom_point() + geom_smooth(method = "lm") + scale_color_brewer(palette = "Set1") + labs(x = "employee size", y = "# of complaints") + theme_grey()
+```
+
+```{r}
+
+ggplot(data = df, aes(x = firm_age, y = complaints_2008)) + geom_point() + geom_smooth(method = "lm") + scale_color_brewer(palette = "Set1") + labs(x = "firm age", y = "# of complaints") + theme_grey()
+
+```
+
+
+# regressions
+
+## Poisson regression first_A alone
+
+```{r}
+model0 <- glm(complaints_2008~first_A, df, family = 'poisson')
+summary(model0)
+confint(model0)
+```
+
+### robust standard errors
+```{r}
+cov.model0 <- vcovHC(model0, type="HC0")
+std.err <- sqrt(diag(cov.model0))
+r.est <- cbind(Estimate= coef(model0), "Robust SE" = std.err,
+"Pr(>|z|)" = 2 * pnorm(abs(coef(model0)/std.err), lower.tail=FALSE),
+LL = coef(model0) - 1.96 * std.err,
+UL = coef(model0) + 1.96 * std.err)
+
+r.est
+```
+
+
+### incident rate ratios
+```{r}
+s <- deltamethod(list(~ exp(x1)), 
+                      coef(model0), cov.model0)
+
+## exponentiate old estimates dropping the p values
+rexp.est <- exp(r.est[, -3])
+## replace SEs with estimates for exponentiated coefficients
+rexp.est[, "Robust SE"] <- s
+
+rexp.est
+```
+
+```{r}
+describe(df)
+```
+
+
+## Poisson regression without first_A
+
+```{r}
+model1 <- glm(complaints_2008~firm_ageC + emp_sizeC + num_names_2008C + ad_spendingC, df, family = 'poisson')
+summary(model1)
+```
+
+### robust standard errors
+```{r}
+cov.model1 <- vcovHC(model1, type="HC0")
+std.err <- sqrt(diag(cov.model1))
+r.est <- cbind(Estimate= coef(model1), "Robust SE" = std.err,
+"Pr(>|z|)" = 2 * pnorm(abs(coef(model1)/std.err), lower.tail=FALSE),
+LL = coef(model0) - 1.96 * std.err,
+UL = coef(model0) + 1.96 * std.err)
+
+r.est
+```
+
+### incident rate ratios
+```{r}
+s <- deltamethod(list(~ exp(x1), ~ exp(x2), ~ exp(x3), ~ exp(x4), ~ exp(x5)), 
+                      coef(model1), cov.model1)
+
+## exponentiate old estimates dropping the p values
+rexp.est <- exp(r.est[, -3])
+## replace SEs with estimates for exponentiated coefficients
+rexp.est[, "Robust SE"] <- s
+
+rexp.est
+```
+
+## Poisson regression including some controls
+
+```{r}
+model2 <- glm(complaints_2008~first_A + firm_ageC + emp_sizeC + num_names_2008C + ad_spendingC, df, family = 'poisson')
+summary(model2)
+```
+### robust standard errors
+```{r}
+cov.model2 <- vcovHC(model2, type="HC0")
+std.err <- sqrt(diag(cov.model2))
+r.est <- cbind(Estimate= coef(model2), "Robust SE" = std.err,
+"Pr(>|z|)" = 2 * pnorm(abs(coef(model2)/std.err), lower.tail=FALSE),
+LL = coef(model2) - 1.96 * std.err,
+UL = coef(model2) + 1.96 * std.err)
+
+r.est
+```
+
+
+### incident rate ratios
+```{r}
+s <- deltamethod(list(~ exp(x1), ~ exp(x2), ~ exp(x3), ~ exp(x4), ~ exp(x5), ~ exp(x6)), 
+                      coef(model2), cov.model2)
+
+## exponentiate old estimates dropping the p values
+rexp.est <- exp(r.est[, -3])
+## replace SEs with estimates for exponentiated coefficients
+rexp.est[, "Robust SE"] <- s
+
+rexp.est
+```
+
+
+
+## Poisson regression including all controls
+
+```{r}
+model3 <- glm(complaints_2008~first_A + firm_ageC + emp_sizeC + num_names_2008C + multiple_names + chicago + ad_spendingC + on_google, df, family = 'poisson')
+summary(model3)
+```
+
+### robust standard errors
+```{r}
+cov.model3 <- vcovHC(model3, type="HC0")
+std.err <- sqrt(diag(cov.model3))
+r.est <- cbind(Estimate= coef(model3), "Robust SE" = std.err,
+"Pr(>|z|)" = 2 * pnorm(abs(coef(model3)/std.err), lower.tail=FALSE),
+LL = coef(model3) - 1.96 * std.err,
+UL = coef(model3) + 1.96 * std.err)
+
+r.est
+```
+
+## incidence rate ratios
+
+```{r}
+s <- deltamethod(list(~ exp(x1), ~ exp(x2), ~ exp(x3), ~ exp(x4), ~ exp(x5), ~ exp(x6), ~ exp(x7), ~ exp(x8), ~ exp(x9)), 
+                      coef(model3), cov.model3)
+
+## exponentiate old estimates dropping the p values
+rexp.est <- exp(r.est[, -3])
+## replace SEs with estimates for exponentiated coefficients
+rexp.est[, "Robust SE"] <- s
+
+rexp.est
+
+```
+
+Looks like when we use robust SE, the 95% CI for first_A includes zero, suggesting that our model is mispecified. Let's try a negative binomial regression given that the negative binomial does not assume the variance equals the mean. In the poisson regression result, you can see the deviance is quite high, again suggesting poisson may not be the best choice. 
+
+## Negative binomial regression including some controls
+
+```{r}
+summary(m1 <- glm.nb(complaints_2008 ~ first_A + firm_ageC + emp_sizeC + num_names_2008C + multiple_names + chicago + ad_spendingC + on_google, df))
+```
+
+The negative binomial is significantly better than the poisson. 
+
+```{r}
+vuong(m1, model3)
+```
+Let's go with the negative binomial. 
+
+What is the role of first_A? Let's omit it and compare models. Looks like including it does give us more predictive power.
+
+```{r}
+m1.1 <- update(m1, . ~ . - first_A)
+anova(m1, m1.1)
+```
+
+Confidence intervals...
+
+```{r}
+(est <- cbind(Estimate = coef(m1), confint(m1)))
+```
+
+incident rate ratios
+
+```{r}
+exp(est)
+```
+
+
+
+### Claim: The average plumbing firm whose name begins with A or a number receives more service complaints than other firms.
+
+### Conclusion: There is evidence that relative to non-A/non-number plumbing firms, A-name/number-name plumbing firms received more service complaints than other firms. With less control variables, it does seem that A-name/number-name plumbing firms receive significantly more complaints (2.48 X more). Including more control variables, this pattern is attenuated, but still significant-- firms with A/number names received 1.77 X more complaints.
+
+### What did we do differently from the paper? We noticed given that the 95% CIs in the robust SE analyses included zero, and looking at the patterns in the graphs, that there was a violation of the assumption in poisson regression that the variance is the mean. We then tried negative binomial regression.
+
+### Other comments: It would have been nice to get the alphabet/positioning of the other firms (the non-A firms), so we could see the pattern as we get farther from A, or to see at what point is this primacy effect attenuated (at B? at C?).

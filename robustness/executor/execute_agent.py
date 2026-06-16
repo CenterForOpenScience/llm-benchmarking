@@ -7,9 +7,10 @@ from typing import Dict, Any
 from core.constants import ROBUSTNESS_EXECUTE_CONSTANTS
 from core.actions import base_known_actions, get_execute_tool_definitions
 from core.agent import run_react_loop, save_output
-from core.prompts import PREAMBLE, EXECUTE, EXAMPLE, ROBUSTNESS_EXECUTE_CODE_MODE_POLICY
+from core.prompts import PREAMBLE_ROBUSTNESS, EXECUTE, EXAMPLE_ROBUSTNESS, ROBUSTNESS_EXECUTE_CODE_MODE_POLICY
 from core.utils import configure_file_logging, get_logger
 from info_extractor.file_utils import read_json
+from robustness.validator.execute_feedback import run_evaluate_execute_feedback
 
 # Execute-stage-only tools
 from robustness.executor.execute_tools import (
@@ -26,7 +27,7 @@ from robustness.executor.orchestrator_tool import (
 )
 
 logger, formatter = get_logger(name="robustness")
-system_prompt = "\n\n".join([PREAMBLE, EXECUTE, EXAMPLE])
+system_prompt = "\n\n".join([PREAMBLE_ROBUSTNESS, EXECUTE, EXAMPLE_ROBUSTNESS])
 
 # Map action names to their functions
 known_actions = {
@@ -65,11 +66,11 @@ CHECKPOINT_MAP = {
 }
 
 
-def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates", tier="easy", code_mode: str = "python", model_name: str="gpt-4o"):
+def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./robustness/templates", tier="easy", code_mode: str = "python", model_name: str="gpt-5"):
     configure_file_logging(logger, study_path, f"execute_{tier}__{code_mode}.log")
     logger.info(f"[agent] dynamic orchestrator run loop for: {study_path}")
 
-    schema_path = os.path.join(templates_dir, "execute_schema.json")
+    schema_path = os.path.join(templates_dir, "execute_out_schema.json")
     prev_files = ROBUSTNESS_EXECUTE_CONSTANTS.get("files", {}).copy()
     prev_template = ROBUSTNESS_EXECUTE_CONSTANTS.get("json_template")
 
@@ -81,7 +82,7 @@ def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str =
         }
         ROBUSTNESS_EXECUTE_CONSTANTS["json_template"] = schema_path
 
-        code_policy = ROBUSTNESS_EXECUTE_CODE_MODE_POLICY.get(code_mode, ROBUSTNESS_EXECUTE_CODE_MODE_POLICY["python"])
+        code_policy = ROBUSTNESS_EXECUTE_CODE_MODE_POLICY.get(code_mode, ROBUSTNESS_EXECUTE_CODE_MODE_POLICY["native"])
 
         instruction = f"""
 Your goal is to successfully execute the analysis of a given claim in social science inside a Docker container.
@@ -162,7 +163,10 @@ Answer: [Execute necessary next action to help you solve the task]
                 filename="execution_results.json",
                 stage_name="execute"
             ),
-            model_name=model_name
+            model_name=model_name,
+            logger=logger,
+            code_mode=code_mode,
+            feedback_function=run_evaluate_execute_feedback
         )
     finally:
         ROBUSTNESS_EXECUTE_CONSTANTS["files"] = prev_files

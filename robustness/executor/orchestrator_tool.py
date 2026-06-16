@@ -1,8 +1,10 @@
 from __future__ import annotations
+import io
 import json
 import os
 import re
 import platform as _pyplat
+import tarfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
@@ -35,6 +37,7 @@ class ExecutionPlan:
 # Helpers & constants
 DEFAULT_IMAGE_NAME = "analysis-exec"
 DEFAULT_CONTAINER_NAME = "analysis-runner"
+COPIED_OUTPUTS_DIRNAME = "_copied_outputs"
 
 def _detect_lang_from_ext(filename: str) -> str:
     f = filename.lower()
@@ -56,6 +59,89 @@ def _paths(study_path: str) -> Tuple[Path, Path, Path, Path, Path]:
     art_dir.mkdir(parents=True, exist_ok=True)
     return study_dir, runtime_dir, art_dir, (runtime_dir / "Dockerfile"), (study_dir / "analysis_info.json")
 
+def _copied_outputs_dir(study_path: str) -> Path:
+    study_dir = Path(study_path).resolve()
+    copied_dir = study_dir / COPIED_OUTPUTS_DIRNAME
+    copied_dir.mkdir(parents=True, exist_ok=True)
+    return copied_dir
+
+def _copy_container_dir(container_name: str, container_dir: str, host_dir: Path) -> None:
+    if not _container_path_exists(container_name, container_dir):
+        return
+
+    cli = _require_docker()
+    container = cli.containers.get(container_name)
+    stream, _ = container.get_archive(container_dir)
+    archive = io.BytesIO()
+    for chunk in stream:
+        archive.write(chunk)
+    if archive.tell() == 0:
+        return
+
+    archive.seek(0)
+    root_name = Path(container_dir).name
+
+    with tarfile.open(fileobj=archive) as tar:
+        for member in tar.getmembers():
+            member_path = Path(member.name)
+            parts = member_path.parts
+            if parts and parts[0] == root_name:
+                rel_parts = parts[1:]
+            else:
+                rel_parts = parts
+
+            if not rel_parts or any(part == ".." for part in rel_parts):
+                continue
+
+            dest = host_dir.joinpath(*rel_parts)
+            if member.isdir():
+                dest.mkdir(parents=True, exist_ok=True)
+                continue
+
+            if not member.isfile():
+                continue
+
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                continue
+
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with dest.open("wb") as f:
+                f.write(extracted.read())
+
+def _copy_container_outputs(study_path: str, container_name: str) -> None:
+    copied_root = _copied_outputs_dir(study_path)
+    for container_dir, local_name in (
+        ("/app/tmp", "app_tmp"),
+        ("/tmp/artifacts", "tmp_artifacts"),
+    ):
+        _copy_container_dir(container_name, container_dir, copied_root / local_name)
+
+def _list_local_output_files(study_path: str) -> List[str]:
+    study_dir, _, art_dir, _, _ = _paths(study_path)
+    arts: List[str] = []
+
+    if art_dir.exists():
+        try:
+            arts.extend(sorted([p.name for p in art_dir.iterdir() if p.is_file()]))
+        except Exception:
+            pass
+
+    copied_root = study_dir / COPIED_OUTPUTS_DIRNAME
+    if copied_root.exists():
+        try:
+            arts.extend(
+                sorted(
+                    path.relative_to(study_dir).as_posix()
+                    for path in copied_root.rglob("*")
+                    if path.is_file()
+                )
+            )
+        except Exception:
+            pass
+
+    return arts
+
 def _read_spec(study_path: str) -> Dict:
     study_dir, _, _, _, rep_info = _paths(study_path)
     if not rep_info.exists():
@@ -66,7 +152,7 @@ def shq(s: str) -> str:
     return "'" + s.replace("'", "'\"'\"'") + "'"
 
 # Planner
-def plan_from_analysis_info(analysis_info: Dict) -> ExecutionPlan:
+def plan_from_analysis_info(analysis_info: Dict, code_mode) -> ExecutionPlan:
     claim_id = (
         analysis_info.get("analysis_study", {})
         .get("metadata", {})
@@ -78,26 +164,36 @@ def plan_from_analysis_info(analysis_info: Dict) -> ExecutionPlan:
     if not codebase:
         # Fallback if codebase files empty but entry script might exist physically
         # We'll rely on agent to provide valid entry, or raise error later
-        entry = "main.py" 
+        ordered = ["main.py"]
         lang = "python"
     else:
         # Priority: .R, .py, .sh, else first
         keys = list(codebase.keys())
-        ordered = (
-            [k for k in keys if k.lower().endswith(".r")] +
-            [k for k in keys if k.lower().endswith(".py")] +
-            [k for k in keys if k.lower().endswith(".sh")] +
-            [k for k in keys if not (k.lower().endswith((".r",".py",".sh")))]
-        )
-        entry = ordered[0]
+        if code_mode == "python":
+            ordered = (
+                [k for k in keys if k.lower().endswith(".py")] +
+                # [k for k in keys if k.lower().endswith(".r")] +
+                [k for k in keys if k.lower().endswith(".sh")] +
+                [k for k in keys if not (k.lower().endswith((".r",".py",".sh")))]
+            )
+        else:
+            ordered = (
+                # [k for k in keys if k.lower().endswith(".py")] +
+                [k for k in keys if k.lower().endswith(".r")] +
+                [k for k in keys if k.lower().endswith(".sh")] +
+                [k for k in keys if not (k.lower().endswith((".r",".py",".sh")))]
+            )
+    
+    steps=[
+            PlanStep(name="prepare-env", type="orchestrator")
+    ]
+    for entry_id, entry in enumerate(ordered):
         lang = _detect_lang_from_ext(entry)
-
+        steps.append(PlanStep(name=f"run-analysis-{entry_id}", type="container", lang=lang, entry=entry))
+    
     return ExecutionPlan(
         plan_id=plan_id,
-        steps=[
-            PlanStep(name="prepare-env", type="orchestrator"),
-            PlanStep(name="run-analysis", type="container", lang=lang, entry=entry),
-        ],
+        steps=steps  
     )
 
 def _get_docker_specs(spec: Dict) -> Dict:
@@ -136,7 +232,10 @@ def orchestrator_generate_dockerfile(study_path: str) -> str:
 
         if r_pkgs:
             # Check if R is installed in base, if not install it
-            lines.append("RUN command -v R || (apt-get update && apt-get install -y r-base)")
+            #lines.append("RUN command -v R || (apt-get update && apt-get install -y r-base)")
+            lines.append("RUN apt-get update && apt-get install -y --no-install-recommends r-base r-base-dev && rm -rf /var/lib/apt/lists/*")
+            lines.append("RUN command -v Rscript && Rscript --version")
+            lines.append('RUN Rscript --version || true')
             rp = ",".join(f'"{p}"' for p in r_pkgs)
             lines.append(f"RUN R -q -e 'install.packages(c({rp}), repos=\"https://cloud.r-project.org\")'")
 
@@ -178,6 +277,7 @@ def orchestrator_build_image(study_path: str, image_name: str = DEFAULT_IMAGE_NA
             build_kwargs["platform"] = platform
 
         img, logs = cli.images.build(**build_kwargs)
+        (runtime_dir / "image_name.txt").write_text(image_name)
         return json.dumps({"ok": True, "image": image_name})
 
     except (BuildError, APIError) as e:
@@ -213,6 +313,9 @@ def orchestrator_run_container(
         cli = _require_docker()
         spec = _read_spec(study_path)
         study_dir, _, art_dir, _, _ = _paths(study_path)
+        image_file = study_dir / "_runtime" / "image_name.txt"
+        if image_file.exists():
+            image_name = image_file.read_text().strip()
 
         try:
             old = cli.containers.get(container_name)
@@ -314,13 +417,8 @@ def _exec_file(container_name: str, study_path: str, container_path: str, lang: 
     stdout = (stdout or b"").decode(errors="replace")
     stderr = (stderr or b"").decode(errors="replace")
 
-    _, _, art_dir, _, _ = _paths(study_path)
-    arts = []
-    if art_dir.exists():
-        try:
-            arts = sorted([p.name for p in art_dir.iterdir() if p.is_file()])
-        except Exception:
-            pass
+    _copy_container_outputs(study_path, container_name)
+    arts = _list_local_output_files(study_path)
 
     return {
         "ok": exit_code == 0,
@@ -330,10 +428,10 @@ def _exec_file(container_name: str, study_path: str, container_path: str, lang: 
         "artifacts": arts,
     }
 
-def orchestrator_plan(study_path: str) -> str:
+def orchestrator_plan(study_path: str, code_mode: str) -> str:
     try:
         spec = _read_spec(study_path)
-        plan = plan_from_analysis_info(spec)
+        plan = plan_from_analysis_info(spec, code_mode)
         out = {
             "plan_id": plan.plan_id,
             "steps": [{"name": s.name, "type": s.type, "lang": s.lang, "entry": s.entry} for s in plan.steps],
@@ -342,10 +440,10 @@ def orchestrator_plan(study_path: str) -> str:
     except Exception as e:
         return json.dumps({"ok": False, "error": str(e)})
 
-def orchestrator_preview_entry(study_path: str) -> str:
+def orchestrator_preview_entry(study_path: str, code_mode: str) -> str:
     try:
         spec = _read_spec(study_path)
-        plan = plan_from_analysis_info(spec)
+        plan = plan_from_analysis_info(spec, code_mode)
         step = next((s for s in plan.steps if s.type == "container"), None)
         if not step or not step.entry:
             return json.dumps({"ok": False, "error": "No container step or entry file specified."})
@@ -378,31 +476,22 @@ def orchestrator_preview_entry(study_path: str) -> str:
     except Exception as e:
          return json.dumps({"ok": False, "error": str(e)})
 
-def orchestrator_execute_entry(study_path: str) -> str:
+def orchestrator_execute_entry(study_path: str, code_mode: str) -> str:
     try:
         study_dir, _, _, _, _ = _paths(study_path)
         out_path = study_dir / "execution_result.json"
 
         spec = _read_spec(study_path)
-        plan = plan_from_analysis_info(spec)
+        plan = plan_from_analysis_info(spec, code_mode)
 
         results: Dict[str, Any] = {"plan_id": plan.plan_id, "steps": []}
         results["steps"].append({"name": "prepare-env", "ok": True})
-
-        step = next((s for s in plan.steps if s.type == "container"), None)
-        if not step or not step.entry:
-            # Should not happen if preview passed, but safe guard
-            return json.dumps({"ok": False, "error": "No entry file"})
-
-        found = _find_entry(DEFAULT_CONTAINER_NAME, study_path, step.entry)
-        if not found:
-            res = {"ok": False, "error": "Entry not found at runtime", "entry": step.entry}
-            out_path.write_text(json.dumps(res, indent=2))
-            return json.dumps(res)
-
-        ran = _exec_file(DEFAULT_CONTAINER_NAME, study_path, found, step.lang)
         
-        # We append the step details regardless of success so agent can see stderr
+
+        container_steps = [s for s in plan.steps if s.type == "container"]
+
+        if not container_steps:
+            return json.dumps({"ok": False, "error": "No entry files found to execute"})
         
         def _check_long_std(text: str, model_name="gpt-4o"):
             enc = tiktoken.encoding_for_model(model_name if model_name else "gpt-4")
@@ -419,17 +508,49 @@ def orchestrator_execute_entry(study_path: str) -> str:
                 ----------- TRUNCATED OUTPUT STREAM ------------
                 """
                 return f"{warning_message}\n{enc.decode(tokens[:MAX_TOKENS])}"
+
+        for step in container_steps:
+            if not step.entry:
+                continue
+
+            found = _find_entry(DEFAULT_CONTAINER_NAME, study_path, step.entry)
+            if not found:
+                res = {"ok": False, "error": f"Entry not found at runtime: {step.entry}", "entry": step.entry}
+                results["steps"].append(res)
+                continue  # or break, depending on whether you want to abort on failure
+
+            ran = _exec_file(DEFAULT_CONTAINER_NAME, study_path, found, step.lang)
+            
+            results["steps"].append({
+                "name": step.name,
+                "ok": ran.get("ok", False),
+                "exit_code": ran.get("exit_code"),
+                "stdout": _check_long_std(ran.get("stdout")),
+                "stderr": _check_long_std(ran.get("stderr")),
+                "artifacts": ran.get("artifacts", []),
+                "entry": step.entry,
+                "resolved_path": found,
+            })
+
+        # # Compute final status: True only if ALL container steps succeeded
+        # results["ok"] = all(s.get("ok", False) for s in results["steps"] if s["name"] != "prepare-env")
+
+        # out_path.write_text(json.dumps(results, indent=2))
+        # return json.dumps(results)
         
-        results["steps"].append({
-            "name": step.name,
-            "ok": ran.get("ok", False),
-            "exit_code": ran.get("exit_code"),
-            "stdout": _check_long_std(ran.get("stdout")),
-            "stderr": _check_long_std(ran.get("stderr")),
-            "artifacts": ran.get("artifacts", []),
-            "entry": step.entry,
-            "resolved_path": found,
-        })
+        # We append the step details regardless of success so agent can see stderr
+        
+        
+        # results["steps"].append({
+        #     "name": step.name,
+        #     "ok": ran.get("ok", False),
+        #     "exit_code": ran.get("exit_code"),
+        #     "stdout": _check_long_std(ran.get("stdout")),
+        #     "stderr": _check_long_std(ran.get("stderr")),
+        #     "artifacts": ran.get("artifacts", []),
+        #     "entry": step.entry,
+        #     "resolved_path": found,
+        # })
         results["ok"] = all(s.get("ok", False) for s in results["steps"] if s["name"] != "prepare-env")
 
         out_path.write_text(json.dumps(results, indent=2))
