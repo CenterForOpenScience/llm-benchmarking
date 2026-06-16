@@ -1,0 +1,336 @@
+##################### Multi 100
+### Title: Caste as an Impediment to Trade
+### Author: Siwan Anderson
+### Paper ID: Anderson_AmEcoJourn_2011_bLe8
+
+# Claim: ... [the study] finds substantially higher income for low-caste households residing in villages 
+# dominated by BACs [compared to villages dominated by upper caste]. (p. 240.)
+
+# Load basic packages
+library(haven)
+library(dplyr)
+library(parameters)
+
+# Import main data
+d <- read_dta('household.dta')
+
+
+########################## Compare with Table2 because their Ns seem to differ
+# Import table2 data
+table2 <- read_dta('table2.dta')
+
+selected <- d %>%
+  dplyr::select('hhcode', 'domlow')
+
+selected_table2 <- table2 %>%
+  dplyr::select('hhcode', 'domhigh')
+
+check <- left_join(selected_table2, selected, by='hhcode')
+
+############### Are there any inconsistencies across domlow and domhigh?
+check <- check %>%
+  mutate(Different = if_else(domlow == domhigh, 1, 0))
+############### Is there a missing in one dataset but not the other?
+check <- check %>%
+  mutate(Different = if_else(!is.na(domlow) & is.na(domhigh) | is.na(domlow) & !is.na(domhigh) , 1, 0))
+table(check$Different)
+
+####### There are two cases of households that are missing from the main dataframe but not from Table 2
+which_missing <- check %>%
+  filter(Different == TRUE)
+table(which_missing$hhcode)
+#### Household 2506 and 9204 are missing from the main file
+
+########### Merge domhigh from Table 2 with main file
+table2 <- table2 %>%
+  select("hhcode", "domhigh") %>%
+  rename("domhigh_from_table2" = domhigh)
+##### merge datasets
+d <- left_join(table2, d, by='hhcode')
+
+######################################################################################
+############################   PREPARING FOR MULTILEVELS  ############################
+######################################################################################
+#### Create factor
+library(lme4)
+library('merTools')
+library(directlabels)
+library(ggplot2)
+d$village_factor <- factor(d$village)
+
+######################################################################################
+################################     NORMALITY     ###################################
+######################################################################################
+######## Check for normality assumptions
+################ totinc
+e1071::kurtosis(d$totinc, na.rm=TRUE)
+e1071::skewness(d$totinc, na.rm=TRUE)
+summary(d$totinc)
+mean(d$totinc, na.rm=TRUE)
+sd(d$totinc, na.rm=TRUE)
+hist(d$totinc)
+plot(d$totinc)
+
+
+############ Standardize
+######### GRAND-Z
+####### DVs
+d$grand_z_totinc <- scale(d$totinc)
+
+
+##################################### Identify potential 2-level outliers
+# Nullmodel
+nomis <- d %>%
+  dplyr::filter(!is.na(totinc) & village_factor != "")
+
+nullmodel <- lmer(data = nomis, totinc ~ 1 +
+                    (1 | village_factor),
+                  REML = FALSE)		
+
+####### Estimating higher-level residuals and caterpillar plots
+####### Which countries are outliers
+renull <- REsim(nullmodel)
+plotREsim(renull, labs=TRUE)
+lattice::dotplot(ranef(nullmodel))
+
+##### Six villages might be potential outliers on the 2-level
+
+nooutliers <- d %>%
+  dplyr::filter(village != "70" & village != "61" & village != "60" & village != "84" &
+                  village != "59" & village != "58")
+
+outliers <- d %>%
+  dplyr::filter(village == "70" | village == "61" | village == "60" | village == "84" |
+                  village == "59" | village == "58")
+########## 6 villages with 84 households carry the relationship
+######### Out of how many?
+nomiss <- d %>%
+  dplyr::filter(!is.na(totinc) & !is.na(village) & !is.na(domlow))
+
+kable(digits = 2,
+      nomiss %>%
+        group_by(village) %>%
+        tally() %>%
+        mutate(freq = paste0(round(100 * n/sum(n), 1), "%")) %>%
+        arrange(desc(n))) %>%
+  kable_styling(full_width = F)
+######## Out of 90 villages, which is 6.67% of the whole sample taken for the analysis
+
+############# Mean and SD of the total income across households from low-caste dominated villages in the six outlying villages
+summary(outliers$totinc)
+mean(outliers$totinc)
+sd(outliers$totinc)
+### Mean 26787.4, SD = 33073.85
+
+############# Mean and SD of the total income across households from low-caste dominated villages in the dataset without six outlying villages
+nooutliers_lowcaste <- nooutliers %>%
+  dplyr::filter(domlow == 1)
+
+summary(nooutliers_lowcaste$totinc)
+mean(nooutliers_lowcaste$totinc)
+sd(nooutliers_lowcaste$totinc)
+### Mean 4925.46, SD = 9676.15
+
+######################################################################################
+##############################     MULTILEVEL MODELS     #############################
+######################################################################################
+########### Multilevel models
+# totinc, literate, electric, landirr, totland, buywater, rainfall, naturalwater
+# DV totinc / grand_z_totinc
+# IV most important / domlow
+# IVs dichotomous / literate / electric / buywater / naturalwater
+# IVs continuous / grand_z_landirr / grand_z_totland / grand_z_rainfall
+
+############ Full dataset
+model <- lmer(data = d, totinc ~ 1 +
+                domlow + 
+                (1 | village),
+              REML = FALSE)		
+summary(model)
+model_parameters(model, standardize = "refit", digits = 3, ci_digits = 3)
+
+##### compute rsquared for multilevel models
+mitml::multilevelR2(model)
+
+
+############ Dataset without outlying villages
+model <- lmer(data = nooutliers, totinc ~ 1 +
+                domlow + 
+                (1 | village),
+              REML = FALSE)		
+summary(model)
+model_parameters(model, standardize = "refit", digits = 3, ci_digits = 3)
+
+##### compute rsquared for multilevel models
+mitml::multilevelR2(model)
+
+################################## Robustness check
+
+######################################################################################
+################################     LINEAR MODELS     ###############################
+######################################################################################
+######### Original
+model <- lm(data = d, totinc ~ 1 + domlow)
+summary(model)
+model_parameters(model, standardize = "refit", digits = 3, ci_digits = 3)
+
+######### Without outlying villages
+model <- lm(data = nooutliers, totinc ~ 1 + domlow)
+summary(model)
+model_parameters(model, standardize = "refit", digits = 3, ci_digits = 3)
+
+
+
+################################## Figure 1
+################### SummarySE function
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=TRUE,
+                      conf.interval=.95, .drop=TRUE) {
+  library(plyr)
+  # New version of length which can handle NA's: if na.rm==T, don't count them
+  length2 <- function (x, na.rm=TRUE) {
+    if (na.rm) sum(!is.na(x))
+    else       length(x)
+  }
+  # This does the summary. For each group's data frame, return a vector with
+  # N, mean, and sd
+  datac <- ddply(data, groupvars, .drop=.drop,
+                 .fun = function(xx, col) {
+                   c(N    = length2(xx[[col]], na.rm=na.rm),
+                     mean = mean   (xx[[col]], na.rm=na.rm),
+                     sd   = sd     (xx[[col]], na.rm=na.rm)
+                   )
+                 },
+                 measurevar
+  )
+  # Rename the "mean" column    
+  datac <- rename(datac, c("mean" = measurevar))
+  datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+  # Confidence interval multiplier for standard error
+  # Calculate t-statistic for confidence interval: 
+  # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+  ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+  datac$ci <- datac$se * ciMult
+  return(datac)
+}
+
+################### Boxplot
+library(extrafont)
+library(cowplot)
+
+
+################################# Full dataset
+longc <- summarySE(d, measurevar="totinc", groupvars=c("domlow"))
+longc
+
+### Filter out missings
+longc <- longc %>%
+  filter(!is.na(domlow))
+longc
+
+### Convert into character
+longc$domlow <- as.character(longc$domlow)
+
+
+pd <- position_dodge(0.5) 
+p2 <- ggplot(longc, aes(x= domlow, y= totinc)) + 
+  # scale_y_discrete(limits=rev) +
+  geom_errorbar(aes(ymin=totinc-ci, ymax=totinc+ci), width=.1, 
+                position=pd, size = 1) +
+  geom_point(position=pd, size=2, shape=21, fill="white") + 
+  ggtitle("Full data") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x = 'Which caste dominates', y = 'Total income')
+
+p3 <- p2 +  theme_bw() + theme(plot.title = element_text(hjust = 0.5),
+                               legend.justification=c(1,0),
+                               legend.position=c(1,0))
+p4 <- p3 + theme_minimal_hgrid(font_size=12, font_family = "Bahnschrift")
+p4
+
+p5 <- p4 + scale_x_discrete(labels = c('0' = "High caste", '1' = "Low caste")) 
+p5
+p6 <- p5 + ylim(3400,9000)
+p6
+
+
+
+################################# Dataset without outlying villages
+longc <- summarySE(test, measurevar="totinc", groupvars=c("domlow"))
+longc
+
+### Filter out missings
+longc <- longc %>%
+  filter(!is.na(domlow))
+longc
+
+### Convert into character
+longc$domlow <- as.character(longc$domlow)
+
+
+pd <- position_dodge(0.5) 
+p2 <- ggplot(longc, aes(x= domlow, y= totinc)) + 
+  # scale_y_discrete(limits=rev) +
+  geom_errorbar(aes(ymin=totinc-ci, ymax=totinc+ci), width=.1, 
+                position=pd, size = 1) +
+  geom_point(position=pd, size=2, shape=21, fill="white") + 
+  ggtitle("Data without six outlying villages") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x = 'Which caste dominates', y = 'Total income')
+
+p3 <- p2 +  theme_bw() + theme(plot.title = element_text(hjust = 0.5),
+                               legend.justification=c(1,0),
+                               legend.position=c(1,0))
+p4 <- p3 + theme_minimal_hgrid(font_size=12, font_family = "Bahnschrift")
+p4
+
+p5 <- p4 + scale_x_discrete(labels = c('0' = "High caste", '1' = "Low caste")) 
+p5
+p6 <- p5 + ylim(3400,9000)
+p6
+
+
+#################################################################################
+######################        Mahalanobis Distance         ######################
+#################################################################################
+### Select variables
+fullID <- d %>%
+  dplyr::ungroup() %>%
+  dplyr::select('domlow', 'totinc', "hhcode") %>%
+  dplyr::filter(!is.na(totinc)) %>%
+  dplyr::filter(!is.na(domlow)) %>%
+  dplyr::filter(!is.na(hhcode))
+colnames(fullID)
+
+######### remove the id column from calculating MD
+trimID <- fullID %>%
+  dplyr::select(-c(3))
+
+########## Compute Mahalanobis Distance
+trimID$Mahalnobis<- mahalanobis(trimID, colMeans(trimID), cov(trimID))
+
+########## Add p values
+### k-1 degrees of freedom, where k is the number of variables.
+trimID$pvalue <- pchisq(trimID$Mahalnobis, df=1, lower.tail=FALSE)
+
+#### Highlight outliers by creating another column
+trimID <- trimID %>%
+  mutate(Outlier = case_when(pvalue < 0.001 ~ 1,
+                             pvalue >= 0.001 ~ 0))
+#### How many outliers are there
+table(trimID$Outlier)
+
+### Go the way back, add ID to the outlier dataset
+trimID <- trimID %>%
+  dplyr::mutate(hhcode = fullID$hhcode)
+
+### Prepare datasets so they would have the same colnames for merging
+tomerge <- trimID %>%
+  dplyr::select(-c(1:2))
+
+######### Merge two datasets, keeping rows with missings Mahalanobis 
+# backupd <- d
+d <- left_join(d, tomerge, by='hhcode', all = TRUE)
+colnames(d)
+
+table(d$Outlier)
+

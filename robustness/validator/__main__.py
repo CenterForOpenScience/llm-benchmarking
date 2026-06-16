@@ -1,0 +1,36 @@
+import argparse, os, sys
+from core.constants import DEFAULT_CODE_MODE, CODE_MODE_CHOICES
+
+def main():
+    p = argparse.ArgumentParser("generate")
+    p.add_argument("--stage", choices=["evaluate-execute-capability", 
+                                       "evaluate-execute-feedback"], required=True)
+    p.add_argument("--tier", choices=["easy", "medium", "hard"], default="easy")
+    p.add_argument("--study-path", required=True)
+    p.add_argument("--templates-dir", default="./templates")
+    p.add_argument("--show-prompt", action="store_true", default=False)
+    p.add_argument("--code-mode",choices=CODE_MODE_CHOICES,default=DEFAULT_CODE_MODE,help="Code execution mode: 'native' (run original language) or 'python' (translate all to Python and run Python).",)
+    p.add_argument("--model-name", default='gpt-5', help="Please specify the OpenAI model to be used.")
+    args = p.parse_args()
+
+    if args.stage == "evaluate-execute-capability":
+        from robustness.validator.evaluate_execute_capability import run_evaluate_execute_capability
+        # run helper agent to generate input analysis for executor
+        run_evaluate_execute_capability(args.study_path,
+        	tier=args.tier,
+        	code_mode=args.code_mode,
+        	model_name=args.model_name
+        )
+    elif args.stage == "evaluate-execute-feedback":
+        from robustness.validator.execute_feedback import run_evaluate_execute_feedback
+        # run helper agent to generate input analysis for executor
+        run_evaluate_execute_feedback(args.study_path,
+        	tier=args.tier,
+        	code_mode=args.code_mode,
+        	model_name=args.model_name
+        )
+    else:
+        sys.exit(f"Stage/tier not implemented yet: {args.stage}/{args.tier}")
+
+if __name__ == "__main__":
+    main()

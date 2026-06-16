@@ -1,0 +1,186 @@
+{
+  "original_datasets": [
+    {
+      "name": "FINAL demo open fluency",
+      "filename": "FINAL demo open fluency.csv",
+      "type": "Use original.",
+      "file_format": "csv",
+      "columns": "[id, d_age, d_gender, o_ffi, oi_bfas, o_bfas, i_bfas, vf_an_01..vf_an_50, neo_01..neo_240, filter_$]",
+      "summary_statistics": {
+        "info": "516 rows x 346 columns; dtypes: float64(4), int64(23), str(319).",
+        "describe": null
+      },
+      "access": {
+        "url": "robustness/data/Christensen_EurJournPersonality_2018_8R9d/JX7YO/data/FINAL demo open fluency.csv",
+        "restrictions": "not_stated"
+      },
+      "notes": "Contains demographics (d_*), openness scales (o_ffi, oi_bfas, o_bfas, i_bfas), and verbal fluency responses (vf_an_*). Words are strings; missing codes like -1 may occur in some fields. Used to construct semantic networks per individual."
+    }
+  ],
+  "planned_method": {
+    "planned_id": "Christensen_EurJournPersonality_2018_8R9d_JX7YO_path01",
+    "tasks": [
+      {
+        "task_id": "Task1",
+        "task_role": "conclusion_oriented_reanalysis",
+        "task_instruction": "Conduct the analysis without any restrictions.",
+        "analysis_path": {
+          "path_name": "semantic_network_openness_correlation",
+          "path_description": "Compute word co-occurrence entropy matrix across all unique words, construct each participant's network by subsetting that matrix, compute network metrics (CPL, betweenness, participation coefficient), then assess whether openness is associated with higher participation coefficient via Spearman correlation and high/low group t-test.",
+          "software": "Python",
+          "model_family": "correlation",
+          "preprocessing_steps": [
+            "Import original data from /app/data/FINAL demo open fluency.csv.",
+            "Select columns starting with vf_an_ as verbal fluency words.",
+            "Build a word-by-word co-occurrence counts matrix across respondents.",
+            "Convert counts to probabilities and compute binary entropy per pair; replace zero-entropy edges with 0.99.",
+            "For each participant, subset the entropy matrix to their words.",
+            "Construct a weighted graph (distance=entropy) and its MST; also construct a strength graph (weight=1/entropy).",
+            "Compute per-participant metrics: median shortest path length on MST (cpl), mean and max betweenness centrality on MST, and participation coefficient mean (Louvain-based) on strength graph.",
+            "Create openness_average as the mean of [o_ffi, oi_bfas, o_bfas, i_bfas].",
+            "Filter participants with cpl < 10.",
+            "Compute Spearman correlation between openness_average and part_mean; additionally median-split openness_average to compare part_mean across groups using Welch's t-test."
+          ],
+          "key_choices": {
+            "outcome_measure": "Mean participation coefficient (part_mean) from each individual's network.",
+            "main_predictor_measure": "openness_average computed as the row-wise mean of o_ffi, oi_bfas, o_bfas, i_bfas.",
+            "control_variables": [],
+            "sample_restriction": "cpl < 10",
+            "outlier_rule": null,
+            "missing_data_rule": null,
+            "data_processing": "Co-occurrence entropy matrix over all unique words; per-participant subgraph; MST; Louvain community detection for participation; median split on openness for group comparison.",
+            "model_choice": "Spearman correlation and Welch two-sample t-test.",
+            "inference_rule": "p-value from test (threshold not stated)."
+          },
+          "variables": {
+            "outcome": {
+              "name": "part_mean",
+              "definition": "Mean of participation coefficients over nodes with values above the mode (fallback to overall mean) in the participant's strength graph."
+            },
+            "main_predictor": {
+              "name": "openness_average",
+              "definition": "Row-wise average of openness scales [o_ffi, oi_bfas, o_bfas, i_bfas]."
+            },
+            "controls": []
+          }
+        },
+        "analysis_code": {
+          "available": true,
+          "code_files": [
+            "data/Analysis_Scr1_OSF__py.py"
+          ],
+          "entry_file": "data/Analysis_Scr1_OSF__py.py",
+          "run_command": "python data/Analysis_Scr1_OSF__py.py",
+          "notes": "Reads /app/data/FINAL demo open fluency.csv; writes /app/data/task1_results.json with Spearman rho/p and Welch t-test results."
+        },
+        "notes_for_agent": "Follow this planned path; do not change the focal claim, dataset, or analysis goal."
+      },
+      {
+        "task_id": "Task2",
+        "task_role": "comparable_result_oriented_reanalysis",
+        "task_instruction": "In the partial network that you use, the rate of nodes remaining should be 90%.",
+        "analysis_path": {
+          "path_name": "semantic_network_90pct_nodes_gender_ttest",
+          "path_description": "Construct participant networks from the general co-occurrence entropy matrix, remove top 10% of nodes by eigenvector centrality (keep 90%), compute network metrics, then test gender differences in participation coefficient.",
+          "software": "Python",
+          "model_family": "t_test",
+          "preprocessing_steps": [
+            "Import original data from /app/data/FINAL demo open fluency.csv.",
+            "Build global word co-occurrence entropy matrix.",
+            "For each participant, subset to their words and construct graphs as in Task1.",
+            "Remove top 10% of nodes by eigenvector centrality to keep 90% remaining nodes.",
+            "Compute per-participant metrics (CPL, betweenness mean/max, participation coefficient mean).",
+            "Create openness_average as in Task1; apply filters cpl < 10 and d_gender != '-1'.",
+            "Conduct Welch two-sample t-test of part_mean by d_gender."
+          ],
+          "key_choices": {
+            "outcome_measure": "Mean participation coefficient (part_mean) from the participant's partial network (90% nodes kept).",
+            "main_predictor_measure": "Gender group (d_gender), coded as groups in the dataset.",
+            "control_variables": [],
+            "sample_restriction": "cpl < 10 and d_gender != '-1'",
+            "outlier_rule": null,
+            "missing_data_rule": null,
+            "data_processing": "Entropy matrix; eigenvector centrality-based node removal (top 10%); MST; Louvain partition for participation coefficient.",
+            "model_choice": "Welch two-sample t-test.",
+            "inference_rule": "p-value from Welch t-test."
+          },
+          "variables": {
+            "outcome": {
+              "name": "part_mean",
+              "definition": "Mean participation coefficient in the 90% node partial network."
+            },
+            "main_predictor": {
+              "name": "d_gender",
+              "definition": "Participant gender as recorded in the dataset (excluding '-1')."
+            },
+            "controls": []
+          }
+        },
+        "analysis_code": {
+          "available": true,
+          "code_files": [
+            "data/Analysis_Scr2_OSF__py.py"
+          ],
+          "entry_file": "data/Analysis_Scr2_OSF__py.py",
+          "run_command": "python data/Analysis_Scr2_OSF__py.py",
+          "notes": "Reads /app/data/FINAL demo open fluency.csv; writes /app/data/task2_results.json with Welch t-test results by gender."
+        },
+        "notes_for_agent": "Apply the 90% remaining nodes rule via removing the top 10% highest eigenvector centrality nodes; do not change the dataset or focal claim."
+      }
+    ]
+  },
+  "codebase": {
+    "files": {
+      "data/Analysis_Scr1_OSF__py.py": "Python rewrite of Task1 R analysis. Builds entropy-based networks, computes metrics, runs Spearman correlation and Welch t-test, outputs JSON.",
+      "data/Analysis_Scr2_OSF__py.py": "Python rewrite of Task2 R analysis with 90% node retention (remove top 10% by eigenvector centrality). Computes metrics and runs Welch t-test by gender, outputs JSON."
+    },
+    "notes": "Execution requires Python with pandas, numpy, scipy, networkx, and python-louvain. Scripts assume verbal fluency columns are named vf_an_*. All IO uses /app/data. R scripts are present but not executed per the Python execution policy."
+  },
+  "docker_specs": {
+    "base_image": "python:3.11-slim",
+    "packages": {
+      "python": [
+        "pandas",
+        "numpy",
+        "scipy",
+        "networkx",
+        "python-louvain"
+      ],
+      "r": [],
+      "other": []
+    },
+    "hardware": {
+      "gpu_support": "false",
+      "min_gpu_memory_gb": null,
+      "min_ram_gb": null
+    },
+    "volumes": [
+      "./robustness/data/Christensen_EurJournPersonality_2018_8R9d/JX7YO/data:/app/data"
+    ]
+  },
+  "analysis": {
+    "instructions": "Execute Task1 and Task2 with the provided Python scripts using the original dataset to compute semantic-network metrics and run the specified statistical tests. Save outputs to /app/data/task1_results.json and /app/data/task2_results.json.",
+    "target_task_ids": [
+      "Task1",
+      "Task2"
+    ],
+    "allowed_actions": [
+      "inspect data files",
+      "inspect code files",
+      "run provided code",
+      "make bounded implementation fixes",
+      "write compact result extraction scripts"
+    ],
+    "not_allowed_actions": [
+      "change the focal claim",
+      "change the dataset",
+      "replace the planned path with a different analysis path",
+      "choose a more favorable result"
+    ],
+    "debugging_rule": {
+      "max_repair_attempts": "3",
+      "repair_scope": "fix dependency, file path, or output extraction issues only; do not redesign the analysis."
+    },
+    "comparison_metrics": "Task1: Spearman rho and p-value between openness_average and part_mean; Welch t-test (high vs low openness) on part_mean with t-stat and p-value. Task2: Welch t-test (gender groups) on part_mean with t-stat and p-value; report sample sizes."
+  }
+}
