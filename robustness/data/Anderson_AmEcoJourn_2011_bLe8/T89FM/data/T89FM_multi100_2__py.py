@@ -1,47 +1,64 @@
-import importlib
-import subprocess
-import sys
+# Python translation of T89FM_multi100_2.R (Task 2)
+# Ensures all IO uses /app/data with fallback to subfolder path.
 
-def ensure(pkg):
-    if importlib.util.find_spec(pkg) is None:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
-
-# Ensure dependencies
-for p in ["pandas==2.2.2", "numpy==1.26.4", "statsmodels==0.14.2", "patsy==0.5.6"]:
-    pkg_name = p.split("==")[0]
-    try:
-        __import__(pkg_name)
-    except Exception:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", p])
-
-import pandas as pd
+import os
 import numpy as np
+import pandas as pd
 import statsmodels.formula.api as smf
+from scipy import stats
 
-DATA_PATH = "/app/data/AEJApp-2009-0289-data/household.dta"
 
-df = pd.read_stata(DATA_PATH)
+def load_household_data():
+    candidates = [
+        "/app/data/household.dta",
+        "/app/data/AEJApp-2009-0289-data/household.dta"
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return pd.read_stata(path, convert_categoricals=False)
+    raise FileNotFoundError("household.dta not found under /app/data or /app/data/AEJApp-2009-0289-data")
 
-# Drop missing domlow
-df = df[df["domlow"].notna()].copy()
 
-# Create log income
-df["log_totinc"] = np.log(df["totinc"])
+df = load_household_data()
 
-# Task 2: Restricted regression without the excluded predictors
+# Keep rows with domlow present
+if "domlow" not in df.columns:
+    raise ValueError("Expected column 'domlow' not found in dataset.")
+
+df = df.copy()
+df = df[~pd.isna(df["domlow"])].reset_index(drop=True)
+
+# Ensure categorical encodings
+for cat_col in ["caste", "borrow", "electric"]:
+    if cat_col in df.columns:
+        df[cat_col] = df[cat_col].astype("category")
+
+df["domlow_cat"] = df["domlow"].astype("category")
+
+# Log total income, guard against non-positive
+if (df["totinc"] <= 0).any():
+    df.loc[df["totinc"] <= 0, "totinc"] = np.nan
+
+# Model per Task 2 restrictions: include bihar + literate + totland + cash + electric + caste + domlow
 model_formula = (
-    "log_totinc ~ bihar + literate + totland + cash + C(electric) + C(caste) + domlow"
+    "np.log(totinc) ~ bihar + literate + totland + cash + electric + C(caste) + C(domlow_cat)"
 )
 
 m = smf.ols(model_formula, data=df).fit(cov_type='HC0')
-
-print("TASK 2 MODEL (robust HC0): domlow coefficient")
-if 'domlow' in m.params.index:
-    print({
-        "coef": float(m.params['domlow']),
-        "se_robust": float(m.bse['domlow']),
-        "t": float(m.tvalues['domlow']),
-        "p": float(m.pvalues['domlow'])
+# Extract domlow effect
+param_keys = [k for k in m.params.index if k.startswith('C(domlow_cat)')]
+summary = {
+    "nobs": int(m.nobs),
+    "rsq_adj": float(m.rsquared_adj),
+}
+if param_keys:
+    key = param_keys[0]
+    summary.update({
+        "coef_domlow": float(m.params[key]),
+        "se_domlow": float(m.bse[key]),
+        "t_domlow": float(m.tvalues[key]),
+        "p_domlow": float(m.pvalues[key])
     })
-else:
-    print("domlow not in model (possibly collinear)")
+
+print("Task2 OLS with HC0 SE summary (restricted model):")
+print(summary)

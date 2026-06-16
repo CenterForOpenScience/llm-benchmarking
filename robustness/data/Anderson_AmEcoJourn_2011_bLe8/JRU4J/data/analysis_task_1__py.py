@@ -1,86 +1,78 @@
 import os
-import subprocess
-import sys
-
-# Attempt to import required libraries; install if missing
-required = [
-    ("pandas", "pandas==2.2.2"),
-    ("numpy", "numpy==1.26.4"),
-    ("statsmodels", "statsmodels==0.14.2"),
-    ("patsy", "patsy==0.5.6"),
-]
-for mod, spec in required:
-    try:
-        __import__(mod)
-    except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", spec])
-
-# Ensure user site-packages is on sys.path (pip may install there for non-root)
-import site, importlib
-user_site = site.getusersitepackages()
-if user_site and user_site not in sys.path:
-    sys.path.append(user_site)
-importlib.invalidate_caches()
-
 import pandas as pd
 import numpy as np
 import statsmodels.formula.api as smf
+import warnings
 
-# I/O base directory (must be mounted to /app/data)
-BASE_DIR = "/app/data/AEJApp-2009-0289-data"
-RESULTS_PATH = "/app/data/results_task_1.txt"
+# All IO uses /app/data
+BASE_DIR = "/app/data"
+HOUSEHOLD_PATH = os.path.join(BASE_DIR, "AEJApp-2009-0289-data", "household.dta")
+VILLAGE_PATH = os.path.join(BASE_DIR, "AEJApp-2009-0289-data", "village.dta")
+OUT_PATH = os.path.join(BASE_DIR, "results_task1.txt")
 
-# Load data
-household_path = os.path.join(BASE_DIR, "household.dta")
-village_path = os.path.join(BASE_DIR, "village.dta")
+warnings.filterwarnings("ignore")
 
-hh = pd.read_stata(household_path, convert_categoricals=True)
-vg = pd.read_stata(village_path, convert_categoricals=True)
+def main():
+    # Read data
+    household = pd.read_stata(HOUSEHOLD_PATH)
+    village = pd.read_stata(VILLAGE_PATH)
 
-# Prepare keys and variables for merge
-# Convert village IDs to strings for consistent join behavior (mirroring R code)
-hh['village'] = hh['village'].astype('Int64').astype(str)
-vg['village'] = vg['village'].astype('Int64').astype(str)
+    # Prepare join keys and relevant columns
+    village = village.copy()
+    # Keep only needed columns for merge
+    village_dom = village.loc[:, ["village", "domhigh"]].copy()
 
-# Keep only variables needed
-hh_sub = hh[['hhcode', 'village', 'caste', 'totinc']].copy()
-vg_sub = vg[['village', 'domhigh']].copy()
+    # Ensure types similar to R code logic (treated as strings for join/factor behavior)
+    # For pandas merge, types need not be strings as long as they match, but we mimic behavior
+    # by leaving numeric IDs as-is and handling categorical coding in the model formula using C().
 
-# Merge household with domhigh from village
-dat = hh_sub.merge(vg_sub, on='village', how='left')
+    # Construct analysis dataframe
+    dat = household.loc[:, ["hhcode", "village", "caste", "totinc"]].copy()
+    dat = dat.merge(village_dom, on="village", how="left")
 
-# Keep observations where domhigh is 0 or 1
-# domhigh can be float or object depending on Stata labels; coerce to numeric safely
-# Keep values exactly 0 or 1
+    # Filter to domhigh in {0,1}
+    dat = dat[dat["domhigh"].isin([0, 1])].copy()
 
-dat['domhigh_num'] = pd.to_numeric(dat['domhigh'], errors='coerce')
-dat = dat[dat['domhigh_num'].isin([0.0, 1.0])].copy()
+    # Drop rows with missing outcome or predictors
+    dat = dat.dropna(subset=["totinc", "caste", "domhigh", "village"])  
 
-# For modeling, use numeric 0/1 for domhigh
-dat['domhigh'] = dat['domhigh_num']
+    # Mixed model: totinc ~ caste + domhigh + caste:domhigh + (1|village)
+    formula = "totinc ~ C(caste) + C(domhigh) + C(caste):C(domhigh)"
 
-# Ensure caste is treated categorically (string labels ok)
-if not pd.api.types.is_categorical_dtype(dat['caste']):
-    dat['caste'] = dat['caste'].astype(str)
-
-# Mixed effects model: totinc ~ caste + domhigh + caste:domhigh + (1|village)
-# statsmodels MixedLM supports formula with categorical terms via patsy
-# By default, MixedLM.fit uses REML=True
-
-model = smf.mixedlm("totinc ~ C(caste) + domhigh + C(caste):domhigh", data=dat, groups=dat["village"]) 
-res = model.fit(reml=True, method='lbfgs')
-
-# Write results to file
-with open(RESULTS_PATH, 'w') as f:
-    f.write("Linear Mixed Effects Model (random intercept for village)\n")
-    f.write("Formula: totinc ~ C(caste) + domhigh + C(caste):domhigh\n\n")
-    f.write(str(res.summary()))
-    f.write("\n\nFixed effects coefficients:\n")
-    f.write(str(res.fe_params))
-    f.write("\n\nP-values (fixed effects):\n")
     try:
-        f.write(str(res.pvalues))
+        model = smf.mixedlm(formula, data=dat, groups=dat["village"], re_formula="1")
+        result = model.fit(reml=True, method="lbfgs", maxiter=200)
     except Exception as e:
-        f.write(f"P-values not available due to: {e}")
+        # Retry with a different optimizer if needed
+        try:
+            result = model.fit(reml=True, method="nm", maxiter=400)
+        except Exception as e2:
+            with open(OUT_PATH, "w") as f:
+                f.write("Model fitting failed.\n")
+                f.write(str(e))
+                f.write("\n--- Retry error ---\n")
+                f.write(str(e2))
+            return
 
-print(f"Task1 results written to {RESULTS_PATH}")
+    # Write summary to output
+    with open(OUT_PATH, "w") as f:
+        f.write("Linear mixed model: totinc ~ caste + domhigh + caste:domhigh + (1|village)\n")
+        f.write("Software: Python statsmodels MixedLM (REML)\n\n")
+        f.write(str(result.summary()))
+        f.write("\n\nFixed effects coefficients:\n")
+        fe = pd.DataFrame({
+            "coef": result.fe_params,
+            "se": result.bse_fe,
+            "z": result.fe_params / result.bse_fe,
+        })
+        fe["pvalue"] = 2 * (1 - pd.Series(np.abs(fe["z"]))\
+                               .apply(lambda z: 0.5 * (1 + np.math.erf(z / np.sqrt(2)))))
+        # Above p-value via normal CDF approximation; use statsmodels if available
+        try:
+            from statsmodels.stats.weightstats import ztest
+        except Exception:
+            pass
+        f.write(fe.to_string())
+
+if __name__ == "__main__":
+    main()

@@ -1,163 +1,185 @@
 import json
-import importlib, subprocess, sys, site
-# Ensure required packages are available when running inside minimal containers
-required_packages = ["pandas", "numpy", "statsmodels", "scipy"]
-
-def ensure_package(pkg):
-    try:
-        return importlib.import_module(pkg)
-    except Exception:
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", pkg])
-        except Exception:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
-        importlib.invalidate_caches()
-        # Add user site-packages to path in case pip installed there
-        try:
-            user_site = site.getusersitepackages()
-            if user_site not in sys.path:
-                sys.path.append(user_site)
-        except Exception:
-            pass
-        return importlib.import_module(pkg)
-
-for pkg in required_packages:
-    ensure_package(pkg)
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from statsmodels.discrete.discrete_model import NegativeBinomial
+import statsmodels.formula.api as smf
+from patsy import dmatrices
 
-# IO paths
+# All IO must use /app/data per run policy
 DATA_PATH = "/app/data/final_data.dta"
-OUT_JSON = "/app/data/task1_results.json"
+OUT_JSON = "/app/data/results_task1.json"
 
-# Load data
-try:
-    df = pd.read_stata(DATA_PATH, convert_categoricals=False)
-except Exception as e:
-    raise RuntimeError(f"Failed to read Stata file at {DATA_PATH}: {e}")
 
-# Preprocess: create centered and effect-coded variables analogous to R code
-# Safe utilities
+def effect_code(series):
+    # Expect binary 0/1; map to -0.5 / 0.5
+    return series.map({0: -0.5, 1: 0.5}).astype(float)
 
-def center(x):
-    return x - np.nanmean(x)
 
-# Create transformed columns if they exist
-cols_needed = {
-    'first_A', 'ad_spending', 'complaints_2008', 'firm_age', 'emp_size',
-    'num_names_2008', 'multiple_names', 'chicago', 'on_google'
-}
-missing = [c for c in cols_needed if c not in df.columns]
-if missing:
-    raise KeyError(f"Missing required columns in data: {missing}")
+def add_constructed_vars(df):
+    df = df.copy()
+    # Continuous centers
+    df["ad_spendingC"] = df["ad_spending"] - df["ad_spending"].mean()
+    df["firm_ageC"] = df["firm_age"] - df["firm_age"].mean()
+    df["log_emp_size"] = np.log(df["emp_size"].replace(0, np.nan))
+    df["log_emp_size"] = df["log_emp_size"].replace([-np.inf, np.inf], np.nan)
+    df["emp_sizeC"] = df["log_emp_size"] - df["log_emp_size"].mean()
+    df["num_names_2008C"] = df["num_names_2008"] - df["num_names_2008"].mean()
 
-# Ensure numeric for continuous vars
-for c in ['ad_spending', 'complaints_2008', 'firm_age', 'emp_size', 'num_names_2008']:
-    df[c] = pd.to_numeric(df[c], errors='coerce')
+    # Effect-coded binaries
+    for col in ["first_A", "multiple_names", "chicago", "on_google"]:
+        if col in df.columns:
+            df[f"{col}_ec"] = effect_code(df[col].astype(int))
+    return df
 
-# Effect coding for binary indicators: -0.5 (reference) and 0.5 (target)
-# Assuming 1 indicates membership in the category (e.g., first_A == 1)
-for cat in ['first_A', 'chicago', 'multiple_names', 'on_google']:
-    if df[cat].dropna().isin([0,1]).all():
-        df[f"{cat}_ec"] = np.where(df[cat] == 1, 0.5, -0.5)
+
+def robust_glm_poisson(formula, data):
+    # Fit GLM Poisson with robust covariance directly
+    model = smf.glm(formula=formula, data=data, family=sm.families.Poisson()).fit(cov_type="HC0")
+    return model, model
+
+
+def summarise_glm_results(rob):
+    # Ensure we work with pandas objects robustly
+    params = rob.params
+    bse = rob.bse
+    pvals = rob.pvalues
+    conf = rob.conf_int(alpha=0.05)
+    # IRR and CI for IRR from link-scale CI
+    irr = np.exp(params)
+    # conf may be a DataFrame with columns [0, 1]
+    if hasattr(conf, "iloc"):
+        ci_lower = conf.iloc[:, 0]
+        ci_upper = conf.iloc[:, 1]
     else:
-        # If not strictly 0/1, map the most frequent unique values to two levels
-        uniq = df[cat].dropna().unique()
-        if len(uniq) == 2:
-            high = uniq[0]
-            df[f"{cat}_ec"] = np.where(df[cat] == high, 0.5, -0.5)
-        else:
-            # Fallback: treat nonzero as 1
-            df[f"{cat}_ec"] = np.where(df[cat] != 0, 0.5, -0.5)
+        # fallback to numpy array
+        ci_lower = conf[:, 0]
+        ci_upper = conf[:, 1]
+    irr_ci_lower = np.exp(ci_lower)
+    irr_ci_upper = np.exp(ci_upper)
+    # Robust SE for IRR via delta method: SE_IRR = exp(beta) * SE_beta
+    irr_se = irr * bse
+    out = {}
+    for name in params.index:
+        out[name] = {
+            "coef": float(params[name]),
+            "se_robust": float(bse[name]),
+            "p_value": float(pvals[name]),
+            "ci_lower": float(ci_lower[name] if hasattr(ci_lower, "__getitem__") else ci_lower[params.index.get_loc(name)]),
+            "ci_upper": float(ci_upper[name] if hasattr(ci_upper, "__getitem__") else ci_upper[params.index.get_loc(name)]),
+            "irr": float(irr[name]),
+            "irr_se_delta": float(irr_se[name]),
+            "irr_ci_lower": float(irr_ci_lower[name] if hasattr(irr_ci_lower, "__getitem__") else irr_ci_lower[params.index.get_loc(name)]),
+            "irr_ci_upper": float(irr_ci_upper[name] if hasattr(irr_ci_upper, "__getitem__") else irr_ci_upper[params.index.get_loc(name)]),
+        }
+    return out
 
-# Centered continuous covariates
-# Log-transform emp_size and ad_spending where appropriate, mirroring R code usage
-with np.errstate(divide='ignore'):
-    df['emp_size_log'] = np.log(df['emp_size'])
-    df['ad_spending_log'] = np.log(df['ad_spending'])
 
-for c, newc in [
-    ('ad_spending', 'ad_spendingC'),
-    ('firm_age', 'firm_ageC'),
-    ('emp_size_log', 'emp_sizeC'),
-    ('num_names_2008', 'num_names_2008C')
-]:
-    df[newc] = center(df[c])
+def fit_negative_binomial(formula, data):
+    # Use statsmodels discrete NegativeBinomial (NB2)
+    y, X = dmatrices(formula, data, return_type="dataframe")
+    # Ensure endog is a 1-d array
+    endog = np.asarray(y).ravel()
+    mod = sm.NegativeBinomial(endog, X)
+    res = mod.fit(disp=False)
+    return res, X.columns.tolist()
 
-# Drop rows with missing values in model variables
-model_vars = ['complaints_2008', 'first_A_ec', 'firm_ageC', 'emp_sizeC', 'num_names_2008C', 'multiple_names_ec', 'chicago_ec', 'ad_spendingC', 'on_google_ec']
-df_model = df[model_vars].dropna().copy()
 
-# Design matrices
-y = df_model['complaints_2008']
-X = df_model.drop(columns=['complaints_2008'])
-X = sm.add_constant(X, has_constant='add')
+def summarise_nb_results(res, exog_names):
+    # Robustly extract parameters and uncertainty; fall back to NaNs if not available
+    params = res.params
+    # bse can be unavailable if Hessian inversion fails
+    try:
+        bse = res.bse
+    except Exception:
+        bse = pd.Series(np.nan, index=params.index)
+    try:
+        conf = res.conf_int()
+    except Exception:
+        conf = pd.DataFrame({0: np.nan, 1: np.nan}, index=params.index)
+    try:
+        pvals = res.pvalues
+    except Exception:
+        pvals = pd.Series(np.nan, index=params.index)
+    irr = np.exp(params)
+    # Handle conf whether DataFrame or ndarray
+    if hasattr(conf, "iloc"):
+        ci_lower = conf.iloc[:, 0]
+        ci_upper = conf.iloc[:, 1]
+    else:
+        ci_lower = conf[:, 0]
+        ci_upper = conf[:, 1]
+    irr_ci_lower = np.exp(ci_lower)
+    irr_ci_upper = np.exp(ci_upper)
+    irr_se = irr * bse
+    out = {}
+    for name in params.index:
+        out[name] = {
+            "coef": float(params[name]),
+            "se": float(bse[name] if name in bse.index else np.nan),
+            "p_value": float(pvals[name] if name in pvals.index else np.nan),
+            "ci_lower": float(ci_lower[name] if hasattr(ci_lower, "__getitem__") else ci_lower[list(params.index).index(name)]),
+            "ci_upper": float(ci_upper[name] if hasattr(ci_upper, "__getitem__") else ci_upper[list(params.index).index(name)]),
+            "irr": float(irr[name]),
+            "irr_se_delta": float(irr_se[name] if name in bse.index else np.nan),
+            "irr_ci_lower": float(irr_ci_lower[name] if hasattr(irr_ci_lower, "__getitem__") else irr_ci_lower[list(params.index).index(name)]),
+            "irr_ci_upper": float(irr_ci_upper[name] if hasattr(irr_ci_upper, "__getitem__") else irr_ci_upper[list(params.index).index(name)]),
+        }
+    return out
 
-results_out = {"poisson_robust": None, "negative_binomial": None}
 
-# Poisson GLM with robust SE (HC0)
-try:
-    poisson_model = sm.GLM(y, X, family=sm.families.Poisson())
-    poisson_res = poisson_model.fit()
-    # Robust covariance
-    poisson_rob = poisson_model.fit(cov_type='HC0')
+def main():
+    df = pd.read_stata(DATA_PATH)
+    # Ensure expected columns exist
+    required_cols = [
+        "complaints_2008", "first_A", "firm_age", "emp_size", "num_names_2008",
+        "multiple_names", "chicago", "ad_spending", "on_google"
+    ]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
 
-    # Extract key stats for first_A effect-coded regressor
-    coef = poisson_rob.params.get('first_A_ec', np.nan)
-    se = poisson_rob.bse.get('first_A_ec', np.nan)
-    zval = coef / se if np.isfinite(coef) and np.isfinite(se) and se != 0 else np.nan
-    pval = 2 * (1 - sm.distributions.norm.cdf(abs(zval))) if np.isfinite(zval) else np.nan
-    ci_low = coef - 1.96 * se if np.isfinite(coef) and np.isfinite(se) else np.nan
-    ci_high = coef + 1.96 * se if np.isfinite(coef) and np.isfinite(se) else np.nan
+    df = add_constructed_vars(df)
 
-    irr = float(np.exp(coef)) if np.isfinite(coef) else np.nan
-    irr_ci_low = float(np.exp(ci_low)) if np.isfinite(ci_low) else np.nan
-    irr_ci_high = float(np.exp(ci_high)) if np.isfinite(ci_high) else np.nan
+    results = {}
 
-    results_out['poisson_robust'] = {
-        'coef_first_A_ec': float(coef) if np.isfinite(coef) else np.nan,
-        'se_first_A_ec': float(se) if np.isfinite(se) else np.nan,
-        'z_first_A_ec': float(zval) if np.isfinite(zval) else np.nan,
-        'p_first_A_ec': float(pval) if np.isfinite(pval) else np.nan,
-        'ci_first_A_ec': [float(ci_low) if np.isfinite(ci_low) else np.nan, float(ci_high) if np.isfinite(ci_high) else np.nan],
-        'irr_first_A_ec': irr,
-        'irr_ci_first_A_ec': [irr_ci_low, irr_ci_high]
-    }
-except Exception as e:
-    results_out['poisson_robust'] = {'error': f'Poisson model failed: {e}'}
+    # Model 0: Poisson first_A only
+    formula0 = "complaints_2008 ~ first_A_ec"
+    m0, m0r = robust_glm_poisson(formula0, df)
+    results["poisson_model0_firstA_only"] = summarise_glm_results(m0r)
 
-# Negative Binomial (NB2) using discrete model
-try:
-    nb_model = NegativeBinomial(y, X)
-    nb_res = nb_model.fit(disp=False)
-    coef = nb_res.params.get('first_A_ec', np.nan)
-    se = nb_res.bse.get('first_A_ec', np.nan)
-    zval = coef / se if np.isfinite(coef) and np.isfinite(se) and se != 0 else np.nan
-    pval = 2 * (1 - sm.distributions.norm.cdf(abs(zval))) if np.isfinite(zval) else np.nan
-    ci_low = coef - 1.96 * se if np.isfinite(coef) and np.isfinite(se) else np.nan
-    ci_high = coef + 1.96 * se if np.isfinite(coef) and np.isfinite(se) else np.nan
+    # Model 1: Poisson controls only (no first_A)
+    formula1 = "complaints_2008 ~ firm_ageC + emp_sizeC + num_names_2008C + ad_spendingC"
+    m1, m1r = robust_glm_poisson(formula1, df)
+    results["poisson_model1_controls_only"] = summarise_glm_results(m1r)
 
-    irr = float(np.exp(coef)) if np.isfinite(coef) else np.nan
-    irr_ci_low = float(np.exp(ci_low)) if np.isfinite(ci_low) else np.nan
-    irr_ci_high = float(np.exp(ci_high)) if np.isfinite(ci_high) else np.nan
+    # Model 2: Poisson with some controls + first_A
+    formula2 = "complaints_2008 ~ first_A_ec + firm_ageC + emp_sizeC + num_names_2008C + ad_spendingC"
+    m2, m2r = robust_glm_poisson(formula2, df)
+    results["poisson_model2_with_firstA_controls"] = summarise_glm_results(m2r)
 
-    results_out['negative_binomial'] = {
-        'coef_first_A_ec': float(coef) if np.isfinite(coef) else np.nan,
-        'se_first_A_ec': float(se) if np.isfinite(se) else np.nan,
-        'z_first_A_ec': float(zval) if np.isfinite(zval) else np.nan,
-        'p_first_A_ec': float(pval) if np.isfinite(pval) else np.nan,
-        'ci_first_A_ec': [float(ci_low) if np.isfinite(ci_low) else np.nan, float(ci_high) if np.isfinite(ci_high) else np.nan],
-        'irr_first_A_ec': irr,
-        'irr_ci_first_A_ec': [irr_ci_low, irr_ci_high],
-        'alpha': float(nb_res.params.get('alpha', np.nan)) if 'alpha' in nb_res.params.index else None
-    }
-except Exception as e:
-    results_out['negative_binomial'] = {'error': f'Negative binomial model failed: {e}'}
+    # Model 3: Poisson with all controls
+    formula3 = (
+        "complaints_2008 ~ first_A_ec + firm_ageC + emp_sizeC + num_names_2008C + "
+        "multiple_names_ec + chicago_ec + ad_spendingC + on_google_ec"
+    )
+    m3, m3r = robust_glm_poisson(formula3, df)
+    results["poisson_model3_all_controls"] = summarise_glm_results(m3r)
 
-# Write results JSON
-with open(OUT_JSON, 'w') as f:
-    json.dump(results_out, f, indent=2)
+    # Negative Binomial with same specification as model 3
+    nb_res, exog_names = fit_negative_binomial(formula3, df)
+    results["neg_binom_model_all_controls"] = summarise_nb_results(nb_res, exog_names)
 
-print(json.dumps(results_out, indent=2))
+    # Save JSON results
+    with open(OUT_JSON, "w") as f:
+        json.dump({
+            "model_summaries": results,
+            "notes": {
+                "data_path": DATA_PATH,
+                "poisson_cov_type": "HC0",
+                "nb_model": "statsmodels.discrete.count_model.NegativeBinomial (NB2)",
+            }
+        }, f, indent=2)
+
+
+if __name__ == "__main__":
+    main()

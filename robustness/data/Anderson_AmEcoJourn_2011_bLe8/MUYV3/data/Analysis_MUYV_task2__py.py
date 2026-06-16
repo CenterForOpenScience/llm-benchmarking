@@ -1,93 +1,104 @@
-import json
-import warnings
+import os
+import sys
 import numpy as np
 import pandas as pd
+from scipy import stats
+from statsmodels.formula.api import mixedlm
 
-# Ensure required packages are available inside the container even if image deps failed
-try:
-    import statsmodels.api as sm
-    from statsmodels.regression.mixed_linear_model import MixedLM
-except ModuleNotFoundError:
-    import sys, subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "statsmodels==0.14.1", "pandas==2.0.3", "numpy==1.24.4", "scipy==1.10.1", "pyreadstat==1.2.2"])  # noqa: E501
-    import statsmodels.api as sm
-    from statsmodels.regression.mixed_linear_model import MixedLM
+# IO root
+DATA_ROOT = os.environ.get("APP_DATA", "/app/data")
+DATA_SUBDIR = os.environ.get("APP_DATA_SUBDIR", "AEJApp-2009-0289-data")
 
-warnings.filterwarnings("ignore")
+HOUSEHOLD_PATHS = [
+    os.path.join(DATA_ROOT, 'household.dta'),
+    os.path.join(DATA_ROOT, DATA_SUBDIR, 'household.dta')
+]
 
+# Utility: outlier mask using 1.5*IQR on log-transformed series
 
-def load_data():
-    hh_path = "/app/data/AEJApp-2009-0289-data/household.dta"
-    vil_path = "/app/data/AEJApp-2009-0289-data/village.dta"
-    hh = pd.read_stata(hh_path, convert_categoricals=True)
-    vil = pd.read_stata(vil_path, convert_categoricals=True)
-    return hh, vil
-
-
-def preprocess_task2(hh: pd.DataFrame) -> pd.DataFrame:
-    df = hh.copy()
-    # Only complete cases overall, as in R code
-    df = df.dropna(axis=0, how="any").copy()
-    # Log-transform totinc and remove outliers using 1.5*IQR on log(totinc)
-    df = df[df["totinc"] > 0].copy()
-    df["log_totinc"] = np.log(df["totinc"].astype(float))
-    q1 = df["log_totinc"].quantile(0.25)
-    q3 = df["log_totinc"].quantile(0.75)
+def iqr_outlier_mask_log(y: pd.Series):
+    ylog = np.log(y)
+    q1 = np.nanpercentile(ylog, 25)
+    q3 = np.nanpercentile(ylog, 75)
     iqr = q3 - q1
     lower = q1 - 1.5 * iqr
     upper = q3 + 1.5 * iqr
-    df_filt = df[(df["log_totinc"] >= lower) & (df["log_totinc"] <= upper)].copy()
-
-    # Cast grouping variables to categorical
-    for col in ["bihar", "village"]:
-        if col in df_filt.columns:
-            df_filt[col] = df_filt[col].astype("category")
-    if "caste" in df_filt.columns:
-        df_filt["caste"] = df_filt["caste"].astype("category")
-
-    return df_filt
+    return (ylog >= lower) & (ylog <= upper)
 
 
-def fit_mixedlm(formula: str, data: pd.DataFrame, random_top: str, vc_components: dict):
-    model = MixedLM.from_formula(formula, groups=data[random_top], vc_formula=vc_components, data=data, re_formula="1")
-    res = model.fit(method="lbfgs", disp=False)
-    return res
+def run_task2_models():
+    hfile = None
+    for p in HOUSEHOLD_PATHS:
+        if os.path.exists(p):
+            hfile = p
+            break
+    if hfile is None:
+        print("[ERROR] household.dta not found in expected locations")
+        sys.exit(1)
+    hh = pd.read_stata(hfile)
 
+    # 0) Sample restriction: low-caste households (BAC, OBC, SC). Based on observed levels
+    low_caste_levels = {"Back agr", "Back oth", "ST/SC   "}
+    if 'caste' in hh.columns:
+        hh = hh.loc[hh['caste'].isin(low_caste_levels)].copy()
 
-def main():
-    hh, vil = load_data()
-    df = preprocess_task2(hh)
+    # Restrict to complete cases
+    hh = hh.dropna().copy()
 
-    results = {"task": "Task2", "n_after_filtering": int(df.shape[0])}
+    # Outlier detection on log(totinc)
+    if 'totinc' not in hh.columns:
+        print("[ERROR] 'totinc' not in household data.")
+        sys.exit(1)
+    mask = iqr_outlier_mask_log(hh['totinc'])
+    hhfilt = hh.loc[mask].copy()
+    hhfilt['log_totinc'] = np.log(hhfilt['totinc'])
 
-    # Model 1: base model with domlow only, random effects bihar/village
-    vc = {"village": "0 + C(village)"} if "village" in df.columns else {}
-    formula1 = "log_totinc ~ domlow"
+    # Model 1: base with domlow and RE for bihar/village (two-level nested)
+    if 'domlow' not in hhfilt.columns:
+        print("[ERROR] 'domlow' not in household data after filtering.")
+        sys.exit(1)
+
+    groups_col = 'village'
+    vc = {}
+    if 'bihar' in hhfilt.columns:
+        vc['bihar'] = '0 + C(bihar)'
+
+    print("\n=== Task2: Mixed-effects Model 1: log_totinc ~ domlow; RE: village + (bihar) ===")
     try:
-        res1 = fit_mixedlm(formula1, df, random_top="bihar", vc_components=vc)
-        coef = float(res1.params.get("domlow", np.nan))
-        se = float(res1.bse.get("domlow", np.nan))
-        zval = coef / se if (se is not None and se != 0 and not np.isnan(se)) else np.nan
-        pval = float(res1.pvalues.get("domlow", np.nan))
-        results["model1"] = {"formula": formula1, "coef_domlow": coef, "se_domlow": se, "z_domlow": zval, "p_domlow": pval}
+        md1 = mixedlm("log_totinc ~ domlow", data=hhfilt, groups=hhfilt[groups_col], vc_formula=vc)
+        mdf1 = md1.fit(method='lbfgs', maxiter=200, disp=False)
+        print(mdf1.summary())
+        if 'domlow' in mdf1.params.index:
+            print({
+                'model': 'Task2_Model1',
+                'coef_domlow': float(mdf1.params['domlow']),
+                't_domlow': float(getattr(mdf1, 'tvalues', mdf1.zvalues)['domlow']),
+                'p_domlow': float(mdf1.pvalues['domlow'])
+            })
     except Exception as e:
-        results["model1_error"] = str(e)
+        print(f"[WARN] MixedLM Model 1 failed: {e}")
 
-    # Model 2: with allowed controls and their interactions: literate * totland * caste * domlow
-    rhs = "literate * totland * C(caste) * domlow"
-    formula2 = f"log_totinc ~ {rhs}"
+    # Model 2: include literacy, totland, caste and all interactions with domlow
+    inter_formula = 'log_totinc ~ literate * totland'
+    if 'caste' in hhfilt.columns:
+        inter_formula += ' * C(caste)'
+    inter_formula += ' * domlow'
+
+    print("\n=== Task2: Mixed-effects Model 2: "+inter_formula+"; RE: village + (bihar) ===")
     try:
-        res2 = fit_mixedlm(formula2, df, random_top="bihar", vc_components=vc)
-        coef = float(res2.params.get("domlow", np.nan))
-        se = float(res2.bse.get("domlow", np.nan))
-        zval = coef / se if (se is not None and se != 0 and not np.isnan(se)) else np.nan
-        pval = float(res2.pvalues.get("domlow", np.nan))
-        results["model2"] = {"formula": formula2, "coef_domlow": coef, "se_domlow": se, "z_domlow": zval, "p_domlow": pval}
+        md2 = mixedlm(inter_formula, data=hhfilt, groups=hhfilt[groups_col], vc_formula=vc)
+        mdf2 = md2.fit(method='lbfgs', maxiter=400, disp=False)
+        print(mdf2.summary())
+        if 'domlow' in mdf2.params.index:
+            print({
+                'model': 'Task2_Model2',
+                'coef_domlow': float(mdf2.params['domlow']),
+                't_domlow': float(getattr(mdf2, 'tvalues', mdf2.zvalues)['domlow']),
+                'p_domlow': float(mdf2.pvalues['domlow'])
+            })
     except Exception as e:
-        results["model2_error"] = str(e)
+        print(f"[WARN] MixedLM Model 2 failed: {e}")
 
-    print(json.dumps(results, indent=2))
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    print("[INFO] Running Task2 translation in Python")
+    run_task2_models()

@@ -1,89 +1,74 @@
 import json
-import os
-import numpy as np
 import pandas as pd
+import numpy as np
+import statsmodels.formula.api as smf
+from scipy import stats
 
-# Attempt to import statsmodels; install if missing# Import statsmodels (preinstalled via Docker image)# Try to import statsmodels; if unavailable, install compatible versions for this interpreter
-import sys
-try:
-    import statsmodels.api as sm
-except Exception:
-    import subprocess, site
-    pkgs = [
-        "statsmodels==0.14.1",
-        "numpy==1.26.4",
-        "patsy==0.5.6",
-        "pandas==2.0.3"
-    ]
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--user"] + pkgs)
-    try:
-        sys.path.append(site.getusersitepackages())
-    except Exception:
-        pass
-    import statsmodels.api as sm
+DATA_PATH = "/app/data/final_data.dta"
+OUT_PATH = "/app/data/results_task2.json"
 
-# IO paths# IO paths# IO paths
-DATA_PATH = os.environ.get("DATA_PATH", "/app/data")
-INPUT_FILE = os.path.join(DATA_PATH, "final_data.dta")
-OUT_JSON = os.path.join(DATA_PATH, "task2_results.json")
 
-# Load data
-if not os.path.exists(INPUT_FILE):
-    raise FileNotFoundError(f"Data file not found at {INPUT_FILE}. Ensure final_data.dta is available under /app/data.")
+def main():
+    df = pd.read_stata(DATA_PATH)
 
-df = pd.read_stata(INPUT_FILE)
+    # Ensure numeric
+    for col in ["complaints_2008", "num_names_2008", "first_A"]:
+        if not np.issubdtype(df[col].dtype, np.number):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
-# Ensure numeric types
-for col in ["complaints_2008", "num_names_2008", "first_A"]:
-    if col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    else:
-        raise KeyError(f"Required column '{col}' not found in dataset.")
+    # Recode first_A
+    df["first_A_cat"] = np.where(df["first_A"] == 1, "A or number", "rest")
 
-# Drop rows with missing required fields
-df_model = df[["complaints_2008", "first_A", "num_names_2008"]].dropna().copy()
+    # Model: standardized outcome on first_A and standardized num_names, report F-test for first_A term
+    df = df.copy()
+    df["complaints_z"] = (df["complaints_2008"] - df["complaints_2008"].mean()) / df["complaints_2008"].std(ddof=1)
+    df["num_names_z"] = (df["num_names_2008"] - df["num_names_2008"].mean()) / df["num_names_2008"].std(ddof=1)
 
-# Standardize variables to mirror R code
+    model_df = df[["complaints_z", "first_A_cat", "num_names_z"]].dropna()
 
-def zscore(x):
-    return (x - x.mean()) / x.std(ddof=1)
+    formula = "complaints_z ~ C(first_A_cat) + num_names_z"
+    model = smf.ols(formula, data=model_df).fit()
 
-# Outcome and covariate scaling
-df_model["y_z"] = zscore(df_model["complaints_2008"])  # outcome
-df_model["num_names_z"] = zscore(df_model["num_names_2008"])  # covariate
+    # Compute Type II-like F test for first_A term by comparing full and reduced models
+    reduced = smf.ols("complaints_z ~ num_names_z", data=model_df).fit()
+    df1 = (len(model.params) - len(reduced.params))
+    df2 = int(model_df.shape[0] - len(model.params))
+    ssr_full = np.sum(model.resid ** 2)
+    ssr_reduced = np.sum(reduced.resid ** 2)
+    msr_diff = (ssr_reduced - ssr_full) / df1
+    mse_full = ssr_full / df2
+    F_stat = msr_diff / mse_full
+    p_value = 1 - stats.f.cdf(F_stat, df1, df2)
 
-# Fit OLS: y_z ~ first_A + num_names_z
-X = df_model[["first_A", "num_names_z"]]
-X = sm.add_constant(X)
-y = df_model["y_z"]
-model = sm.OLS(y, X, missing="drop").fit()
+    # Extract the coefficient for first_A dummy
+    fa_params = [p for p in model.params.index if p.startswith("C(first_A_cat)")]
+    fa_param = fa_params[0] if fa_params else None
 
-coef_first_A = float(model.params.get("first_A", np.nan))
-p_first_A = float(model.pvalues.get("first_A", np.nan))
-coef_num_names = float(model.params.get("num_names_z", np.nan))
-p_num_names = float(model.pvalues.get("num_names_z", np.nan))
+    results_out = {
+        "n": int(model.nobs),
+        "model": "OLS",
+        "formula": formula,
+        "r2": float(model.rsquared),
+        "adj_r2": float(model.rsquared_adj),
+        "F_first_A": float(F_stat),
+        "F_df1": int(df1),
+        "F_df2": int(df2),
+        "F_p": float(p_value),
+        "coef_first_A": float(model.params[fa_param]) if fa_param else None,
+        "p_first_A_coef": float(model.pvalues[fa_param]) if fa_param else None,
+        "param_first_A": fa_param,
+        "params": {k: float(v) for k, v in model.params.items()},
+        "pvalues": {k: float(v) for k, v in model.pvalues.items()},
+    }
 
-# For an ANOVA-like F test on first_A (equivalent to t^2 for single coefficient)
-t_value = float(model.tvalues.get("first_A", np.nan))
-F_first_A = t_value ** 2 if np.isfinite(t_value) else np.nan
+    with open(OUT_PATH, "w") as f:
+        json.dump(results_out, f, indent=2)
 
-results = {
-    "model": "OLS",
-    "formula": "scale(complaints_2008) ~ first_A + scale(num_names_2008)",
-    "n_obs": int(model.nobs),
-    "r_squared": float(model.rsquared),
-    "coef_first_A": coef_first_A,
-    "t_first_A": float(t_value) if np.isfinite(t_value) else np.nan,
-    "F_first_A": float(F_first_A) if np.isfinite(F_first_A) else np.nan,
-    "p_first_A": p_first_A,
-    "coef_num_names_z": coef_num_names,
-    "p_num_names_z": p_num_names,
-}
+    print(model.summary())
+    print(f"F-test for first_A: F({df1}, {df2}) = {F_stat:.3f}, p = {p_value:.3g}")
+    if fa_param:
+        print(f"First_A effect ({fa_param}): coef={model.params[fa_param]:.4f}, p={model.pvalues[fa_param]:.4g}")
 
-print("Task2 OLS results (standardized outcome) with F-test for first_A:")
-print({k: v for k, v in results.items() if k not in ["model", "formula"]})
 
-with open(OUT_JSON, "w") as f:
-    json.dump(results, f, indent=2)
-
-print(f"Saved Task2 results to {OUT_JSON}")
+if __name__ == "__main__":
+    main()
