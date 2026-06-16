@@ -1,276 +1,276 @@
 import json
 import math
-import os
-from collections import Counter, defaultdict
-from itertools import combinations
-
+import itertools
+from collections import defaultdict, Counter
 import numpy as np
 import pandas as pd
-import sys, site, importlib
-# Ensure system site-packages is on path (for globally installed libs inside container)
-sys.path.insert(0, f"/usr/local/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages")
-try:
-    import networkx as nx
-except ModuleNotFoundError:
-    # Try adding site/user site paths explicitly then import
-    try:
-        for p in (site.getsitepackages() + [site.getusersitepackages()]):
-            if p not in sys.path:
-                sys.path.append(p)
-        nx = importlib.import_module("networkx")
-    except Exception as e:
-        raise ImportError(f"Failed to import networkx after adjusting sys.path: {e}")
+import networkx as nx
 from scipy import stats
 
-# Robust import for Louvain
-try:
-    import community as community_louvain  # pip package: python-louvain
-except Exception:
-    from community import community_louvain
-
-DATA_PATH = "/app/data/FINAL demo open fluency.csv"
-OUT_PATH = "/app/data/task1_results.json"
-
-np.seterr(all="ignore")
-
+# Utilities
 
 def clean_word(x):
     if pd.isna(x):
         return None
-    if isinstance(x, (int, float)) and not isinstance(x, bool):
-        # Treat negative or sentinel values as missing
-        if x == -1:
-            return None
-        x = str(x)
     s = str(x).strip().lower()
-    if s in ("", "nan", "na", "-1", "none", "missing"):
+    if s in ('', 'nan', 'na', 'none', '-1', 'missing'):
         return None
-    # Basic cleanup: collapse spaces
-    s = " ".join(s.split())
-    return s if s else None
+    return s
 
 
-def get_vf_columns(df):
-    cols = []
-    for c in df.columns:
-        cl = c.lower()
-        if cl.startswith("vf_an_"):
-            cols.append(c)
-    return cols
-
-
-def build_global_cooccurrence(df, vf_cols):
-    pair_counts = Counter()
-    n_rows_used = 0
-    for _, row in df[vf_cols].iterrows():
-        words = [clean_word(row[c]) for c in vf_cols]
-        words = [w for w in words if w]
-        if len(words) < 2:
+def build_cooccurrence(word_sets, n_participants):
+    """Build global co-occurrence counts for unordered word pairs.
+    word_sets: list of sets of words per participant
+    n_participants: total number of participants (denominator for p)
+    Returns: dict mapping (w1, w2) -> count
+    """
+    counts = Counter()
+    for ws in word_sets:
+        if len(ws) < 2:
             continue
-        n_rows_used += 1
-        uniq = sorted(set(words))
-        for a, b in combinations(uniq, 2):
-            pair_counts[(a, b)] += 1
-    n_rows_used = max(n_rows_used, 1)
-    return pair_counts, n_rows_used
+        # combinations on set avoids duplicate words within a participant
+        for w1, w2 in itertools.combinations(sorted(ws), 2):
+            counts[(w1, w2)] += 1
+    return counts
 
 
-def binary_entropy(p):
+def pair_entropy(count, n):
+    # probability of co-occurrence across participants
+    if n <= 0:
+        return 0.0
+    p = count / n
+    # binary entropy in bits
     if p <= 0.0 or p >= 1.0:
         return 0.0
-    # natural log base; scale does not affect ordering, only magnitude
-    return -(p * math.log(p) + (1 - p) * math.log(1 - p))
+    return -(p * math.log2(p) + (1 - p) * math.log2(1 - p))
 
 
-def participant_graphs(words, pair_counts, denom_rows):
-    # Build complete graphs over participant word set
-    Gd = nx.Graph()
-    Gs = nx.Graph()
-    for w in words:
-        Gd.add_node(w)
-        Gs.add_node(w)
-    if len(words) < 2:
-        return Gd, Gs
-    for a, b in combinations(sorted(words), 2):
-        cnt = pair_counts.get((a, b), 0)
-        p = cnt / float(denom_rows)
-        H = binary_entropy(p)
-        dist = H if H > 0 else 0.99  # replace zero-entropy edges with 0.99 (long distance)
-        strength = 1.0 / dist if dist > 0 else 0.0
-        Gd.add_edge(a, b, weight=dist)
-        Gs.add_edge(a, b, weight=strength)
-    return Gd, Gs
+def participation_coefficients(G, partition):
+    """Compute participation coefficient for each node in weighted graph G given a partition dict node->community.
+    PC_i = 1 - sum_s (k_is / k_i)^2 where k_is is sum of weights of edges from i to nodes in community s, and k_i is total strength of i.
+    """
+    pcs = {}
+    for n in G.nodes():
+        k_i = 0.0
+        comm_weights = defaultdict(float)
+        for nbr, data in G[n].items():
+            w = data.get('weight', 1.0)
+            k_i += w
+            s = partition.get(nbr, -1)
+            comm_weights[s] += w
+        if k_i <= 0:
+            pcs[n] = 0.0
+        else:
+            frac_sq_sum = 0.0
+            for s, wsum in comm_weights.items():
+                frac = wsum / k_i
+                frac_sq_sum += frac * frac
+            pcs[n] = 1.0 - frac_sq_sum
+    return pcs
 
 
-def compute_mst_cpl(Gd):
-    # Minimum spanning tree over distance graph
-    if Gd.number_of_nodes() < 2:
+def median_shortest_path_length(tree):
+    # Compute all pairs shortest path lengths with weight
+    nodes = list(tree.nodes())
+    if len(nodes) < 2:
         return np.nan
-    try:
-        T = nx.minimum_spanning_tree(Gd, weight="weight")
-    except Exception:
-        return np.nan
-    # Shortest path lengths on MST using distance weights
     dists = []
-    for source in T.nodes:
-        lengths = nx.single_source_dijkstra_path_length(T, source, weight="weight")
-        for target, L in lengths.items():
-            if target <= source:
-                continue
-            dists.append(L)
-    if not dists:
+    # Use all_pairs_dijkstra_path_length
+    all_lengths = dict(nx.all_pairs_dijkstra_path_length(tree, weight='weight'))
+    for i, u in enumerate(nodes):
+        lu = all_lengths.get(u, {})
+        for v in nodes[i+1:]:
+            d = lu.get(v, np.nan)
+            if not np.isnan(d):
+                dists.append(d)
+    if len(dists) == 0:
         return np.nan
     return float(np.median(dists))
 
 
-def compute_betweenness_mst(Gd):
-    if Gd.number_of_nodes() < 2:
-        return (np.nan, np.nan)
+def compute_metrics_for_participant(words_list, counts, n_participants):
+    # words_list: list of strings (possibly with duplicates), we will treat unique set
+    ws = sorted(set([w for w in words_list if w is not None]))
+    if len(ws) < 2:
+        return None
+    # Build graphs: distance graph using entropy as distance; strength graph weight = 1/entropy
+    Gd = nx.Graph()
+    Gs = nx.Graph()
+    Gd.add_nodes_from(ws)
+    Gs.add_nodes_from(ws)
+    for w1, w2 in itertools.combinations(ws, 2):
+        key = (w1, w2) if (w1, w2) in counts else (w2, w1)
+        c = counts.get(key, 0)
+        H = pair_entropy(c, n_participants)
+        # Replace zero-entropy edges with 0.99 as specified
+        if H <= 0.0:
+            H = 0.99
+        Gd.add_edge(w1, w2, weight=H)
+        # Strength graph: weight inversely proportional to entropy
+        weight = 1.0 / H if H > 0 else 0.0
+        Gs.add_edge(w1, w2, weight=weight)
+
+    # Minimum Spanning Tree on distance graph
     try:
-        T = nx.minimum_spanning_tree(Gd, weight="weight")
-        bc = nx.betweenness_centrality(T, weight="weight", normalized=True)
-        vals = list(bc.values())
-        if not vals:
-            return (np.nan, np.nan)
-        return (float(np.mean(vals)), float(np.max(vals)))
+        mst = nx.minimum_spanning_tree(Gd, weight='weight')
     except Exception:
-        return (np.nan, np.nan)
+        mst = Gd.copy()
 
+    cpl = median_shortest_path_length(mst)
 
-def louvain_participation_mean(Gs):
-    if Gs.number_of_nodes() < 2 or Gs.number_of_edges() == 0:
-        return np.nan
+    # Betweenness centrality on MST
     try:
-        # Robust import usage
-        partition = community_louvain.best_partition(Gs, weight="weight", random_state=42)
-        # Compute participation coefficient per node
-        # P_i = 1 - sum_c (k_i_c / k_i)^2
-        part = {}
-        for i in Gs.nodes():
-            k_i = 0.0
-            comm_strength = defaultdict(float)
-            for j, data in Gs[i].items():
-                w = data.get("weight", 1.0)
-                k_i += w
-                cj = partition.get(j, -1)
-                comm_strength[cj] += w
-            if k_i <= 0:
-                part[i] = 0.0
+        bc = nx.betweenness_centrality(mst, weight='weight', normalized=True)
+        betw_mean = float(np.mean(list(bc.values()))) if len(bc) > 0 else np.nan
+        betw_max = float(np.max(list(bc.values()))) if len(bc) > 0 else np.nan
+    except Exception:
+        betw_mean = np.nan
+        betw_max = np.nan
+
+    # Louvain partition on strength graph
+    try:
+        import community as community_louvain  # python-louvain
+        partition = community_louvain.best_partition(Gs, weight='weight')
+    except Exception:
+        # Fallback: single community
+        partition = {n: 0 for n in Gs.nodes()}
+
+    pcs = participation_coefficients(Gs, partition)
+    if len(pcs) == 0:
+        part_mean = np.nan
+    else:
+        # Mode of PCs
+        values = list(pcs.values())
+        try:
+            mode_val = stats.mode(values, nan_policy='omit', keepdims=True).mode
+            if isinstance(mode_val, np.ndarray):
+                mode_val = float(mode_val[0]) if len(mode_val) > 0 else np.nan
             else:
-                s = 0.0
-                for c, kic in comm_strength.items():
-                    s += (kic / k_i) ** 2
-                part[i] = 1.0 - s
-        vals = np.array(list(part.values()), dtype=float)
-        if vals.size == 0:
-            return np.nan
-        # Mode approximation by rounding to 2 decimals
-        rounded = np.round(vals, 2)
-        if rounded.size == 0:
-            return float(np.mean(vals))
-        uniq, counts = np.unique(rounded, return_counts=True)
-        mode_val = float(uniq[np.argmax(counts)])
-        sel = vals[vals > mode_val]
-        if sel.size >= 1:
-            return float(np.mean(sel))
+                mode_val = float(mode_val)
+        except Exception:
+            # Fallback: rounded mode via histogram
+            hist, bin_edges = np.histogram(values, bins=10)
+            mode_bin = np.argmax(hist)
+            mode_val = float((bin_edges[mode_bin] + bin_edges[mode_bin+1]) / 2.0)
+        sel = [v for v in values if (not np.isnan(v)) and (v > mode_val)]
+        if len(sel) == 0:
+            part_mean = float(np.nanmean(values))
         else:
-            return float(np.mean(vals))
-    except Exception:
-        return np.nan
+            part_mean = float(np.mean(sel))
+
+    return {
+        'cpl': float(cpl) if not np.isnan(cpl) else np.nan,
+        'betw_mean': betw_mean if not np.isnan(betw_mean) else np.nan,
+        'betw_max': betw_max if not np.isnan(betw_max) else np.nan,
+        'part_mean': part_mean if not np.isnan(part_mean) else np.nan
+    }
 
 
 def main():
-    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
-    df = pd.read_csv(DATA_PATH)
+    input_path = '/app/data/FINAL demo open fluency.csv'
+    out_path = '/app/data/task1_results.json'
+    df = pd.read_csv(input_path)
 
-    # Prepare columns
-    vf_cols = get_vf_columns(df)
-    if len(vf_cols) == 0:
-        raise RuntimeError("No verbal fluency columns starting with 'vf_an_' found.")
+    # Build word lists per participant
+    vf_cols = [c for c in df.columns if c.startswith('vf_an_')]
+    words_per_row = []
+    for idx, row in df[vf_cols].iterrows():
+        ws = set()
+        for c in vf_cols:
+            w = clean_word(row[c])
+            if w is not None:
+                ws.add(w)
+        words_per_row.append(ws)
 
-    # Global co-occurrence across dataset
-    pair_counts, denom_rows = build_global_cooccurrence(df, vf_cols)
+    n_participants = df.shape[0]
 
-    # Compute per-participant metrics
-    metrics = []
-    for idx, row in df.iterrows():
-        words = [clean_word(row[c]) for c in vf_cols]
-        words = [w for w in words if w]
-        words = sorted(set(words))
-        Gd, Gs = participant_graphs(words, pair_counts, denom_rows)
-        cpl = compute_mst_cpl(Gd)
-        betw_mean, betw_max = compute_betweenness_mst(Gd)
-        part_mean = louvain_participation_mean(Gs)
-        metrics.append({
-            "cpl": cpl,
-            "betw_mean": betw_mean,
-            "betw_max": betw_max,
-            "part_mean": part_mean,
-        })
+    # Build global co-occurrence counts
+    counts = build_cooccurrence(words_per_row, n_participants)
 
-    met = pd.DataFrame(metrics)
-
-    # Openness measures
-    for col in ["o_ffi", "oi_bfas", "o_bfas", "i_bfas"]:
-        if col not in df.columns:
+    # Compute openness average
+    for col in ['o_ffi', 'oi_bfas', 'o_bfas', 'i_bfas']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        else:
             df[col] = np.nan
-    df["openness_average"] = df[["o_ffi", "oi_bfas", "o_bfas", "i_bfas"]].astype(float).mean(axis=1, skipna=True)
+    df['openness_average'] = df[['o_ffi', 'oi_bfas', 'o_bfas', 'i_bfas']].mean(axis=1, skipna=True)
 
-    out = pd.concat([df, met], axis=1)
+    # Compute metrics per participant
+    results = []
+    for i, row in df.iterrows():
+        words_list = []
+        for c in vf_cols:
+            words_list.append(clean_word(row[c]))
+        metrics = compute_metrics_for_participant(words_list, counts, n_participants)
+        if metrics is None:
+            res = {'id': row.get('id', i), 'cpl': np.nan, 'betw_mean': np.nan, 'betw_max': np.nan, 'part_mean': np.nan}
+        else:
+            res = {'id': row.get('id', i)}
+            res.update(metrics)
+        res['openness_average'] = row['openness_average']
+        results.append(res)
 
-    # Filter: cpl < 10
-    filt = out["cpl"].astype(float) < 10
-    ana = out.loc[filt & out["part_mean"].notna() & out["openness_average"].notna(), ["openness_average", "part_mean"]].copy()
+    res_df = pd.DataFrame(results)
 
-    # Spearman correlation
-    if len(ana) >= 3:
-        rho, pval = stats.spearmanr(ana["openness_average"], ana["part_mean"], nan_policy="omit")
-        n_corr = int(np.sum(ana[["openness_average", "part_mean"]].notna().all(axis=1)))
-    else:
-        rho, pval, n_corr = (np.nan, np.nan, int(len(ana)))
+    # Filter: valid cpl and values present; cpl < 10 should retain most/all rows per dataset
+    filt_df = res_df[(~res_df['cpl'].isna()) & (res_df['cpl'] < 10) & (~res_df['part_mean'].isna()) & (~res_df['openness_average'].isna())].copy()
+
+    # Save filtered data for verification
+    try:
+        filt_df.to_csv('/app/data/task1_filtered.csv', index=False)
+    except Exception:
+        pass
+
+    # Spearman correlation between openness_average and part_mean
+    corr_rho, corr_p, n_corr = (np.nan, np.nan, 0)
+    try:
+        tmp_corr = filt_df[['openness_average', 'part_mean']].dropna()
+        if tmp_corr.shape[0] >= 3:
+            corr_rho, corr_p = stats.spearmanr(tmp_corr['openness_average'], tmp_corr['part_mean'])
+            n_corr = int(tmp_corr.shape[0])
+    except Exception:
+        pass
 
     # Median split and Welch t-test
-    tstat = np.nan
-    tpval = np.nan
-    n_low = n_high = 0
-    if len(ana) >= 3:
-        med = float(ana["openness_average"].median())
-        low = ana.loc[ana["openness_average"] <= med, "part_mean"].astype(float).values
-        high = ana.loc[ana["openness_average"] > med, "part_mean"].astype(float).values
-        # Ensure both groups have at least 2 obs
-        if len(low) >= 2 and len(high) >= 2:
-            t_res = stats.ttest_ind(low, high, equal_var=False, nan_policy="omit")
-            tstat = float(t_res.statistic)
-            tpval = float(t_res.pvalue)
-            n_low = int(np.sum(~np.isnan(low)))
-            n_high = int(np.sum(~np.isnan(high)))
+    t_stat, t_p, n_low, n_high = (np.nan, np.nan, 0, 0)
+    try:
+        tmp_t = filt_df[['openness_average', 'part_mean']].dropna()
+        if tmp_t.shape[0] >= 4:
+            med = np.median(tmp_t['openness_average'])
+            low = tmp_t[tmp_t['openness_average'] <= med]['part_mean']
+            high = tmp_t[tmp_t['openness_average'] > med]['part_mean']
+            n_low, n_high = int(low.shape[0]), int(high.shape[0])
+            if n_low >= 2 and n_high >= 2:
+                t_res = stats.ttest_ind(low, high, equal_var=False, nan_policy='omit')
+                t_stat = float(t_res.statistic)
+                t_p = float(t_res.pvalue)
+    except Exception:
+        pass
 
-    results = {
-        "spearman": {
-            "rho": None if pd.isna(rho) else float(rho),
-            "p_value": None if pd.isna(pval) else float(pval),
-            "n": int(n_corr),
-            "direction": "positive" if (not pd.isna(rho) and rho > 0) else ("negative" if (not pd.isna(rho) and rho < 0) else "zero")
+    output = {
+        'task': 'Task1',
+        'spearman': {
+            'rho': None if (pd.isna(corr_rho)) else float(corr_rho),
+            'p_value': None if (pd.isna(corr_p)) else float(corr_p),
+            'n': int(n_corr)
         },
-        "t_test_median_split": {
-            "t_value": None if pd.isna(tstat) else float(tstat),
-            "p_value": None if pd.isna(tpval) else float(tpval),
-            "n_low": int(n_low),
-            "n_high": int(n_high)
-        },
-        "notes": {
-            "filter": "cpl < 10",
-            "data_rows": int(len(df)),
-            "vf_columns": len(vf_cols),
-            "denominator_rows_for_cooccurrence": int(denom_rows)
+        'ttest_median_split': {
+            't_stat': None if (pd.isna(t_stat)) else float(t_stat),
+            'p_value': None if (pd.isna(t_p)) else float(t_p),
+            'n_low': int(n_low),
+            'n_high': int(n_high)
         }
     }
 
-    with open(OUT_PATH, "w") as f:
-        json.dump(results, f, indent=2)
+    with open(out_path, 'w') as f:
+        json.dump(output, f, indent=2)
 
-    print(json.dumps(results, indent=2))
+    # Also save per-participant metrics for transparency
+    try:
+        metrics_out = '/app/data/task1_participant_metrics.csv'
+        res_df.to_csv(metrics_out, index=False)
+    except Exception:
+        pass
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

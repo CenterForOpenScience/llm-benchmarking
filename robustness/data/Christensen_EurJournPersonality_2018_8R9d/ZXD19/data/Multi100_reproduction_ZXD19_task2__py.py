@@ -1,167 +1,184 @@
 import os
-import math
 import json
-import sys
-# Runtime dependency bootstrap to avoid missing modules in some environments
-try:
-    import numpy as np
-    import pandas as pd
-    import networkx as nx
-    from scipy import stats
-except Exception:
-    import subprocess
-    pkgs = ["numpy==1.26.4","pandas==2.0.3","scipy==1.11.4","networkx==3.2.1","statsmodels==0.14.1"]
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-input"] + pkgs)
-    import numpy as np
-    import pandas as pd
-    import networkx as nx
-    from scipy import stats
-from typing import Tuple, List, Dict
+import random
+import numpy as np
+import pandas as pd
+import networkx as nx
+from scipy import stats
 
-DATA_DIR = os.environ.get("APP_DATA_DIR", "/app/data")
+random.seed(42)
+np.random.seed(42)
 
-# replicate the R vectorLength definition
+DATA_DIR = "/app/data"
+ARTIFACTS_DIR = "/app/artifacts"
+os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 
-def vector_length(v: np.ndarray) -> float:
-    return float(np.sqrt(np.sum(np.power(v * v, 2.0))))
+# Utilities
 
-
-def cosine_similarity_columns(X: np.ndarray) -> np.ndarray:
-    n_vars = X.shape[1]
-    S = np.zeros((n_vars, n_vars), dtype=float)
-    norms = np.array([vector_length(X[:, i]) for i in range(n_vars)])
-    for i in range(n_vars):
-        for j in range(n_vars):
-            denom = norms[i] * norms[j]
-            if denom == 0.0:
-                S[i, j] = 0.0
-            else:
-                S[i, j] = float(np.dot(X[:, i], X[:, j]) / denom)
-    return S
+def normalize_token(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s).strip().lower()
+    s = "".join([ch for ch in s if ch.isalpha()])
+    if s in ("", "na", "nana", "nan", "none", "dontknow", "dk", "n", "idk"):
+        return ""
+    return s
 
 
-def planar_maximally_filtered_adjacency(S: np.ndarray) -> np.ndarray:
-    n = S.shape[0]
-    W = S.copy()
-    np.fill_diagonal(W, 0.0)
-    edges = []
-    for i in range(n):
-        for j in range(i + 1, n):
-            w = W[i, j]
-            if np.isfinite(w):
-                edges.append((i, j, float(w)))
-    edges.sort(key=lambda x: x[2], reverse=True)
+def build_binary_matrix(flu: pd.DataFrame) -> pd.DataFrame:
+    resp_cols = [c for c in flu.columns if c.startswith("vf_an_")]
+    token_sets = []
+    vocab = set()
+    for _, row in flu.iterrows():
+        toks = [normalize_token(row[c]) for c in resp_cols]
+        toks = [t for t in toks if t != ""]
+        s = set(toks)
+        token_sets.append(s)
+        vocab.update(s)
+    vocab = sorted(vocab)
+    idx = {w: i for i, w in enumerate(vocab)}
+    mat = np.zeros((len(token_sets), len(vocab)), dtype=np.uint8)
+    for r, s in enumerate(token_sets):
+        for w in s:
+            mat[r, idx[w]] = 1
+    return pd.DataFrame(mat, columns=vocab)
+
+
+def cosine_similarity_from_binary(X: np.ndarray) -> np.ndarray:
+    Xt = X.T
+    dots = Xt @ X
+    norms = np.sqrt(np.diag(dots))
+    denom = norms[:, None] * norms[None, :]
+    with np.errstate(divide='ignore', invalid='ignore'):
+        cos = np.true_divide(dots, denom)
+        cos[~np.isfinite(cos)] = 0.0
+    np.fill_diagonal(cos, 0.0)
+    return cos
+
+
+def greedy_planar_backbone(weights: np.ndarray) -> np.ndarray:
+    n = weights.shape[0]
     G = nx.Graph()
     G.add_nodes_from(range(n))
-    max_edges = max(0, 3 * n - 6)
-    for (i, j, w) in edges:
+    edges = []
+    for i in range(n):
+        for j in range(i+1, n):
+            w = float(weights[i, j])
+            if w > 0:
+                edges.append((i, j, w))
+    edges.sort(key=lambda x: x[2], reverse=True)
+    max_edges = max(0, 3*n - 6)
+    for (u, v, w) in edges:
         if G.number_of_edges() >= max_edges:
             break
-        G.add_edge(i, j, weight=w)
-        is_planar, _ = nx.check_planarity(G, counterexample=False)
-        if not is_planar:
-            G.remove_edge(i, j)
-    A = np.zeros((n, n), dtype=int)
-    for (u, v) in G.edges():
+        G.add_edge(u, v, weight=w)
+        planar, _ = nx.check_planarity(G)
+        if not planar:
+            G.remove_edge(u, v)
+    A = np.zeros((n, n), dtype=np.uint8)
+    for u, v in G.edges():
         A[u, v] = 1
         A[v, u] = 1
     return A
 
 
-def average_shortest_path_length_lcc(A: np.ndarray) -> float:
+def largest_cc_aspl_from_adj(A: np.ndarray) -> float:
+    n = A.shape[0]
+    if n == 0:
+        return float('nan')
     G = nx.from_numpy_array(A)
-    if G.number_of_edges() == 0:
+    if G.number_of_nodes() == 0 or G.number_of_edges() == 0:
         return float('nan')
     components = list(nx.connected_components(G))
     if len(components) == 0:
         return float('nan')
     lcc_nodes = max(components, key=len)
-    H = G.subgraph(lcc_nodes).copy()
+    if len(lcc_nodes) < 2:
+        return float('nan')
+    lcc = G.subgraph(lcc_nodes).copy()
     try:
-        return float(nx.average_shortest_path_length(H))
+        return nx.average_shortest_path_length(lcc)
     except Exception:
         return float('nan')
 
 
-def load_open_and_fluency(data_dir: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    fluency_path = os.path.join(data_dir, "FINAL fluency.csv")
-    open_path = os.path.join(data_dir, "FINAL open.csv")
-    fluency = pd.read_csv(fluency_path, encoding='utf-8-sig')
-    open_df = pd.read_csv(open_path, encoding='utf-8-sig')
-    return open_df, fluency
+def main():
+    flu = pd.read_csv(os.path.join(DATA_DIR, "FINAL fluency.csv"))
+    opn = pd.read_csv(os.path.join(DATA_DIR, "FINAL open.csv"))
 
+    # group split
+    groups = opn["LATENT"] > opn["LATENT"].median()
 
-def build_binary_matrix(fluency: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
-    cols = [c for c in fluency.columns if c != 'id']
-    vocab_set = set()
-    for _, row in fluency.iterrows():
-        for c in cols:
-            val = str(row.get(c, "")).strip().lower()
-            if val and val != '99' and val != 'nan':
-                vocab_set.add(val)
-    vocab = sorted(list(vocab_set))
-    word_index = {w: i for i, w in enumerate(vocab)}
-    X = np.zeros((fluency.shape[0], len(vocab)), dtype=int)
-    for r, row in fluency.iterrows():
-        seen = set()
-        for c in cols:
-            val = str(row.get(c, "")).strip().lower()
-            if not val or val == '99' or val == 'nan':
-                continue
-            if val in word_index and val not in seen:
-                X[r, word_index[val]] = 1
-                seen.add(val)
-    return X, vocab
+    # word binary matrix
+    bin_df = build_binary_matrix(flu)
 
+    # split
+    bin1 = bin_df.loc[groups.values]
+    bin2 = bin_df.loc[(~groups).values]
 
-def task2(open_df: pd.DataFrame, X: np.ndarray, seed: int = 42,
-          num_boots: int = 1000, sub_frac: float = 0.9) -> Dict:
-    median_latent = float(np.median(open_df['LATENT'].values))
-    group_mask = (open_df['LATENT'].values > median_latent)
-    # common words (>=2 in each group)
-    X1 = X[group_mask, :]
-    X2 = X[~group_mask, :]
-    counts1 = X1.sum(axis=0)
-    counts2 = X2.sum(axis=0)
-    mask = (counts1 >= 2) & (counts2 >= 2)
-    X1c = X1[:, mask]
-    X2c = X2[:, mask]
-    # cosine similarity by words
-    S1 = cosine_similarity_columns(X1c)
-    S2 = cosine_similarity_columns(X2c)
-    # planar backbone
-    A1 = planar_maximally_filtered_adjacency(S1)
-    A2 = planar_maximally_filtered_adjacency(S2)
-    rng = np.random.default_rng(seed)
-    m = A1.shape[0]
-    sub_size = max(1, int(round(sub_frac * m)))
-    aspl1 = []
-    aspl2 = []
-    for _ in range(num_boots):
-        boot_nodes = rng.choice(m, size=sub_size, replace=False)
-        A1b = A1[np.ix_(boot_nodes, boot_nodes)]
-        A2b = A2[np.ix_(boot_nodes, boot_nodes)]
-        aspl1.append(average_shortest_path_length_lcc(A1b))
-        aspl2.append(average_shortest_path_length_lcc(A2b))
-    arr1 = np.array(aspl1, dtype=float)
-    arr2 = np.array(aspl2, dtype=float)
-    valid = ~np.isnan(arr1) & ~np.isnan(arr2)
-    t_stat, p_val = stats.ttest_rel(arr1[valid], arr2[valid])
-    return {
-        'mean_aspl_high': float(np.nanmean(arr1)),
-        'mean_aspl_low': float(np.nanmean(arr2)),
-        't_stat': float(t_stat),
-        'p_value': float(p_val),
-        'n_boot': int(np.sum(valid))
+    # filter words appearing >=2 in each group
+    mask1 = (bin1.sum(axis=0) >= 2)
+    mask2 = (bin2.sum(axis=0) >= 2)
+    common_cols = bin1.columns[mask1 & mask2]
+    bin1c = bin1[common_cols]
+    bin2c = bin2[common_cols]
+
+    results = {
+        "task_id": "Task2",
+        "status": "insufficient_words"
     }
 
+    if len(common_cols) >= 3:
+        cos1 = cosine_similarity_from_binary(bin1c.values)
+        cos2 = cosine_similarity_from_binary(bin2c.values)
+        A1 = greedy_planar_backbone(cos1)
+        A2 = greedy_planar_backbone(cos2)
+        n_nodes = A1.shape[0]
+        k = max(2, int(round(0.9 * n_nodes)))
+        aspl1, aspl2 = [], []
+        for i in range(1000):
+            nodes = np.random.choice(n_nodes, size=k, replace=False)
+            A1s = A1[np.ix_(nodes, nodes)]
+            A2s = A2[np.ix_(nodes, nodes)]
+            a1 = largest_cc_aspl_from_adj(A1s)
+            a2 = largest_cc_aspl_from_adj(A2s)
+            if np.isfinite(a1) and np.isfinite(a2):
+                aspl1.append(a1)
+                aspl2.append(a2)
+        if len(aspl1) > 1:
+            t_stat, p_val = stats.ttest_rel(aspl1, aspl2, nan_policy='omit')
+            results = {
+                "task_id": "Task2",
+                "status": "ok",
+                "mean_aspl_high": float(np.mean(aspl1)),
+                "mean_aspl_low": float(np.mean(aspl2)),
+                "t_stat": float(t_stat),
+                "p_value": float(p_val),
+                "n_nodes": int(n_nodes)
+            }
+        else:
+            results = {
+                "task_id": "Task2",
+                "status": "insufficient_aspl",
+                "n_nodes": int(n_nodes)
+            }
 
-def main():
-    open_df, fluency = load_open_and_fluency(DATA_DIR)
-    X, vocab = build_binary_matrix(fluency)
-    res = task2(open_df, X)
-    out = {'task': 'Task2', 'approach1_only': res}
-    print(json.dumps(out, indent=2))
+    with open(os.path.join(ARTIFACTS_DIR, "task2_results.json"), "w") as f:
+        json.dump(results, f, indent=2)
+    # also write execution_result.json to consolidate
+    exec_path = os.path.join(ARTIFACTS_DIR, "execution_result.json")
+    data = {}
+    if os.path.exists(exec_path):
+        try:
+            data = json.load(open(exec_path, 'r'))
+        except Exception:
+            data = {}
+    data["Task2"] = results
+    with open(exec_path, 'w') as f:
+        json.dump(data, f, indent=2)
+
+    print("Task2 completed. Results written to /app/artifacts/task2_results.json")
+
 
 if __name__ == "__main__":
     main()

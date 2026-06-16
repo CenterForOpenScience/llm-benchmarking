@@ -1,158 +1,192 @@
-#!/usr/bin/env python3
-"""
-Standalone analysis for PH39A using only the Python standard library.
-Computes Spearman correlation between MiniK_Total and DSM5_Total and
-reports approximate two-sided and one-sided (less) p-values.
-Reads:  /app/data/data.csv
-Writes: /app/data/results_ph39a.json
-"""
-import csv
-import json
-import math
-import sys
-from pathlib import Path
-from typing import List, Tuple
+import json, sys, os
+import pandas as pd
+import numpy as np
+from scipy.stats import spearmanr
+
+# Constants
+DATA_PATH = "/app/data/data.csv"
+RESULT_JSON_PATH = "/app/data/results_ph39a.json"
+EXECUTION_RESULT_PATH = "/app/data/execution_result.json"
+
+TASKS = [
+    {
+        "task_id": "Task1",
+        "task_role": "conclusion_oriented_reanalysis",
+        "path_name": "spearman_minik_psychopathology"
+    },
+    {
+        "task_id": "Task2",
+        "task_role": "comparable_result_oriented_reanalysis",
+        "path_name": "spearman_minik_psychopathology_t2"
+    }
+]
+
+MAIN_VARS = {
+    "outcome": "DSM5_Total",
+    "predictor": "MiniK_Total"
+}
 
 
-def read_two_columns(csv_path: Path, x_name: str, y_name: str) -> Tuple[List[float], List[float]]:
-    with csv_path.open("r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        rows = list(reader)
-    if not rows:
-        raise RuntimeError("CSV file is empty")
-    header = rows[0]
-    try:
-        xi = header.index(x_name)
-    except ValueError:
-        raise RuntimeError(f"Missing expected column: {x_name}")
-    try:
-        yi = header.index(y_name)
-    except ValueError:
-        raise RuntimeError(f"Missing expected column: {y_name}")
-
-    xs: List[float] = []
-    ys: List[float] = []
-    for r in rows[1:]:
-        if xi >= len(r) or yi >= len(r):
-            continue
-        xv = r[xi].strip()
-        yv = r[yi].strip()
-        try:
-            xval = float(xv)
-            yval = float(yv)
-        except Exception:
-            continue
-        if math.isnan(xval) or math.isnan(yval):
-            continue
-        xs.append(xval)
-        ys.append(yval)
-    return xs, ys
-
-
-def average_ranks(values: List[float]) -> List[float]:
-    n = len(values)
-    order = sorted(range(n), key=lambda i: values[i])
-    ranks = [0.0] * n
-    i = 0
-    current_rank = 1
-    while i < n:
-        j = i + 1
-        while j < n and values[order[j]] == values[order[i]]:
-            j += 1
-        avg_rank = (current_rank + (current_rank + (j - i) - 1)) / 2.0
-        for k in range(i, j):
-            ranks[order[k]] = avg_rank
-        current_rank += (j - i)
-        i = j
-    return ranks
-
-
-def pearson_corr(x: List[float], y: List[float]) -> float:
-    n = len(x)
-    if n != len(y) or n < 2:
-        raise RuntimeError("Vectors must have same length >= 2")
-    mx = sum(x) / n
-    my = sum(y) / n
-    num = 0.0
-    sx = 0.0
-    sy = 0.0
-    for i in range(n):
-        dx = x[i] - mx
-        dy = y[i] - my
-        num += dx * dy
-        sx += dx * dx
-        sy += dy * dy
-    if sx <= 0.0 or sy <= 0.0:
-        return float('nan')
-    return num / math.sqrt(sx * sy)
-
-
-def normal_cdf(z: float) -> float:
-    return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
-
-
-def approximate_p_values_from_rho(rho: float, n: int):
-    if n <= 3 or math.isnan(rho):
-        return float('nan'), float('nan')
-    denom = max(1e-12, 1.0 - rho * rho)
-    t_like = rho * math.sqrt(max(1.0, n - 2) / denom)
-    p_two = 2.0 * (1.0 - normal_cdf(abs(t_like)))
+def one_sided_p_less(rho: float, p_two_sided: float) -> float:
+    if np.isnan(rho) or np.isnan(p_two_sided):
+        return np.nan
+    # For H1: rho < 0
     if rho < 0:
-        p_one_less = p_two / 2.0
+        return max(min(p_two_sided / 2.0, 1.0), 0.0)
     else:
-        p_one_less = 1.0 - (p_two / 2.0)
-    p_two = max(0.0, min(1.0, p_two))
-    p_one_less = max(0.0, min(1.0, p_one_less))
-    return p_two, p_one_less
+        return max(min(1.0 - (p_two_sided / 2.0), 1.0), 0.0)
 
 
 def main():
-    data_path = Path("/app/data/data.csv")
-    if not data_path.exists():
-        print(f"ERROR: Expected data at {data_path} but it was not found.", file=sys.stderr)
+    # Load data
+    if not os.path.exists(DATA_PATH):
+        print(f"ERROR: Data file not found at {DATA_PATH}", file=sys.stderr)
         sys.exit(1)
 
-    x_var = "MiniK_Total"
-    y_var = "DSM5_Total"
+    df = pd.read_csv(DATA_PATH)
 
-    try:
-        x_vals, y_vals = read_two_columns(data_path, x_var, y_var)
-    except Exception as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(2)
+    for col in [MAIN_VARS["predictor"], MAIN_VARS["outcome"]]:
+        if col not in df.columns:
+            print(f"ERROR: Required column '{col}' not found in data.", file=sys.stderr)
+            sys.exit(1)
 
-    n = len(x_vals)
+    # Subset and drop missing
+    sub = df[[MAIN_VARS["predictor"], MAIN_VARS["outcome"]]].copy()
+    sub = sub.replace([np.inf, -np.inf], np.nan).dropna()
+
+    x = sub[MAIN_VARS["predictor" ]].to_numpy()
+    y = sub[MAIN_VARS["outcome"   ]].to_numpy()
+    n = int(len(sub))
+
     if n < 3:
-        print("ERROR: Insufficient non-missing observations to compute correlation.", file=sys.stderr)
-        sys.exit(3)
+        print("ERROR: Not enough observations after dropping missing values to compute Spearman correlation.", file=sys.stderr)
+        sys.exit(1)
 
-    rx = average_ranks(x_vals)
-    ry = average_ranks(y_vals)
-    rho = pearson_corr(rx, ry)
+    rho, p_two = spearmanr(x, y)
+    p_one_less = one_sided_p_less(rho, p_two)
 
-    p_two, p_one_less = approximate_p_values_from_rho(rho, n)
+    direction = "zero"
+    if rho > 0:
+        direction = "positive"
+    elif rho < 0:
+        direction = "negative"
 
-    results = {
-        "n": n,
-        "x_var": x_var,
-        "y_var": y_var,
-        "spearman_rho": None if (rho is None or (isinstance(rho, float) and math.isnan(rho))) else float(rho),
-        "p_value_two_sided": None if (p_two is None or (isinstance(p_two, float) and math.isnan(p_two))) else float(p_two),
-        "p_value_one_sided_less": None if (p_one_less is None or (isinstance(p_one_less, float) and math.isnan(p_one_less))) else float(p_one_less),
-        "alternative": "less",
-        "hypothesis": "rho < 0 (MiniK_Total negatively correlated with DSM5_Total)",
-        "p_value_note": "P-values are large-sample normal approximations for Spearman's rho."
+    result_text = (
+        f"Spearman correlation between {MAIN_VARS['predictor']} and {MAIN_VARS['outcome']} is "
+        f"{rho:.4f} (two-sided p={p_two:.4g}; one-sided less p={p_one_less:.4g}; N={n})."
+    )
+
+    base_result = {
+        "metric": "spearman_rho",
+        "value": float(rho) if rho is not None else None,
+        "direction": direction,
+        "test_statistics": {
+            "p_value": p_one_less,
+            "t_value": None,
+            "f_value": None,
+            "z_value": None,
+            "standard_error": None,
+            "confidence_interval": None,
+            "sample_size": n,
+            "other": {
+                "p_value_two_sided": p_two
+            }
+        },
+        "result_text": result_text
     }
 
-    payload = {"analysis": "PH39A_spearman_minik_dsm5", "results": results}
-    print(json.dumps(payload, indent=2))
+    # Determine conclusion
+    if direction == "negative" and (not np.isnan(p_one_less)) and p_one_less < 0.05:
+        conclusion_class = "support"
+        conclusion_text = "The result supports the focal claim: Mini-K (slower) is negatively associated with psychopathology (one-sided p<0.05)."
+    elif direction == "negative":
+        conclusion_class = "inconclusive"
+        conclusion_text = "Negative association observed but not statistically significant (one-sided p>=0.05)."
+    elif direction == "positive":
+        conclusion_class = "opposite"
+        conclusion_text = "Observed association is positive, opposite the focal claim."
+    else:
+        conclusion_class = "inconclusive"
+        conclusion_text = "No clear association detected."
 
-    out_path = Path("/app/data/results_ph39a.json")
-    try:
-        with out_path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-    except Exception as e:
-        print(f"WARNING: Failed to write results to {out_path}: {e}", file=sys.stderr)
+    # Prepare per-task outputs (identical stats for Task1 and Task2 in this plan)
+    task_outputs = []
+    for t in TASKS:
+        task_outputs.append({
+            "task_id": t["task_id"],
+            "task_role": t["task_role"],
+            "execution_status": "success",
+            "executed_analysis": {
+                "path_name": t["path_name"],
+                "software": "Python",
+                "model_family": "correlation",
+                "executed_files": [
+                    "data/analysis__py.py"
+                ],
+                "run_command": "python data/analysis__py.py",
+                "code_source": "provided_analysis_code"
+            },
+            "method_fidelity": {
+                "followed_planned_path": "yes",
+                "deviations": [],
+                "fidelity_note": "Followed the planned Spearman correlation path using the Mini-K total and DSM5 total."
+            },
+            "result_raw": base_result,
+            "conclusion": {
+                "conclusion_class": conclusion_class,
+                "conclusion_text": conclusion_text
+            },
+            "artifacts": {
+                "output_files": [
+                    "data/results_ph39a.json",
+                    "data/execution_result.json"
+                ]
+            },
+            "failure": {
+                "failure_reason": None,
+                "failure_stage": None,
+                "repair_attempts_used": 0
+            }
+        })
+
+    overall_summary = (
+        "Executed Spearman correlation between MiniK_Total and DSM5_Total. "
+        f"Observed rho={rho:.4f} with one-sided less p={p_one_less:.4g} (N={n})."
+    )
+
+    execution_result = {
+        "execution_overview": {
+            "overall_execution_status": "success",
+            "target_task_ids": [t["task_id"] for t in TASKS],
+            "completed_task_ids": [t["task_id"] for t in TASKS],
+            "failed_task_ids": [],
+            "overall_summary": overall_summary
+        },
+        "task_outputs": task_outputs
+    }
+
+    # Write compact results and the standardized execution result
+    simple_result = {
+        "vars": {
+            "predictor": MAIN_VARS["predictor"],
+            "outcome": MAIN_VARS["outcome"]
+        },
+        "n": n,
+        "rho": float(rho),
+        "p_value_two_sided": float(p_two),
+        "p_value_one_sided_less": float(p_one_less),
+        "direction": direction,
+        "result_text": result_text
+    }
+
+    with open(RESULT_JSON_PATH, "w") as f:
+        json.dump(simple_result, f, indent=2)
+
+    with open(EXECUTION_RESULT_PATH, "w") as f:
+        json.dump(execution_result, f, indent=2)
+
+    # Also print the simple result to stdout for logging
+    print(json.dumps(simple_result, indent=2))
 
 
 if __name__ == "__main__":

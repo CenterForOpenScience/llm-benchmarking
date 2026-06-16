@@ -10,7 +10,7 @@ def main():
     p.add_argument("--templates-dir", default="./templates")
     p.add_argument("--show-prompt", action="store_true", default=False)
     p.add_argument("--code-mode",choices=CODE_MODE_CHOICES,default=DEFAULT_CODE_MODE,help="Code execution mode: 'native' (run original language) or 'python' (translate all to Python and run Python).",)
-    p.add_argument("--model-name", help="Please specify the OpenAI model to be used.")
+    p.add_argument("--model-name", default='gpt-5', help="Please specify the OpenAI model to be used.")
     args = p.parse_args()
 
     if args.stage == "evaluate-execute-capability":

@@ -1,97 +1,86 @@
-import os
 import json
-import sys
-import subprocess
-
-# Ensure required Python packages are available at runtime (fallback if image misses them)
-
-def ensure_deps():
-    pkgs = [
-        ("numpy", "numpy==1.26.4"),
-        ("pandas", "pandas==2.2.2"),
-        ("scipy", "scipy==1.11.4"),
-    ]
-    to_install = []
-    for mod_name, pkg_spec in pkgs:
-        try:
-            __import__(mod_name)
-        except ModuleNotFoundError:
-            to_install.append(pkg_spec)
-    if to_install:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir", *to_install])
-
-ensure_deps()
+import os
+from typing import Dict, Any
 
 import numpy as np
 import pandas as pd
 from scipy import stats
 
-# IO paths
-DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
-DATA_FILE = os.path.join(DATA_DIR, "1-s2.0-S1090513816301118-mmc1.csv")
-OUT_FILE = os.path.join(DATA_DIR, "results_task2.json")
+DATA_PATH = "/app/data/1-s2.0-S1090513816301118-mmc1.csv"
+OUTPUT_PATH = "/app/data/results_task2.json"
 
-# Load data
-_df = pd.read_csv(DATA_FILE)
 
-# Variables
-MINI = "MiniK_Total"
-DSM = "DSM5_Total"
+def safe_group(series: pd.Series, mask: pd.Series) -> pd.Series:
+    return pd.to_numeric(series[mask], errors="coerce").dropna()
 
-if MINI not in _df.columns or DSM not in _df.columns:
-    raise ValueError("Required columns not found in dataset.")
 
-# Create groups based on MiniK sum score
-# fast: <= -1 -> 0, slow: >= 1 -> 1, exclude [-1,1] interior
-mask_fast = _df[MINI] <= -1
-mask_slow = _df[MINI] >= 1
-fast = _df.loc[mask_fast, DSM].dropna()
-slow = _df.loc[mask_slow, DSM].dropna()
+def main():
+    if not os.path.exists(DATA_PATH):
+        raise FileNotFoundError(f"Dataset not found at {DATA_PATH}")
+    df = pd.read_csv(DATA_PATH)
 
-# Descriptives
-desc = {
-    "n_fast": int(fast.shape[0]),
-    "n_slow": int(slow.shape[0]),
-    "median_fast": float(np.median(fast)) if fast.shape[0] > 0 else None,
-    "median_slow": float(np.median(slow)) if slow.shape[0] > 0 else None,
-}
+    if "MiniK_Total" not in df.columns or "DSM5_Total" not in df.columns:
+        raise KeyError("Required columns 'MiniK_Total' and/or 'DSM5_Total' not found.")
 
-# Levene's test for equal variances
-if fast.shape[0] > 1 and slow.shape[0] > 1:
-    lev_stat, lev_p = stats.levene(fast, slow)
-else:
-    lev_stat, lev_p = np.nan, np.nan
+    # Build groups: fast (<= -1) vs slow (>= 1); exclude -1 < score < 1
+    mini = pd.to_numeric(df["MiniK_Total"], errors="coerce")
+    dsm = pd.to_numeric(df["DSM5_Total"], errors="coerce")
 
-# Shapiro-Wilk normality tests
-def safe_shapiro(a):
-    try:
-        if len(a) < 3:
-            return np.nan, np.nan
-        w, p = stats.shapiro(a)
-        return float(w), float(p)
-    except Exception:
-        return np.nan, np.nan
+    fast_mask = mini <= -1
+    slow_mask = mini >= 1
 
-w_fast, p_fast = safe_shapiro(fast.values)
-w_slow, p_slow = safe_shapiro(slow.values)
+    fast = safe_group(dsm, fast_mask)
+    slow = safe_group(dsm, slow_mask)
 
-# Mann-Whitney U test (nonparametric)
-if fast.shape[0] > 0 and slow.shape[0] > 0:
-    u_stat, p_u = stats.mannwhitneyu(fast, slow, alternative="two-sided")
-else:
-    u_stat, p_u = np.nan, np.nan
+    results: Dict[str, Any] = {
+        "task": "Task2",
+        "analysis": "Mann-Whitney U test on DSM5_Total by MiniK groups (fast<=-1 vs slow>=1); exclusions in (-1,1)",
+        "dataset": os.path.basename(DATA_PATH),
+        "group_definition": {
+            "fast": "MiniK_Total <= -1",
+            "slow": "MiniK_Total >= 1",
+            "excluded_range": "-1 < MiniK_Total < 1"
+        },
+        "group_ns": {"fast": int(fast.shape[0]), "slow": int(slow.shape[0])},
+        "group_medians": {"fast": float(np.median(fast)) if fast.shape[0] else np.nan,
+                           "slow": float(np.median(slow)) if slow.shape[0] else np.nan}
+    }
 
-results = {
-    "grouping_rule": "fast <= -1, slow >= 1, exclude -1 < MiniK < 1",
-    "descriptives": desc,
-    "levene_equal_var": {"stat": float(lev_stat) if not np.isnan(lev_stat) else None, "p": float(lev_p) if not np.isnan(lev_p) else None},
-    "shapiro": {
-        "fast": {"W": w_fast if not np.isnan(w_fast) else None, "p": p_fast if not np.isnan(p_fast) else None},
-        "slow": {"W": w_slow if not np.isnan(w_slow) else None, "p": p_slow if not np.isnan(p_slow) else None}
-    },
-    "mann_whitney_u": {"U": float(u_stat) if not np.isnan(u_stat) else None, "p": float(p_u) if not np.isnan(p_u) else None}
-}
+    # Assumption checks
+    # Levene's test for equal variances (center=median to be robust)
+    if fast.shape[0] > 0 and slow.shape[0] > 0:
+        lev_stat, lev_p = stats.levene(fast, slow, center='median')
+        results["levene"] = {"stat": float(lev_stat), "p": float(lev_p)}
+    else:
+        results["levene"] = {"stat": np.nan, "p": np.nan}
 
-print(json.dumps(results, indent=2))
-with open(OUT_FILE, "w") as f:
-    json.dump(results, f, indent=2)
+    # Shapiro-Wilk normality tests by group
+    def shapiro_safe(x: pd.Series) -> Dict[str, Any]:
+        if x.shape[0] < 3:
+            return {"W": np.nan, "p": np.nan, "n": int(x.shape[0])}
+        try:
+            W, p = stats.shapiro(x)
+            return {"W": float(W), "p": float(p), "n": int(x.shape[0])}
+        except Exception:
+            return {"W": np.nan, "p": np.nan, "n": int(x.shape[0])}
+
+    results["shapiro"] = {"fast": shapiro_safe(fast), "slow": shapiro_safe(slow)}
+
+    # Mann-Whitney U test (two-sided)
+    if fast.shape[0] > 0 and slow.shape[0] > 0:
+        try:
+            U, p = stats.mannwhitneyu(fast, slow, alternative='two-sided')
+            results["mannwhitney"] = {"U": float(U), "p": float(p)}
+        except ValueError as e:
+            results["mannwhitney"] = {"U": np.nan, "p": np.nan, "error": str(e)}
+    else:
+        results["mannwhitney"] = {"U": np.nan, "p": np.nan, "error": "Insufficient data in one or both groups."}
+
+    with open(OUTPUT_PATH, "w") as f:
+        json.dump(results, f, indent=2)
+
+    print(json.dumps(results, indent=2))
+
+
+if __name__ == "__main__":
+    main()

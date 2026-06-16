@@ -1,257 +1,237 @@
 import json
 import math
-import os
-from collections import Counter, defaultdict
-from itertools import combinations
-
+import itertools
+from collections import defaultdict, Counter
 import numpy as np
 import pandas as pd
-import sys, site, importlib
-sys.path.insert(0, f"/usr/local/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages")
-try:
-    import networkx as nx
-except ModuleNotFoundError:
-    try:
-        for p in (site.getsitepackages() + [site.getusersitepackages()]):
-            if p not in sys.path:
-                sys.path.append(p)
-        nx = importlib.import_module("networkx")
-    except Exception as e:
-        raise ImportError(f"Failed to import networkx after adjusting sys.path: {e}")
+import networkx as nx
 from scipy import stats
 
-try:
-    import community as community_louvain
-except Exception:
-    from community import community_louvain
-
-DATA_PATH = "/app/data/FINAL demo open fluency.csv"
-OUT_PATH = "/app/data/task2_results.json"
-
-np.seterr(all="ignore")
-
+# Utilities
 
 def clean_word(x):
     if pd.isna(x):
         return None
-    if isinstance(x, (int, float)) and not isinstance(x, bool):
-        if x == -1:
-            return None
-        x = str(x)
     s = str(x).strip().lower()
-    if s in ("", "nan", "na", "-1", "none", "missing"):
+    if s in ('', 'nan', 'na', 'none', '-1', 'missing'):
         return None
-    s = " ".join(s.split())
-    return s if s else None
+    return s
 
 
-def get_vf_columns(df):
-    cols = []
-    for c in df.columns:
-        cl = c.lower()
-        if cl.startswith("vf_an_"):
-            cols.append(c)
-    return cols
-
-
-def build_global_cooccurrence(df, vf_cols):
-    pair_counts = Counter()
-    n_rows_used = 0
-    for _, row in df[vf_cols].iterrows():
-        words = [clean_word(row[c]) for c in vf_cols]
-        words = [w for w in words if w]
-        if len(words) < 2:
+def build_cooccurrence(word_sets, n_participants):
+    counts = Counter()
+    for ws in word_sets:
+        if len(ws) < 2:
             continue
-        n_rows_used += 1
-        uniq = sorted(set(words))
-        for a, b in combinations(uniq, 2):
-            pair_counts[(a, b)] += 1
-    n_rows_used = max(n_rows_used, 1)
-    return pair_counts, n_rows_used
+        for w1, w2 in itertools.combinations(sorted(ws), 2):
+            counts[(w1, w2)] += 1
+    return counts
 
 
-def binary_entropy(p):
+def pair_entropy(count, n):
+    if n <= 0:
+        return 0.0
+    p = count / n
     if p <= 0.0 or p >= 1.0:
         return 0.0
-    return -(p * math.log(p) + (1 - p) * math.log(1 - p))
+    return -(p * math.log2(p) + (1 - p) * math.log2(1 - p))
 
 
-def participant_graphs(words, pair_counts, denom_rows):
-    Gd = nx.Graph()
-    Gs = nx.Graph()
-    for w in words:
-        Gd.add_node(w)
-        Gs.add_node(w)
-    if len(words) < 2:
-        return Gd, Gs
-    for a, b in combinations(sorted(words), 2):
-        cnt = pair_counts.get((a, b), 0)
-        p = cnt / float(denom_rows)
-        H = binary_entropy(p)
-        dist = H if H > 0 else 0.99
-        strength = 1.0 / dist if dist > 0 else 0.0
-        Gd.add_edge(a, b, weight=dist)
-        Gs.add_edge(a, b, weight=strength)
-    return Gd, Gs
-
-
-def louvain_participation_mean(Gs):
-    if Gs.number_of_nodes() < 2 or Gs.number_of_edges() == 0:
-        return np.nan
-    try:
-        partition = community_louvain.best_partition(Gs, weight="weight", random_state=42)
-        part = {}
-        for i in Gs.nodes():
-            k_i = 0.0
-            comm_strength = defaultdict(float)
-            for j, data in Gs[i].items():
-                w = data.get("weight", 1.0)
-                k_i += w
-                cj = partition.get(j, -1)
-                comm_strength[cj] += w
-            if k_i <= 0:
-                part[i] = 0.0
-            else:
-                s = 0.0
-                for c, kic in comm_strength.items():
-                    s += (kic / k_i) ** 2
-                part[i] = 1.0 - s
-        vals = np.array(list(part.values()), dtype=float)
-        if vals.size == 0:
-            return np.nan
-        rounded = np.round(vals, 2)
-        if rounded.size == 0:
-            return float(np.mean(vals))
-        uniq, counts = np.unique(rounded, return_counts=True)
-        mode_val = float(uniq[np.argmax(counts)])
-        sel = vals[vals > mode_val]
-        if sel.size >= 1:
-            return float(np.mean(sel))
+def participation_coefficients(G, partition):
+    pcs = {}
+    for n in G.nodes():
+        k_i = 0.0
+        comm_weights = defaultdict(float)
+        for nbr, data in G[n].items():
+            w = data.get('weight', 1.0)
+            k_i += w
+            s = partition.get(nbr, -1)
+            comm_weights[s] += w
+        if k_i <= 0:
+            pcs[n] = 0.0
         else:
-            return float(np.mean(vals))
-    except Exception:
-        return np.nan
+            frac_sq_sum = 0.0
+            for s, wsum in comm_weights.items():
+                frac = wsum / k_i
+                frac_sq_sum += frac * frac
+            pcs[n] = 1.0 - frac_sq_sum
+    return pcs
 
 
-def top_k_by_eigenvector(Gs, frac_remove=0.10):
-    if Gs.number_of_nodes() == 0:
-        return []
-    try:
-        ev = nx.eigenvector_centrality_numpy(Gs, weight="weight")
-    except Exception:
-        # Fallback to uniform if eigenvector fails
-        ev = {n: 1.0 for n in Gs.nodes()}
-    k = max(1, int(math.floor(frac_remove * Gs.number_of_nodes())))
-    ranked = sorted(ev.items(), key=lambda x: x[1], reverse=True)
-    remove_nodes = [n for n, _ in ranked[:k]]
-    return remove_nodes
-
-
-def compute_mst_cpl(Gd):
-    if Gd.number_of_nodes() < 2:
-        return np.nan
-    try:
-        T = nx.minimum_spanning_tree(Gd, weight="weight")
-    except Exception:
+def median_shortest_path_length(tree):
+    nodes = list(tree.nodes())
+    if len(nodes) < 2:
         return np.nan
     dists = []
-    for source in T.nodes:
-        lengths = nx.single_source_dijkstra_path_length(T, source, weight="weight")
-        for target, L in lengths.items():
-            if target <= source:
-                continue
-            dists.append(L)
-    if not dists:
+    all_lengths = dict(nx.all_pairs_dijkstra_path_length(tree, weight='weight'))
+    for i, u in enumerate(nodes):
+        lu = all_lengths.get(u, {})
+        for v in nodes[i+1:]:
+            d = lu.get(v, np.nan)
+            if not np.isnan(d):
+                dists.append(d)
+    if len(dists) == 0:
         return np.nan
     return float(np.median(dists))
 
 
+def compute_metrics_for_participant(words_list, counts, n_participants, keep_ratio=0.9):
+    ws = sorted(set([w for w in words_list if w is not None]))
+    if len(ws) < 2:
+        return None
+    Gd = nx.Graph()
+    Gs = nx.Graph()
+    Gd.add_nodes_from(ws)
+    Gs.add_nodes_from(ws)
+    for w1, w2 in itertools.combinations(ws, 2):
+        key = (w1, w2) if (w1, w2) in counts else (w2, w1)
+        c = counts.get(key, 0)
+        H = pair_entropy(c, n_participants)
+        if H <= 0.0:
+            H = 0.99
+        Gd.add_edge(w1, w2, weight=H)
+        weight = 1.0 / H if H > 0 else 0.0
+        Gs.add_edge(w1, w2, weight=weight)
+
+    # Remove top 10% by eigenvector centrality (keep 90%)
+    try:
+        ev = nx.eigenvector_centrality_numpy(Gs, weight='weight')
+        n_keep = max(1, int(math.ceil(len(ev) * keep_ratio)))
+        # Highest centrality nodes removed so we keep lower 90%
+        nodes_sorted = sorted(ev.items(), key=lambda x: x[1], reverse=True)
+        to_remove = [n for n, _ in nodes_sorted[n_keep:]]
+        Gd.remove_nodes_from(to_remove)
+        Gs.remove_nodes_from(to_remove)
+    except Exception:
+        pass
+
+    if Gd.number_of_nodes() < 2:
+        return None
+
+    try:
+        mst = nx.minimum_spanning_tree(Gd, weight='weight')
+    except Exception:
+        mst = Gd.copy()
+
+    cpl = median_shortest_path_length(mst)
+
+    try:
+        bc = nx.betweenness_centrality(mst, weight='weight', normalized=True)
+        betw_mean = float(np.mean(list(bc.values()))) if len(bc) > 0 else np.nan
+        betw_max = float(np.max(list(bc.values()))) if len(bc) > 0 else np.nan
+    except Exception:
+        betw_mean = np.nan
+        betw_max = np.nan
+
+    try:
+        import community as community_louvain
+        partition = community_louvain.best_partition(Gs, weight='weight')
+    except Exception:
+        partition = {n: 0 for n in Gs.nodes()}
+
+    pcs = participation_coefficients(Gs, partition)
+    if len(pcs) == 0:
+        part_mean = np.nan
+    else:
+        values = list(pcs.values())
+        try:
+            mode_val = stats.mode(values, nan_policy='omit', keepdims=True).mode
+            if isinstance(mode_val, np.ndarray):
+                mode_val = float(mode_val[0]) if len(mode_val) > 0 else np.nan
+            else:
+                mode_val = float(mode_val)
+        except Exception:
+            hist, bin_edges = np.histogram(values, bins=10)
+            mode_bin = np.argmax(hist)
+            mode_val = float((bin_edges[mode_bin] + bin_edges[mode_bin+1]) / 2.0)
+        sel = [v for v in values if (not np.isnan(v)) and (v > mode_val)]
+        if len(sel) == 0:
+            part_mean = float(np.nanmean(values))
+        else:
+            part_mean = float(np.mean(sel))
+
+    return {
+        'cpl': float(cpl) if not np.isnan(cpl) else np.nan,
+        'betw_mean': betw_mean if not np.isnan(betw_mean) else np.nan,
+        'betw_max': betw_max if not np.isnan(betw_max) else np.nan,
+        'part_mean': part_mean if not np.isnan(part_mean) else np.nan
+    }
+
+
 def main():
-    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
-    df = pd.read_csv(DATA_PATH)
+    input_path = '/app/data/FINAL demo open fluency.csv'
+    out_path = '/app/data/task2_results.json'
+    df = pd.read_csv(input_path)
 
-    vf_cols = get_vf_columns(df)
-    if len(vf_cols) == 0:
-        raise RuntimeError("No verbal fluency columns starting with 'vf_an_' found.")
+    vf_cols = [c for c in df.columns if c.startswith('vf_an_')]
+    words_per_row = []
+    for idx, row in df[vf_cols].iterrows():
+        ws = set()
+        for c in vf_cols:
+            w = clean_word(row[c])
+            if w is not None:
+                ws.add(w)
+        words_per_row.append(ws)
 
-    pair_counts, denom_rows = build_global_cooccurrence(df, vf_cols)
+    n_participants = df.shape[0]
+    counts = build_cooccurrence(words_per_row, n_participants)
 
-    rows = []
-    for idx, row in df.iterrows():
-        words = [clean_word(row[c]) for c in vf_cols]
-        words = [w for w in words if w]
-        words = sorted(set(words))
-        # Build graphs
-        Gd, Gs = participant_graphs(words, pair_counts, denom_rows)
-        # Remove top 10% nodes by eigenvector centrality
-        remove_nodes = top_k_by_eigenvector(Gs, frac_remove=0.10)
-        Gd_p = Gd.copy()
-        Gs_p = Gs.copy()
-        Gd_p.remove_nodes_from(remove_nodes)
-        Gs_p.remove_nodes_from(remove_nodes)
-        # Compute metrics
-        cpl = compute_mst_cpl(Gd_p)
-        part_mean = louvain_participation_mean(Gs_p)
-        rows.append({
-            "cpl": cpl,
-            "part_mean": part_mean
-        })
+    # Construct metrics with 90% node retention per subject
+    results = []
+    for i, row in df.iterrows():
+        words_list = []
+        for c in vf_cols:
+            words_list.append(clean_word(row[c]))
+        metrics = compute_metrics_for_participant(words_list, counts, n_participants, keep_ratio=0.9)
+        if metrics is None:
+            res = {'id': row.get('id', i), 'cpl': np.nan, 'betw_mean': np.nan, 'betw_max': np.nan, 'part_mean': np.nan}
+        else:
+            res = {'id': row.get('id', i)}
+            res.update(metrics)
+        # carry demographics for filtering/grouping
+        res['d_gender'] = str(row.get('d_gender', '')).strip()
+        results.append(res)
 
-    met = pd.DataFrame(rows)
+    res_df = pd.DataFrame(results)
 
-    # Openness and gender
-    for col in ["o_ffi", "oi_bfas", "o_bfas", "i_bfas"]:
-        if col not in df.columns:
-            df[col] = np.nan
-    df["openness_average"] = df[["o_ffi", "oi_bfas", "o_bfas", "i_bfas"]].astype(float).mean(axis=1, skipna=True)
+    # Apply filters per plan, treating blanks as missing and excluding '-1'
+    valid_gender = res_df['d_gender'].isin({'0', '1'})
+    filt_df = res_df[(~res_df['cpl'].isna()) & (res_df['cpl'] < 10) & (~res_df['part_mean'].isna()) & valid_gender]
 
-    if "d_gender" not in df.columns:
-        df["d_gender"] = np.nan
+    # Welch t-test of part_mean by gender (0 vs 1)
+    t_stat, p_value, n_g0, n_g1 = (np.nan, np.nan, 0, 0)
+    excluded_blank = int((~valid_gender).sum())
+    try:
+        v0 = filt_df[filt_df['d_gender'] == '0']['part_mean']
+        v1 = filt_df[filt_df['d_gender'] == '1']['part_mean']
+        n_g0, n_g1 = int(v0.shape[0]), int(v1.shape[0])
+        if n_g0 >= 2 and n_g1 >= 2:
+            t_res = stats.ttest_ind(v0, v1, equal_var=False, nan_policy='omit')
+            t_stat = float(t_res.statistic)
+            p_value = float(t_res.pvalue)
+    except Exception:
+        pass
 
-    out = pd.concat([df, met], axis=1)
-
-    # Filters
-    mask_valid = (out["cpl"].astype(float) < 10) & (out["part_mean"].notna()) & (out["d_gender"].astype(str) != "-1")
-    dat = out.loc[mask_valid, ["part_mean", "d_gender"]].copy()
-    dat["d_gender"] = dat["d_gender"].astype(str)
-
-    groups = {g: vals["part_mean"].astype(float).values for g, vals in dat.groupby("d_gender")}
-
-    tstat = np.nan
-    pval = np.nan
-    ns = {g: int(np.sum(~np.isnan(v))) for g, v in groups.items()}
-
-    if len(groups) >= 2:
-        # Choose the two largest groups for Welch t-test
-        top2 = sorted(groups.items(), key=lambda kv: len(kv[1]), reverse=True)[:2]
-        a = top2[0][1]
-        b = top2[1][1]
-        if len(a) >= 2 and len(b) >= 2:
-            res = stats.ttest_ind(a, b, equal_var=False, nan_policy="omit")
-            tstat = float(res.statistic)
-            pval = float(res.pvalue)
-
-    results = {
-        "welch_t_by_gender": {
-            "t_value": None if pd.isna(tstat) else float(tstat),
-            "p_value": None if pd.isna(pval) else float(pval),
-            "group_sizes": ns,
-            "groups_compared": sorted(list(groups.keys()))[:2]
-        },
-        "notes": {
-            "filter": "cpl < 10 and d_gender != '-1'",
-            "data_rows": int(len(df)),
-            "vf_columns": len(vf_cols),
-            "denominator_rows_for_cooccurrence": int(denom_rows),
-            "node_retention": "90% (removed top 10% by eigenvector centrality)"
+    output = {
+        'task': 'Task2',
+        'welch_ttest_by_gender': {
+            't_stat': None if (pd.isna(t_stat)) else float(t_stat),
+            'p_value': None if (pd.isna(p_value)) else float(p_value),
+            'groups_compared': ['0', '1'],
+            'n_group0': int(n_g0),
+            'n_group1': int(n_g1),
+            'n_excluded_nonbinary_or_blank': int(excluded_blank)
         }
     }
 
-    with open(OUT_PATH, "w") as f:
-        json.dump(results, f, indent=2)
+    with open(out_path, 'w') as f:
+        json.dump(output, f, indent=2)
 
-    print(json.dumps(results, indent=2))
+    try:
+        metrics_out = '/app/data/task2_participant_metrics.csv'
+        res_df.to_csv(metrics_out, index=False)
+    except Exception:
+        pass
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

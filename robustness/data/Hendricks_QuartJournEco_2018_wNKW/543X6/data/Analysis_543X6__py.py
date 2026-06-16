@@ -1,76 +1,76 @@
 import os
-import sys
 import pandas as pd
 import numpy as np
-import statsmodels.formula.api as smf
+import statsmodels.api as sm
 
-# Configure data path to use /app/data as required
-DATA_PATH = os.environ.get("APP_DATA", "/app/data")
-DATA_FILE = os.path.join(DATA_PATH, "wage_gain_table.xlsx")
+# Paths
+DATA_DIR = os.environ.get("DATA_DIR", "/app/data")
+INPUT_FILE = os.path.join(DATA_DIR, "wage_gain_table.xlsx")
+OUTPUT_FILE = os.path.join(DATA_DIR, "Analysis_543X6__py_results.csv")
 
-def main():
-    # Load data
-    try:
-        df = pd.read_excel(DATA_FILE)
-    except Exception as e:
-        print(f"ERROR: Failed to read data file at {DATA_FILE}: {e}")
-        sys.exit(1)
+# Load data
+mData = pd.read_excel(INPUT_FILE, engine="openpyxl")
 
-    required_cols = [
-        "edyrs", "country", "lastUsWageAdjusted", "lastHomeWageAdjusted"
-    ]
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        print(f"ERROR: Missing required columns in dataset: {missing}")
-        sys.exit(1)
+# Construct schooling dummies
+vSchool = mData["edyrs"].astype(float)
+vNS = (vSchool < 9).astype(int)
+vSHS = vSchool.isin([9,10,11]).astype(int)
+vHSD = (vSchool == 12).astype(int)
+vSC = vSchool.isin([13,14,15]).astype(int)
+# vGRAD defined in R but not included in regression
 
-    # Construct variables following the R code
-    df = df.copy()
-    vSchool = df["edyrs"]
+# Country dummies
+country = mData["country"].astype(str)
+vCOL = (country == "COL").astype(int)
+vDOM = (country == "DOM").astype(int)
+vECU = (country == "ECU").astype(int)
+vGTM = (country == "GTM").astype(int)
+vHTI = (country == "HTI").astype(int)
+vMEX = (country == "MEX").astype(int)
+vNIC = (country == "NIC").astype(int)
+vPER = (country == "PER").astype(int)
+vSLV = (country == "SLV").astype(int)
 
-    # Schooling dummies
-    df["vNS"] = (vSchool < 9).astype(int)
-    df["vSHS"] = vSchool.isin([9, 10, 11]).astype(int)
-    df["vHSD"] = (vSchool == 12).astype(int)
-    df["vSC"] = vSchool.isin([13, 14, 15]).astype(int)
-    df["vGRAD"] = (vSchool >= 16).astype(int)  # not used in the model but created in R
+# Outcome: absolute wage difference
+vWage = (mData["lastUsWageAdjusted"] - mData["lastHomeWageAdjusted"]).abs()
 
-    # Country dummies (explicitly defined as in the R script)
-    for ccode in ["COL", "DOM", "ECU", "GTM", "HTI", "MEX", "NIC", "PER", "SLV"]:
-        df[f"v{ccode}"] = (df["country"] == ccode).astype(int)
+# Assemble DataFrame for modeling (no intercept)
+X = pd.DataFrame({
+    "vNS": vNS,
+    "vSHS": vSHS,
+    "vHSD": vHSD,
+    "vSC": vSC,
+    # Country FE excluding Peru and Ecuador (as per original R formula)
+    "vCOL": vCOL,
+    "vDOM": vDOM,
+    "vGTM": vGTM,
+    "vHTI": vHTI,
+    "vMEX": vMEX,
+    "vNIC": vNIC,
+    "vSLV": vSLV,
+})
 
-    # Dependent variable: absolute difference between US adjusted wage and home adjusted wage
-    df["vWage"] = (df["lastUsWageAdjusted"] - df["lastHomeWageAdjusted"]).abs()
+df = pd.concat([vWage.rename("vWage"), X], axis=1)
+# Drop rows with any missing used columns
+before = len(df)
+df = df.dropna()
+after = len(df)
 
-    # Keep only rows without missing values in used columns
-    used_cols = [
-        "vWage", "vNS", "vSHS", "vHSD", "vSC",
-        "vCOL", "vDOM", "vGTM", "vHTI", "vMEX", "vNIC", "vSLV"
-    ]
-    dfx = df[used_cols].dropna()
+# Fit OLS without intercept
+model = sm.OLS(df["vWage"], df.drop(columns=["vWage"]))
+res = model.fit()
 
-    # Replicate R formula without intercept (-1)
-    formula = "vWage ~ vNS + vSHS + vHSD + vSC + vCOL + vDOM + vGTM + vHTI + vMEX + vNIC + vSLV - 1"
+# Prepare output table
+summary_df = pd.DataFrame({
+    "coef": res.params,
+    "std_err": res.bse,
+    "t_value": res.tvalues,
+    "p_value": res.pvalues,
+})
+summary_df.insert(0, "variable", summary_df.index)
+summary_df.insert(0, "n_obs", res.nobs)
 
-    model = smf.ols(formula=formula, data=dfx).fit()
+# Save results
+summary_df.to_csv(OUTPUT_FILE, index=False)
 
-    # Print summary to stdout
-    print("=== Task1: OLS without intercept (matching R '-1') ===")
-    print(model.summary())
-
-    # Save coefficients to /app/data for downstream collection
-    out_csv = os.path.join(DATA_PATH, "Analysis_543X6__py_results.csv")
-    coef_df = (
-        pd.DataFrame({
-            "term": model.params.index,
-            "estimate": model.params.values,
-            "std_error": model.bse.values,
-            "t_value": model.tvalues.values,
-            "p_value": model.pvalues.values
-        })
-    )
-    coef_df.to_csv(out_csv, index=False)
-    print(f"Saved coefficient table to {out_csv}")
-
-if __name__ == "__main__":
-    main()
+print(f"Wrote Task1 results to {OUTPUT_FILE}; N used: {int(res.nobs)}; dropped: {before - after}")

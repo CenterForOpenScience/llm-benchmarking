@@ -1,8 +1,10 @@
 from __future__ import annotations
+import io
 import json
 import os
 import re
 import platform as _pyplat
+import tarfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
@@ -35,6 +37,7 @@ class ExecutionPlan:
 # Helpers & constants
 DEFAULT_IMAGE_NAME = "analysis-exec"
 DEFAULT_CONTAINER_NAME = "analysis-runner"
+COPIED_OUTPUTS_DIRNAME = "_copied_outputs"
 
 def _detect_lang_from_ext(filename: str) -> str:
     f = filename.lower()
@@ -55,6 +58,89 @@ def _paths(study_path: str) -> Tuple[Path, Path, Path, Path, Path]:
     runtime_dir.mkdir(parents=True, exist_ok=True)
     art_dir.mkdir(parents=True, exist_ok=True)
     return study_dir, runtime_dir, art_dir, (runtime_dir / "Dockerfile"), (study_dir / "analysis_info.json")
+
+def _copied_outputs_dir(study_path: str) -> Path:
+    study_dir = Path(study_path).resolve()
+    copied_dir = study_dir / COPIED_OUTPUTS_DIRNAME
+    copied_dir.mkdir(parents=True, exist_ok=True)
+    return copied_dir
+
+def _copy_container_dir(container_name: str, container_dir: str, host_dir: Path) -> None:
+    if not _container_path_exists(container_name, container_dir):
+        return
+
+    cli = _require_docker()
+    container = cli.containers.get(container_name)
+    stream, _ = container.get_archive(container_dir)
+    archive = io.BytesIO()
+    for chunk in stream:
+        archive.write(chunk)
+    if archive.tell() == 0:
+        return
+
+    archive.seek(0)
+    root_name = Path(container_dir).name
+
+    with tarfile.open(fileobj=archive) as tar:
+        for member in tar.getmembers():
+            member_path = Path(member.name)
+            parts = member_path.parts
+            if parts and parts[0] == root_name:
+                rel_parts = parts[1:]
+            else:
+                rel_parts = parts
+
+            if not rel_parts or any(part == ".." for part in rel_parts):
+                continue
+
+            dest = host_dir.joinpath(*rel_parts)
+            if member.isdir():
+                dest.mkdir(parents=True, exist_ok=True)
+                continue
+
+            if not member.isfile():
+                continue
+
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                continue
+
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with dest.open("wb") as f:
+                f.write(extracted.read())
+
+def _copy_container_outputs(study_path: str, container_name: str) -> None:
+    copied_root = _copied_outputs_dir(study_path)
+    for container_dir, local_name in (
+        ("/app/tmp", "app_tmp"),
+        ("/tmp/artifacts", "tmp_artifacts"),
+    ):
+        _copy_container_dir(container_name, container_dir, copied_root / local_name)
+
+def _list_local_output_files(study_path: str) -> List[str]:
+    study_dir, _, art_dir, _, _ = _paths(study_path)
+    arts: List[str] = []
+
+    if art_dir.exists():
+        try:
+            arts.extend(sorted([p.name for p in art_dir.iterdir() if p.is_file()]))
+        except Exception:
+            pass
+
+    copied_root = study_dir / COPIED_OUTPUTS_DIRNAME
+    if copied_root.exists():
+        try:
+            arts.extend(
+                sorted(
+                    path.relative_to(study_dir).as_posix()
+                    for path in copied_root.rglob("*")
+                    if path.is_file()
+                )
+            )
+        except Exception:
+            pass
+
+    return arts
 
 def _read_spec(study_path: str) -> Dict:
     study_dir, _, _, _, rep_info = _paths(study_path)
@@ -146,7 +232,10 @@ def orchestrator_generate_dockerfile(study_path: str) -> str:
 
         if r_pkgs:
             # Check if R is installed in base, if not install it
-            lines.append("RUN command -v R || (apt-get update && apt-get install -y r-base)")
+            #lines.append("RUN command -v R || (apt-get update && apt-get install -y r-base)")
+            lines.append("RUN apt-get update && apt-get install -y --no-install-recommends r-base r-base-dev && rm -rf /var/lib/apt/lists/*")
+            lines.append("RUN command -v Rscript && Rscript --version")
+            lines.append('RUN Rscript --version || true')
             rp = ",".join(f'"{p}"' for p in r_pkgs)
             lines.append(f"RUN R -q -e 'install.packages(c({rp}), repos=\"https://cloud.r-project.org\")'")
 
@@ -188,6 +277,7 @@ def orchestrator_build_image(study_path: str, image_name: str = DEFAULT_IMAGE_NA
             build_kwargs["platform"] = platform
 
         img, logs = cli.images.build(**build_kwargs)
+        (runtime_dir / "image_name.txt").write_text(image_name)
         return json.dumps({"ok": True, "image": image_name})
 
     except (BuildError, APIError) as e:
@@ -223,6 +313,9 @@ def orchestrator_run_container(
         cli = _require_docker()
         spec = _read_spec(study_path)
         study_dir, _, art_dir, _, _ = _paths(study_path)
+        image_file = study_dir / "_runtime" / "image_name.txt"
+        if image_file.exists():
+            image_name = image_file.read_text().strip()
 
         try:
             old = cli.containers.get(container_name)
@@ -324,13 +417,8 @@ def _exec_file(container_name: str, study_path: str, container_path: str, lang: 
     stdout = (stdout or b"").decode(errors="replace")
     stderr = (stderr or b"").decode(errors="replace")
 
-    _, _, art_dir, _, _ = _paths(study_path)
-    arts = []
-    if art_dir.exists():
-        try:
-            arts = sorted([p.name for p in art_dir.iterdir() if p.is_file()])
-        except Exception:
-            pass
+    _copy_container_outputs(study_path, container_name)
+    arts = _list_local_output_files(study_path)
 
     return {
         "ok": exit_code == 0,

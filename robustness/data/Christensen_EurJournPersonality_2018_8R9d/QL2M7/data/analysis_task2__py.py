@@ -1,263 +1,226 @@
-import os
 import json
+import os
 import re
+import sys
+import numpy as np
+import pandas as pd
+import networkx as nx
+from scipy import stats
 
-# Robust import block with on-the-fly installation if needed
-try:
-    import numpy as np
-    import pandas as pd
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.decomposition import PCA
-    import networkx as nx
-    from scipy import stats
-    try:
-        import community as community_louvain  # python-louvain
-        HAS_COMMUNITY = True
-    except Exception:
-        HAS_COMMUNITY = False
-except ModuleNotFoundError:
-    import sys, subprocess
-    pkgs = [
-        "numpy==1.25.2",
-        "pandas==2.0.3",
-        "scipy==1.11.1",
-        "scikit-learn==1.3.0",
-        "networkx==3.1",
-        "python-louvain==0.16"
-    ]
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "--no-cache-dir"] + pkgs)
-    except Exception as e:
-        print(f"Package installation failed: {e}")
-        raise
-    # retry imports
-    import numpy as np
-    import pandas as pd
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.decomposition import PCA
-    import networkx as nx
-    from scipy import stats
-    try:
-        import community as community_louvain  # python-louvain
-        HAS_COMMUNITY = True
-    except Exception:
-        HAS_COMMUNITY = False
-try:
-    import community as community_louvain  # python-louvain
-    HAS_COMMUNITY = True
-except Exception:
-    HAS_COMMUNITY = False
+np.random.seed(12345)
 
-RANDOM_SEED = 12345
-np.random.seed(RANDOM_SEED)
+DATA_PATH = "/app/data/FINAL demo open fluency.csv"
+OUT_PATH = "/app/data/task2_results.json"
 
-DATA_PATH = os.environ.get("APP_DATA", "/app/data")
-INPUT_CSV = os.path.join(DATA_PATH, "FINAL demo open fluency.csv")
-OUTPUT_JSON = os.path.join(DATA_PATH, "task2_results.json")
-
-# --------------------- Utility functions ---------------------
+# ---------------------------
+# Helpers (shared with Task1 logic, duplicated for self-containment)
+# ---------------------------
 
 def clean_token(x: str) -> str:
     if x is None:
         return ""
+    if isinstance(x, float) and np.isnan(x):
+        return ""
     s = str(x).strip().lower()
-    s = re.sub(r"[^a-zA-Z0-9\s-]", "", s)
-    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"[^a-zA-Z\s-]", "", s)
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
 
-def build_participant_words(df, vf_cols):
-    part_words = []
+def build_participant_tokens(df: pd.DataFrame, vf_cols) -> list:
+    parts = []
     for _, row in df.iterrows():
-        words = []
+        toks = set()
         for c in vf_cols:
-            val = row.get(c, None)
-            if pd.isna(val) or str(val).strip() == "":
-                continue
-            tok = clean_token(str(val))
-            if tok != "":
-                words.append(tok)
-        part_words.append(set(words))
-    return part_words
+            tok = clean_token(row.get(c, ""))
+            if tok:
+                toks.add(tok)
+        parts.append(toks)
+    return parts
 
 
-def get_equated_nodes(part_words_low, part_words_high, min_participants=2):
-    from collections import Counter
-    def freq_map(part_words):
-        cnt = Counter()
-        for ws in part_words:
-            for w in set(ws):
-                cnt[w] += 1
-        return cnt
-    f_low = freq_map(part_words_low)
-    f_high = freq_map(part_words_high)
-    nodes_low = {w for w, f in f_low.items() if f >= min_participants}
-    nodes_high = {w for w, f in f_high.items() if f >= min_participants}
-    nodes = sorted(list(nodes_low.intersection(nodes_high)))
-    return nodes
+def zscore_series(s: pd.Series) -> pd.Series:
+    s = pd.to_numeric(s, errors='coerce')
+    m = s.mean(skipna=True)
+    sd = s.std(ddof=0, skipna=True)
+    if pd.isna(sd) or sd == 0:
+        return pd.Series(np.zeros(len(s)), index=s.index)
+    return (s - m) / sd
 
 
-def build_binary_matrix(nodes, part_words):
-    node_index = {w: i for i, w in enumerate(nodes)}
-    n_nodes = len(nodes)
-    n_parts = len(part_words)
-    M = np.zeros((n_nodes, n_parts), dtype=float)
-    for j, ws in enumerate(part_words):
-        for w in ws:
-            i = node_index.get(w)
+def openness_composite(df: pd.DataFrame) -> pd.Series:
+    cols = [c for c in ["o_ffi", "o_bfas", "o_neo"] if c in df.columns]
+    if not cols:
+        raise ValueError("No openness total columns found (expected any of o_ffi, o_bfas, o_neo)")
+    tmp = df[cols].copy()
+    for c in cols:
+        tmp[c] = pd.to_numeric(tmp[c], errors='coerce')
+        if tmp[c].isna().any():
+            tmp[c] = tmp[c].fillna(tmp[c].mean(skipna=True))
+    zcols = [zscore_series(tmp[c]) for c in cols]
+    zmat = np.vstack([z.values for z in zcols]).T
+    return pd.Series(zmat.mean(axis=1), index=df.index)
+
+
+def binary_matrix(words, participant_tokens):
+    word_index = {w: i for i, w in enumerate(words)}
+    V = len(words)
+    N = len(participant_tokens)
+    X = np.zeros((V, N), dtype=float)
+    for j, toks in enumerate(participant_tokens):
+        if not toks:
+            continue
+        for w in toks:
+            i = word_index.get(w)
             if i is not None:
-                M[i, j] = 1.0
-    return M
+                X[i, j] = 1.0
+    return X
 
 
-def corr_from_binary_matrix(M):
-    if M.shape[1] < 2 or M.shape[0] < 2:
-        return np.full((M.shape[0], M.shape[0]), 0.0)
+def corr_positive_weights(X):
+    if X.shape[1] < 2 or X.shape[0] < 2:
+        return np.zeros((X.shape[0], X.shape[0]), dtype=float)
     with np.errstate(invalid='ignore'):
-        C = np.corrcoef(M, rowvar=True)
-    C = np.where(np.isnan(C), 0.0, C)
-    np.fill_diagonal(C, 0.0)
-    return C
+        C = np.corrcoef(X)
+    C = np.nan_to_num(C, nan=0.0, posinf=0.0, neginf=0.0)
+    W = np.where(C > 0, C, 0.0)
+    np.fill_diagonal(W, 0.0)
+    return W
 
 
-def graph_from_corr(C):
+def graph_from_weights(words, W):
     G = nx.Graph()
-    n = C.shape[0]
-    G.add_nodes_from(range(n))
-    edges = np.where(C > 0)
-    for i, j in zip(edges[0], edges[1]):
-        if i < j:
-            w = float(C[i, j])
+    for w in words:
+        G.add_node(w)
+    V = len(words)
+    for i in range(V):
+        for j in range(i+1, V):
+            w = W[i, j]
             if w > 0:
-                G.add_edge(i, j, weight=w)
+                dist = 1.0 / w if w > 0 else np.inf
+                G.add_edge(words[i], words[j], weight=float(w), distance=float(dist))
     return G
 
 
-def largest_component(G):
+def largest_component(G: nx.Graph):
     if G.number_of_nodes() == 0:
         return G
-    if nx.is_connected(G):
+    comps = list(nx.connected_components(G))
+    if not comps:
         return G
-    comps = sorted(nx.connected_components(G), key=len, reverse=True)
-    return G.subgraph(comps[0]).copy()
+    biggest = max(comps, key=len)
+    return G.subgraph(biggest).copy()
 
 
-def compute_aspl(G):
+def compute_aspl(G: nx.Graph):
     if G.number_of_nodes() == 0 or G.number_of_edges() == 0:
         return np.nan
     H = largest_component(G)
-    if H.number_of_nodes() < 2 or H.number_of_edges() == 0:
-        return np.nan
-    H2 = H.copy()
-    for u, v, d in H2.edges(data=True):
-        w = d.get("weight", 1.0)
-        dist = 1.0 / w if w > 0 else 1e6
-        d["distance"] = dist
     try:
-        aspl = nx.average_shortest_path_length(H2, weight="distance")
+        return float(nx.average_shortest_path_length(H, weight='distance')) if H.number_of_nodes() > 1 else np.nan
     except Exception:
-        aspl = np.nan
-    return aspl
+        return np.nan
 
 
-# --------------------- Main analysis (Task 2) ---------------------
+def ttest_summary(a, b):
+    a = np.array(a, dtype=float)
+    b = np.array(b, dtype=float)
+    a = a[~np.isnan(a)]
+    b = b[~np.isnan(b)]
+    if len(a) < 2 or len(b) < 2:
+        return {"t": np.nan, "p": np.nan, "n1": int(len(a)), "n2": int(len(b)), "d": np.nan}
+    t, p = stats.ttest_ind(a, b, equal_var=False, nan_policy='omit')
+    na, nb = len(a), len(b)
+    sa2, sb2 = np.var(a, ddof=1), np.var(b, ddof=1)
+    sp = np.sqrt(((na-1)*sa2 + (nb-1)*sb2) / (na+nb-2)) if (na+nb-2) > 0 else np.nan
+    d = (np.mean(a) - np.mean(b)) / sp if sp and sp > 0 else np.nan
+    return {"t": float(t), "p": float(p), "n1": int(na), "n2": int(nb), "d": float(d) if not np.isnan(d) else np.nan}
+
+
+# ---------------------------
+# Main analysis
+# ---------------------------
 
 def main():
-    os.makedirs(DATA_PATH, exist_ok=True)
-    df = pd.read_csv(INPUT_CSV)
-    vf_cols = [c for c in df.columns if c.startswith("vf_an_")]
-    openness_cols = [c for c in ["o_ffi", "o_bfas", "o_neo"] if c in df.columns]
+    if not os.path.exists(DATA_PATH):
+        print(f"Data file not found at {DATA_PATH}", file=sys.stderr)
+        sys.exit(1)
+    df = pd.read_csv(DATA_PATH)
 
-    if len(openness_cols) == 0:
-        raise ValueError("No openness total score columns found (expected one of: o_ffi, o_bfas, o_neo)")
-    X = df[openness_cols].apply(pd.to_numeric, errors='coerce')
-    X_impute = X.fillna(X.mean())
-    scaler = StandardScaler()
-    Xz = scaler.fit_transform(X_impute.values)
-    pca = PCA(n_components=1, random_state=RANDOM_SEED)
-    comp = pca.fit_transform(Xz).ravel()
-    df["openness_latent"] = comp
+    vf_cols = [c for c in df.columns if re.match(r"^vf_an_\d+$", c)]
+    if not vf_cols:
+        vf_cols = [c for c in df.columns if c.startswith('vf_an_')]
 
-    med = np.nanmedian(df["openness_latent"].values)
-    df["openness_group"] = np.where(df["openness_latent"] >= med, "high", "low")
+    comp = openness_composite(df)
+    med = np.median(comp.values)
+    group_high = comp >= med
+    group_low = comp < med
 
-    df_low = df[df["openness_group"] == "low"].reset_index(drop=True)
-    df_high = df[df["openness_group"] == "high"].reset_index(drop=True)
+    df_low = df[group_low].reset_index(drop=True)
+    df_high = df[group_high].reset_index(drop=True)
 
-    part_words_low = build_participant_words(df_low, vf_cols)
-    part_words_high = build_participant_words(df_high, vf_cols)
+    parts_low = build_participant_tokens(df_low, vf_cols)
+    parts_high = build_participant_tokens(df_high, vf_cols)
 
-    nodes = get_equated_nodes(part_words_low, part_words_high, min_participants=2)
+    # Determine equated node set from all participants (not bootstrapped) with threshold 2 in each group
+    counts_low = {}
+    for toks in parts_low:
+        for w in toks:
+            counts_low[w] = counts_low.get(w, 0) + 1
+    counts_high = {}
+    for toks in parts_high:
+        for w in toks:
+            counts_high[w] = counts_high.get(w, 0) + 1
+    nodes = sorted([w for w in counts_low.keys() if counts_low.get(w, 0) >= 2 and counts_high.get(w, 0) >= 2])
 
-    # Build full binary matrices
-    M_low_full = build_binary_matrix(nodes, part_words_low)
-    M_high_full = build_binary_matrix(nodes, part_words_high)
+    if len(nodes) < 3:
+        # Not enough nodes for network metrics
+        results = {"error": "Too few equated nodes to build networks", "n_nodes": len(nodes)}
+        with open(OUT_PATH, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"Wrote results to {OUT_PATH}")
+        return
+
+    # Build full graphs once (used to draw 90% subsets)
+    X_low = binary_matrix(nodes, parts_low)
+    X_high = binary_matrix(nodes, parts_high)
+    W_low = corr_positive_weights(X_low)
+    W_high = corr_positive_weights(X_high)
+    G_low_full = graph_from_weights(nodes, W_low)
+    G_high_full = graph_from_weights(nodes, W_high)
 
     n_nodes = len(nodes)
-    if n_nodes == 0:
-        raise ValueError("No equated nodes across groups; cannot run Task 2")
+    retain = int(np.floor(0.9 * n_nodes))
+    if retain < 2:
+        retain = max(2, retain)
 
-    retain_rate = 0.90
-    k = max(1, int(round(n_nodes * retain_rate)))
+    n_boot = int(os.environ.get("N_BOOT", "1000"))
+    aspl_low, aspl_high = [], []
 
-    B = 1000  # node-wise bootstrap iterations (without replacement)
-    rng = np.random.default_rng(RANDOM_SEED)
+    print(f"Starting node-wise bootstrap ({n_boot} iters) retaining 90% of {n_nodes} nodes -> {retain} nodes.")
 
-    aspl_low = []
-    aspl_high = []
+    for b in range(n_boot):
+        sel = np.random.choice(nodes, size=retain, replace=False)
+        Hlow = G_low_full.subgraph(sel).copy()
+        Hhigh = G_high_full.subgraph(sel).copy()
+        aspl_low.append(compute_aspl(Hlow))
+        aspl_high.append(compute_aspl(Hhigh))
+        if (b + 1) % max(1, n_boot // 10) == 0:
+            print(f"Completed {b+1}/{n_boot}")
 
-    for b in range(B):
-        sel = rng.choice(n_nodes, size=k, replace=False)
-        # Low group
-        M_low = M_low_full[sel, :]
-        C_low = corr_from_binary_matrix(M_low)
-        G_low = graph_from_corr(C_low)
-        aspl_l = compute_aspl(G_low)
-        aspl_low.append(aspl_l)
-        # High group
-        M_high = M_high_full[sel, :]
-        C_high = corr_from_binary_matrix(M_high)
-        G_high = graph_from_corr(C_high)
-        aspl_h = compute_aspl(G_high)
-        aspl_high.append(aspl_h)
+    test = ttest_summary(aspl_low, aspl_high)
 
-    a = np.array(aspl_high, dtype=float)
-    b_ = np.array(aspl_low, dtype=float)
-    a = a[~np.isnan(a)]
-    b_ = b_[~np.isnan(b_)]
-
-    if len(a) > 1 and len(b_) > 1:
-        t_stat, p_val = stats.ttest_ind(a, b_, equal_var=False, nan_policy='omit')
-        # Cohen's d (Hedges g approximation not applied)
-        na, nb = len(a), len(b_)
-        sa2, sb2 = np.var(a, ddof=1), np.var(b_, ddof=1)
-        sp = np.sqrt(((na - 1) * sa2 + (nb - 1) * sb2) / (na + nb - 2)) if (na + nb - 2) > 0 else np.nan
-        d = (np.mean(a) - np.mean(b_)) / sp if sp and sp > 0 else np.nan
-    else:
-        t_stat, p_val, d = np.nan, np.nan, np.nan
-
-    payload = {
-        "random_seed": RANDOM_SEED,
-        "n_participants": int(df.shape[0]),
-        "n_nodes_equated": int(n_nodes),
-        "retain_rate": retain_rate,
-        "retain_k": int(k),
-        "aspl": {
-            "high_mean": float(np.nanmean(a)) if len(a) > 0 else np.nan,
-            "low_mean": float(np.nanmean(b_)) if len(b_) > 0 else np.nan,
-            "t_stat": float(t_stat) if not np.isnan(t_stat) else np.nan,
-            "p_value": float(p_val) if not np.isnan(p_val) else np.nan,
-            "cohens_d": float(d) if not np.isnan(d) else np.nan,
-            "n_boot_high": int(len(a)),
-            "n_boot_low": int(len(b_))
-        },
-        "notes": "Approximate Python translation. TMFG filtering and small-world model test not implemented. Node-wise bootstrap with 90% nodes retained; edges from positive Pearson correlations."
+    results = {
+        "n_boot": n_boot,
+        "n_nodes": int(n_nodes),
+        "retain_nodes": int(retain),
+        "aspl_means": {"low": float(np.nanmean(aspl_low)), "high": float(np.nanmean(aspl_high))},
+        "t_test": test
     }
 
-    with open(OUTPUT_JSON, 'w') as f:
-        json.dump(payload, f, indent=2)
-
-    print(json.dumps(payload, indent=2))
+    with open(OUT_PATH, "w") as f:
+        json.dump(results, f, indent=2)
+    print(f"Wrote results to {OUT_PATH}")
 
 
 if __name__ == "__main__":
