@@ -8,8 +8,6 @@ import tiktoken
 from openai import OpenAI
 from core.utils import get_logger
 from core.constants import API_KEY, GENERATE_REACT_CONSTANTS
-from typing import Callable
-
 
 logger, formatter = get_logger()
 client = OpenAI(api_key=API_KEY) 
@@ -75,7 +73,7 @@ def _extract_action(text: str):
             return m.group(1), m.group(2).strip()
     return None
 
-def update_metadata(study_path: str, stage: str, data: dict, logger=logger):
+def update_metadata(study_path: str, stage: str, data: dict):
     """
     Updates metadata.json in the study_path with metrics for a specific stage.
     """
@@ -112,11 +110,11 @@ class Agent:
         self._tpm_window_start = time.time()
         self._tpm_tokens = 0  # tokens used since last reset
 
-    def __call__(self, message, tool_outputs=None, logger=logger):
-        content, usage = self.execute(message, tool_outputs, logger=logger)
+    def __call__(self, message, tool_outputs=None):
+        content, usage = self.execute(message, tool_outputs)
         return content, usage
     
-    def execute(self, message=None, tool_outputs=None, logger=logger):
+    def execute(self, message=None, tool_outputs=None):
         # 1. Add user message
         if message:
             self.messages.append({"role": "user", "content": message})
@@ -268,9 +266,7 @@ class Agent:
 
 def run_react_loop(system_prompt: str, known_actions: dict, tool_definitions: list, question: str, *,
                    max_turns: int = 50, session_state=None, on_final=None, log_turns: bool=True,
-                   study_path: str = None, stage_name: str = None, checkpoint_map: dict = None, model_name: str=None, logger=logger, code_mode="python",
-                   feedback_function: Callable[[str, str, str, str], str] | None = None,
-                   max_feedback_turns: int = 1):
+                   study_path: str = None, stage_name: str = None, checkpoint_map: dict = None, model_name: str=None):
     
     thought_instruction = "\nIMPORTANT: Before calling any tool, you must output a short 'Thought' explaining your reasoning."
     bot = Agent(system_prompt + thought_instruction, model=model_name, session_state=session_state or {}, tools=tool_definitions)    
@@ -282,7 +278,6 @@ def run_react_loop(system_prompt: str, known_actions: dict, tool_definitions: li
     total_prompt_tokens_used = 0
     total_completion_tokens_used = 0
     turn_metrics = []
-    n_feedback = 0
     
     current_checkpoint = "0. Initialization"
     checkpoint_stats = {} 
@@ -355,14 +350,9 @@ def run_react_loop(system_prompt: str, known_actions: dict, tool_definitions: li
                         # inject study_path to restrict access to outside folders
                         elif func_name in ["list_files_in_folder", "read_html"]:
                             func_args["study_path"] = study_path 
-                            if func_name == "list_files_in_folder" and "robustness" in stage_name and "evaluate" not in stage_name:
-                                func_args["strs2avoid"] = ["proposed_analysis.pdf", "planned_analysis_summary.pdf"]
-                            observation = func(**func_args)
-                        elif func_name in ["orchestrator_plan", "orchestrator_preview_entry", "orchestrator_preview_entry", "orchestrator_execute_entry"]:
-                            func_args["code_mode"] = code_mode
                             observation = func(**func_args)
                         else:
-                            observation = func(**func_args)
+                             observation = func(**func_args)
                         
                         tool_result_content = str(observation)
                              
@@ -374,10 +364,10 @@ def run_react_loop(system_prompt: str, known_actions: dict, tool_definitions: li
                              update_metadata(study_path, stage_name, {
                                 "error": f"Unknown action: {func_name}",
                                 "partial_turns": turn_metrics
-                            }, logger=logger)
+                            })
                 else:
                     tool_result_content = f"Error: Tool {func_name} not found."
-                    update_metadata(study_path, stage_name, {"error": f"Unknown action: {func_name}", "partial_turns": turn_metrics}, logger=logger,)
+                    update_metadata(study_path, stage_name, {"error": f"Unknown action: {func_name}", "partial_turns": turn_metrics})
 
                 # Log the Observation which is the result of the tool
                 if log_turns:
@@ -452,29 +442,8 @@ def run_react_loop(system_prompt: str, known_actions: dict, tool_definitions: li
                         "turn_history": turn_metrics
                     }
                     update_metadata(study_path, stage_name, metric_data)
-                    
-                if feedback_function is not None and n_feedback < max_feedback_turns:
-                    feedback_function(study_path=study_path, code_mode= code_mode, model_name=model_name)
-                    print("WERE HERE")
-                    with open(os.path.join(study_path, "evals", model_name, "execute_feedback.json")) as f:
-                        feedback = json.load(f)
-                    try:
-                        if "unacceptable" in feedback["execute_feedback"].lower():
-                            observation = "Your output has been given the following feedback. Try again to address the issues in the feedback before filling out the structured report again.\n"
-                            observation += feedback["details"] + "\n"
-                            tool_outputs.append({
-                                "tool_call_id": "execute_feedback",
-                                "role": "user",
-                                "content": observation
-                            })
-                        else:
-                            return final_answer
-                        n_feedback += 1
-                    except Exception as e:
-                        logger.error("Evaluator could not provide feedback, no reflection.", e)
-                        return final_answer
-                else:
-                    return final_answer
+
+                return final_answer
             except Exception as e:
                 logger.error(f"Error parsing final answer: {e}")
                 return {"error": str(e)}
@@ -513,7 +482,7 @@ def run_react_loop(system_prompt: str, known_actions: dict, tool_definitions: li
         
     return {"error": "Max turns reached without a final answer."}
 
-def save_output(extracted_json, study_path, filename: str = "replication_info.json", stage_name: str = "design", logger=logger):
+def save_output(extracted_json, study_path, filename: str = "replication_info.json", stage_name: str = "design"):
     os.makedirs(study_path, exist_ok=True)
     out_path = os.path.join(study_path, filename)
     with open(out_path, "w") as f:

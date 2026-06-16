@@ -82,20 +82,10 @@ test-all: check-deps
 
 ## ROBUSTNESS
 
-# Generate structured analysis from human documentation
+# interpreter module
 robustness-execute-gen_gold_analysis: check-deps
 	python -m robustness.executor --tier easy --study-path $(STUDY) --model-name $(MODEL) --stage execute-gen_gold_analysis --code-mode $(CODE_MODE)
 
-# Execute analysis
 robustness-execute: check-deps
 	python -m robustness.executor --stage execute --tier easy --study-path $(STUDY) --code-mode $(CODE_MODE) --model-name $(MODEL)
-
-
-evaluate-execute-capability: check-deps
-	python -m robustness.validator --stage evaluate-execute-capability  --study-path $(STUDY)  --model-name $(EVAL_MODEL)
-
-
-
-evaluate-execute-feedback: check-deps
-	python -m robustness.validator --stage evaluate-execute-feedback  --study-path $(STUDY)  --model-name $(EVAL_MODEL)
 
