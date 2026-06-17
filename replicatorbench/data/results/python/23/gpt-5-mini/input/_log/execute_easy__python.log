@@ -1,0 +1,349 @@
+2026-04-10 17:04:49,136 - replication - DEBUG - [core.utils] File logging configured: data/original/23/input/_log/execute_easy__python.log
+2026-04-10 17:04:49,136 - replication - INFO - [agent] dynamic orchestrator run loop for: data/original/23/input
+2026-04-10 17:04:49,242 - replication - INFO - 
+--- Turn 1 ---
+2026-04-10 17:04:49,242 - replication - INFO - ***Agent input:
+Your goal is to successfully execute the replication study inside a Docker container.
+You are operating in a DEBUG LOOP. You must assess the result of every action. 
+
+RUN POLICY (EXECUTE)
+- Execute using Python.
+- Any missing code should be written to replication_data inside the study path.
+- If the original code is incompatible with the data, rewrite the code to Python so that it is compatible. 
+- If replication_info.json points to a non-.py entrypoint, create/complete the Python translations (keeping originals unchanged),
+  create a single Python entrypoint, and update replication_info.json to that .py entrypoint.
+- If it fails, fix the Python rewrite / deps (don’t switch back to the original language).
+
+File operations policy:
+ - To modify existing files: ALWAYS call read_file first, then use edit_file for targeted changes.
+ - write_file is for creating new files. It will refuse to overwrite unless overwrite=True.
+ - Only use write_file(overwrite=True) when you intend to replace the entire file contents.
+
+If an action fails (e.g., Docker build error, Missing Dependency, Code crash), you MUST:
+1. Analyze the error message in the Observation.
+2. Use `write_file` to FIX the issue (e.g., rewrite `replication_info.json` to add packages, or rewrite the code files). Remember that write_file will overwrite any existing content in the provided file_path if existing. When you use the tool, the provided path file_path to the tool MUST be the study path given to you. But to access other files within the file_content argument, you MUST use the container's directories "app/data". 
+3. RETRY the failed step.
+
+**Phases of Execution:**
+
+PHASE 1: BUILD ENVIRONMENT
+1. `orchestrator_generate_dockerfile`: Creates _runtime/Dockerfile from replication_info.json.
+2. `orchestrator_build_image`: Builds the image.
+   * IF BUILD FAILS: Read the error log. It usually means a missing system package or R/Python library. Edit `replication_info.json` to add the missing dependency, regenerate the Dockerfile, and rebuild.
+
+PHASE 2: PREPARE RUNTIME
+3. `orchestrator_run_container`: Mounts the code and data and starts the container.
+4. `orchestrator_plan` & `orchestrator_preview_entry`: Verify what will run.
+
+PHASE 3: HUMAN APPROVAL (Strict Check)
+5. Before running the actual analysis code, you MUST Ask the human:
+   Action: ask_human_input: "Ready to execute command: <COMMAND>. Approve? (yes/no)"
+   * If they say "no", stop the container and fill the output JSON with status "cancelled".
+   * If they say "yes", proceed to Phase 4.
+
+PHASE 4: EXECUTE & DEBUG
+6. `orchestrator_execute_entry`: Runs the code.
+   * IF EXECUTION FAILS (exit_code != 0): 
+     - Read the `stderr` in the observation.
+     - Identify if it is a code error or missing library.
+     - Use `write_file` to fix the script or `replication_info.json`.
+     - If you changed dependencies, you must go back to Phase 1 (Rebuild).
+     - If you only changed code, you can retry `orchestrator_execute_entry`.
+
+PHASE 5: FINALIZE
+7. `orchestrator_stop_container`: Cleanup.
+8. Parse `execution_result.json` and output the Answer in the following required JSON schema.
+"{\n  \"execution_summary\": \"A narrative overview of the execution process, including key steps followed, overall success, and alignment with the preregistration (e.g., 'The OLS regression was executed on the 1999 ARIS-REDS dataset, testing the hypothesis on low-caste households. No major deviations occurred, but BAC classification required manual coding.').\",\n  \"code_executed\": [\n    {\n      \"command\": \"a command that was approved for executed\",\n      \"status\": \"Overall status (Success, Partial Success, Failure).\",\n      \"logs\": \"summaries from execution logs, including warnings, errors, or runtime\",\n      \"environment\": \"Description of the runtime environment (e.g., 'Python 3.12 with numpy, statsmodels')\"\n    },\n    {\n      \"command\": \"another command that was approved for executed\",\n      \"status\": \"Overall status (Success, Partial Success, Failure).\",\n      \"logs\": \"summaries from execution logs, including warnings, errors, or runtime\",\n      \"environment\": \"Description of the runtime environment (e.g., 'Python 3.12 with numpy, statsmodels')\"\n    }\n  ],\n  \"results\": {\n    \"hypothesis_tested\": \"Restatement of the focal hypothesis from the preregistration for context.\",\n    \"findings_summary\": [\n      {\n        \"outcome_name\": \" Name of statistic 1 (e.g., 'Coefficient for low-caste villages').\",\n        \"value\": \"The computed value (e.g., 566.5)\",\n        \"standard_error\": \"SE (e.g., 209)\",\n        \"confidence_interval\": \"CI bounds (e.g., [150, 983])\",\n        \"p_value\": \"p-value (e.g., 0.007)\",\n        \"statistical_significance\": \"Significance level (e.g., 'p < 0.01').\",\n        \"direction\": \"Effect direction (e.g., 'positive')\",\n        \"effect_size\": \"Optional measures like Cohen's d or R-squared if applicable\"\n      },\n ...
+2026-04-10 17:04:52,158 - replication - INFO - ***Agent output (Thought):
+Thought: I'll generate the Dockerfile from replication_info.json to start building the runtime environment for the replication. I'll call the orchestrator_generate_dockerfile action for the study path. 
+Action: I'll run orchestrator_generate_dockerfile with the study path "data/original/23/input".
+PAUSE
+2026-04-10 17:04:52,158 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_generate_dockerfile [Checkpoint: 1. Generate Dockerfile]
+2026-04-10 17:04:52,159 - replication - INFO - ***Observation (orchestrator_generate_dockerfile):
+{"ok": true, "dockerfile": "/Users/domsoos/Desktop/research/llm-benchmarking/data/original/23/input/_runtime/Dockerfile", "content": "FROM python:3.10-slim\nRUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git wget ca-certificates && rm -rf /var/lib/apt/lists/*\nRUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y git wget unzip && rm -rf /var/lib/apt/lists/*\nRUN command -v python3 || (apt-get update && apt-get install -y python3 python3-pip)\nRUN pip3 install --no-cache-dir pandas>=1.4.0 numpy>=1.22.0 statsmodels>=0.13.0\nWORKDIR /workspace\nRUN useradd -m runner && mkdir -p /app/data /app/artifacts /app/tmp && chown -R runner:runner /workspace /app\nUSER runner\nCMD [\"bash\"]"}
+2026-04-10 17:04:52,159 - replication - INFO - 
+--- Turn 2 ---
+2026-04-10 17:04:54,779 - replication - INFO - ***Agent output (Thought):
+Thought: Next I'll build the Docker image from the generated Dockerfile. I'll call orchestrator_build_image for the study path. 
+Action: orchestrator_build_image with study_path "data/original/23/input".
+PAUSE
+2026-04-10 17:04:54,780 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_build_image [Checkpoint: 2. Build Image]
+2026-04-10 17:05:18,155 - replication - INFO - ***Observation (orchestrator_build_image):
+{"ok": true, "image": "replication_study_image"}
+2026-04-10 17:05:18,155 - replication - INFO - 
+--- Turn 3 ---
+2026-04-10 17:05:20,883 - replication - INFO - ***Agent output (Thought):
+Thought: I'll start the Docker container to run the replication. I'll call orchestrator_run_container for the study path. 
+Action: orchestrator_run_container with study_path "data/original/23/input".
+PAUSE
+2026-04-10 17:05:20,883 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_run_container [Checkpoint: 3. Start Container]
+2026-04-10 17:05:21,036 - replication - INFO - ***Observation (orchestrator_run_container):
+{"ok": true, "container": "replication-runner"}
+2026-04-10 17:05:21,037 - replication - INFO - 
+--- Turn 4 ---
+2026-04-10 17:05:22,942 - replication - INFO - ***Agent output (Thought):
+Thought: I should inspect the study directory to see replication_info.json and entrypoint. I'll list files in the study folder. 
+Action: functions.list_files_in_folder with folder_path "data/original/23/input"
+PAUSE
+2026-04-10 17:05:22,943 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: list_files_in_folder [Checkpoint: 3. Start Container]
+2026-04-10 17:05:22,945 - replication - INFO - ***Observation (list_files_in_folder):
+Folder path: data/original/23/input
+All files:
+.DS_Store
+_log/design_easy__python.log
+_log/execute_easy__python.log
+_log/extract.log
+_runtime/Dockerfile
+initial_details.txt
+original_paper.pdf
+post_registration.json
+replication_data/ItemsList_Final.csv
+replication_data/LeBeouf_replication__py.py
+replication_data/LeBeouf_replication_data.csv
+replication_data/LeBoeuf_JournMarketRes_2010_EKBZ_Yoon_Direct Replication_618K.R
+replication_data/LeBoeuf_JournMarketRes_2010_EKBZ_Yoon_Direct Replication_618K_Final.R
+replication_data/LeBoeuf_JournMarketRes_2010_EKBZ_Yoon_Direct Replication_618K_Final.Rmd
+replication_info.json
+2026-04-10 17:05:22,945 - replication - INFO - 
+--- Turn 5 ---
+2026-04-10 17:05:24,719 - replication - INFO - ***Agent output (Thought):
+Thought: I'll read replication_info.json to see the entrypoint and dependencies. 
+Action: read_json replication_info.json
+PAUSE
+2026-04-10 17:05:24,719 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: read_json [Checkpoint: 3. Start Container]
+2026-04-10 17:05:24,726 - replication - INFO - ***Observation (read_json):
+{
+  "replication_study": {
+    "hypothesis": "H: There is an interaction between Level (Category/NoBrand vs Brand) and Product Type (Utilitarian vs Symbolic) on the Benefit - Symbolism difference score such that branding attenuates the category-level difference (i.e., a significant Level \u00d7 ProductType interaction on mean ScoreDiff where utilitarian items show larger positive ScoreDiff in the Category condition but smaller (or reduced) ScoreDiff in the Brand condition, and symbolic items show the converse).",
+    "study_type": "Experimental (laboratory-style within/between mixed design; replication dataset collected from an online experiment following the same manipulations).",
+    "data_plan": {
+      "dataset_identifier": "LeBeouf_replication_data.csv (with stimulus metadata ItemsList_Final.csv)",
+      "source_type": "Experimental survey / collected participant responses (online lab questionnaire)",
+      "wave_or_subset": "Full available replication dataset provided (data/original/23/input/replication_data). No subset required; analysis follows original Study 1B replication design.",
+      "sample_size": "N = 637 rows in the CSV file. After attention/screening filters applied in the script, the effective sample size will be reduced; final sample size output is saved by the script (dat_collapsed.csv).",
+      "unit_of_analysis": "Individual participants (ID) with repeated measures across product items (collapsed to mean ScoreDiff by ProductType per participant for the mixed ANOVA).",
+      "access_details": "Data files provided in the replication bundle (data/original/23/input/replication_data). No external restrictions indicated.",
+      "qualification": {
+        "explanation": "The provided dataset contains the same experimental structure and fields needed to operationalize the focal test: per-item Benefit ratings and Symbolism ratings (7-point numeric responses), condition assignment (Cond), and an items stimulus list mapping ItemCatID -> ProductType and 
+... (truncated)
+2026-04-10 17:05:24,726 - replication - INFO - 
+--- Turn 6 ---
+2026-04-10 17:05:27,547 - replication - INFO - ***Agent output (Thought):
+Thought: I'll request the orchestrator plan to see what entrypoint and steps are set to run inside the container. I'll call orchestrator_plan with the study path.
+Action: orchestrator_plan with study_path "data/original/23/input"
+PAUSE
+2026-04-10 17:05:27,548 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_plan [Checkpoint: 4. Plan & Preview]
+2026-04-10 17:05:27,550 - replication - INFO - ***Observation (orchestrator_plan):
+{"plan_id": "study", "steps": [{"name": "prepare-env", "type": "orchestrator", "lang": "", "entry": null}, {"name": "run-analysis", "type": "container", "lang": "python", "entry": "LeBeouf_replication__py.py"}]}
+2026-04-10 17:05:27,550 - replication - INFO - 
+--- Turn 7 ---
+2026-04-10 17:05:27,550 - replication - INFO - Rate limit approach, going to sleep...zZZ
+
+2026-04-10 17:05:55,354 - replication - INFO - ***Agent output (Thought):
+Thought: Before executing, per PHASE 3 I must ask the human for approval to run the command in the container. The command will be: python /app/data/LeBeouf_replication__py.py. I'll ask for approval. 
+Action: ask_human_input with question "Ready to execute command: python /app/data/LeBeouf_replication__py.py. Approve? (yes/no)"
+PAUSE
+2026-04-10 17:05:55,355 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: ask_human_input [Checkpoint: 5. Human Approval]
+2026-04-10 17:05:59,393 - replication - INFO - ***Observation (ask_human_input):
+yes
+2026-04-10 17:05:59,395 - replication - INFO - 
+--- Turn 8 ---
+2026-04-10 17:06:01,197 - replication - INFO - ***Agent output (Thought):
+Thought: Human approved. Now I'll execute the entrypoint using orchestrator_execute_entry to run the Python script inside the container.
+Action: orchestrator_execute_entry with study_path "data/original/23/input"
+PAUSE
+2026-04-10 17:06:01,197 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_execute_entry [Checkpoint: 6. Execute Code]
+2026-04-10 17:06:08,484 - replication - INFO - ***Observation (orchestrator_execute_entry):
+{"plan_id": "study", "steps": [{"name": "prepare-env", "ok": true}, {"name": "run-analysis", "ok": true, "exit_code": 0, "stdout": "Reading data from /app/data/LeBeouf_replication_data.csv\nReading items from /app/data/ItemsList_Final.csv\nSaved collapsed data to /app/data/dat_collapsed.csv\n                           Mixed Linear Model Regression Results\n============================================================================================\nModel:                        MixedLM             Dependent Variable:             ScoreDiff \nNo. Observations:             1114                Method:                         ML        \nNo. Groups:                   557                 Scale:                          2.9466    \nMin. group size:              2                   Log-Likelihood:                 -2226.5668\nMax. group size:              2                   Converged:                      No        \nMean group size:              2.0                                                           \n--------------------------------------------------------------------------------------------\n                                                 Coef.  Std.Err.    z    P>|z| [0.025 0.975]\n--------------------------------------------------------------------------------------------\nIntercept                                        -2.094    0.108 -19.381 0.000 -2.306 -1.882\nProductType[T.Utilitarian]                        5.850    0.147  39.892 0.000  5.563  6.138\nCondition[T.Category]                            -0.562    0.152  -3.710 0.000 -0.859 -0.265\nProductType[T.Utilitarian]:Condition[T.Category]  0.836    0.206   4.063 0.000  0.433  1.239\nGroup Var                                         0.252                                     \n============================================================================================\n\nSaved model summary to /app/data/model_summary.txt\nSaved means table to /app/data/means_by_condition_producttype.csv\nReplication scri
+... (truncated)
+2026-04-10 17:06:08,485 - replication - INFO - 
+--- Turn 9 ---
+2026-04-10 17:06:14,942 - replication - INFO - ***Agent output (Thought):
+Thought: I'll stop the running container, then read the output files saved to the mounted data folder so I can extract model estimates, means, and the collapsed dataset for the final report.
+Action: orchestrator_stop_container with study_path "data/original/23/input"
+PAUSE
+2026-04-10 17:06:14,942 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: orchestrator_stop_container [Checkpoint: 7. Stop Container]
+2026-04-10 17:06:15,265 - replication - INFO - ***Observation (orchestrator_stop_container):
+{"ok": true}
+2026-04-10 17:06:15,265 - replication - INFO - 
+--- Turn 10 ---
+2026-04-10 17:06:17,898 - replication - INFO - ***Agent output (Thought):
+Thought: I'll read the generated model_summary.txt, dat_collapsed.csv, and means_by_condition_producttype.csv from the study folder to extract results for the final JSON. 
+Action: read_file model_summary.txt, dat_collapsed.csv, means_by_condition_producttype.csv from replication_data? The files were written to /app/data in container which maps to study replication_data. I'll read files under data/original/23/input/replication_data.
+PAUSE
+2026-04-10 17:06:17,898 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: read_file [Checkpoint: 7. Stop Container]
+2026-04-10 17:06:17,899 - replication - INFO - ***Observation (read_file):
+                           Mixed Linear Model Regression Results
+============================================================================================
+Model:                        MixedLM             Dependent Variable:             ScoreDiff 
+No. Observations:             1114                Method:                         ML        
+No. Groups:                   557                 Scale:                          2.9466    
+Min. group size:              2                   Log-Likelihood:                 -2226.5668
+Max. group size:              2                   Converged:                      No        
+Mean group size:              2.0                                                           
+--------------------------------------------------------------------------------------------
+                                                 Coef.  Std.Err.    z    P>|z| [0.025 0.975]
+--------------------------------------------------------------------------------------------
+Intercept                                        -2.094    0.108 -19.381 0.000 -2.306 -1.882
+ProductType[T.Utilitarian]                        5.850    0.147  39.892 0.000  5.563  6.138
+Condition[T.Category]                            -0.562    0.152  -3.710 0.000 -0.859 -0.265
+ProductType[T.Utilitarian]:Condition[T.Category]  0.836    0.206   4.063 0.000  0.433  1.239
+Group Var                                         0.252                                     
+============================================================================================
+
+2026-04-10 17:06:17,899 - replication - INFO - 
+--- Turn 11 ---
+2026-04-10 17:06:17,899 - replication - INFO - Rate limit approach, going to sleep...zZZ
+
+2026-04-10 17:06:44,983 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: read_file [Checkpoint: 7. Stop Container]
+2026-04-10 17:06:44,985 - replication - INFO - ***Observation (read_file):
+Condition,Symbolic,Utilitarian
+Brand,-2.093978102189781,3.7563868613138687
+Category,-2.6563604240282683,4.030035335689046
+
+2026-04-10 17:06:44,985 - replication - INFO - 
+--- Turn 12 ---
+2026-04-10 17:06:47,093 - replication - INFO -  -- Running Action(s): 1 tools requested. Primary: read_file [Checkpoint: 7. Stop Container]
+2026-04-10 17:06:47,094 - replication - INFO - ***Observation (read_file):
+ID,ProductType,Condition,ScoreDiff
+1,Symbolic,Brand,-2.0
+1,Utilitarian,Brand,5.75
+10,Symbolic,Brand,-3.0
+10,Utilitarian,Brand,5.25
+100,Symbolic,Brand,-2.5
+100,Utilitarian,Brand,6.0
+101,Symbolic,Brand,-0.75
+101,Utilitarian,Brand,3.75
+102,Symbolic,Brand,-2.5
+102,Utilitarian,Brand,5.0
+103,Symbolic,Brand,-5.0
+103,Utilitarian,Brand,3.5
+104,Symbolic,Brand,-4.0
+104,Utilitarian,Brand,6.0
+105,Symbolic,Brand,-3.5
+105,Utilitarian,Brand,5.0
+106,Symbolic,Brand,-4.5
+106,Utilitarian,Brand,1.25
+107,Symbolic,Brand,-3.0
+107,Utilitarian,Brand,6.0
+108,Symbolic,Brand,-2.75
+108,Utilitarian,Brand,6.0
+109,Symbolic,Brand,-1.0
+109,Utilitarian,Brand,5.0
+11,Symbolic,Brand,-3.0
+11,Utilitarian,Brand,4.75
+110,Symbolic,Brand,-2.5
+110,Utilitarian,Brand,1.0
+111,Symbolic,Brand,-3.5
+111,Utilitarian,Brand,5.25
+112,Symbolic,Brand,-2.25
+112,Utilitarian,Brand,6.0
+113,Symbolic,Brand,-3.5
+113,Utilitarian,Brand,5.0
+114,Symbolic,Brand,0.0
+114,Utilitarian,Brand,0.0
+115,Symbolic,Brand,-4.5
+115,Utilitarian,Brand,5.75
+116,Symbolic,Brand,-2.0
+116,Utilitarian,Brand,1.75
+117,Symbolic,Brand,-1.25
+117,Utilitarian,Brand,4.0
+118,Symbolic,Brand,-3.0
+118,Utilitarian,Brand,3.75
+119,Symbolic,Brand,-0.25
+119,Utilitarian,Brand,-0.25
+12,Symbolic,Brand,-5.5
+12,Utilitarian,Brand,4.5
+120,Symbolic,Brand,0.75
+120,Utilitarian,Brand,6.0
+121,Symbolic,Brand,-1.0
+121,Utilitarian,Brand,3.75
+122,Symbolic,Category,-4.25
+122,Utilitarian,Category,5.0
+123,Symbolic,Brand,1.5
+123,Utilitarian,Brand,3.75
+124,Symbolic,Category,-4.25
+124,Utilitarian,Category,4.75
+125,Symbolic,Brand,1.25
+125,Utilitarian,Brand,3.25
+126,Symbolic,Category,-6.0
+126,Utilitarian,Category,6.0
+127,Symbolic,Brand,-5.25
+127,Utilitarian,Brand,3.25
+128,Symbolic,Category,-2.75
+128,Utilitarian,Category,4.25
+129,Symbolic,Brand,-2.75
+129,Utilitarian,Brand,1.5
+13,Symbolic,Brand,-4.5
+13,Utilitarian,Brand,6.0
+130,Symbolic,Category,-0.25
+130,Utilitarian,Category,4.0
+131,Symbolic,Brand,-3.25
+131,Utilitarian,Brand,5.0
+132,Symbolic,Brand,-2.5
+132,Utilitarian,Brand,2.5
+133,Symbolic,Brand,-
+... (truncated)
+2026-04-10 17:06:47,094 - replication - INFO - 
+--- Turn 13 ---
+2026-04-10 17:07:11,081 - replication - INFO - ***Agent output (Thought):
+Thought: I executed the replication script inside the container, inspected outputs and logs, and will now summarize the execution and results in the required JSON schema. The run completed (exit_code 0) but produced convergence warnings for the mixed model; outputs (collapsed data, model summary, means table) were saved to the replication_data folder.
+
+Answer: {
+  "execution_summary": "I executed the provided Python replication script (LeBeouf_replication__py.py) that implements the original Study 1B analysis: data cleaning, computing ScoreDiff = Benefits - Symbols, collapsing to means by participant x ProductType x Condition, and fitting a linear mixed model ScoreDiff ~ ProductType * Condition with random intercepts for participant. The script ran successfully and saved outputs. The mixed model produced convergence warnings (the optimizer failed to fully converge), but the model summary and coefficient estimates were produced. The preregistered focal hypothesis (interaction between Condition and ProductType) was tested as planned.",
+  "code_executed": [
+    {
+      "command": "python /app/data/LeBeouf_replication__py.py",
+      "status": "Success",
+      "logs": "Stdout indicates: data read from /app/data/LeBeouf_replication_data.csv and /app/data/ItemsList_Final.csv; collapsed data saved to /app/data/dat_collapsed.csv; model summary saved to /app/data/model_summary.txt; means table saved to /app/data/means_by_condition_producttype.csv; script finished. Stderr includes multiple statsmodels ConvergenceWarning messages: 'Maximum Likelihood optimization failed to converge', 'Retrying MixedLM optimization with lbfgs', 'Gradient optimization failed, |grad| = 141.980813', and a warning that the Hessian is not positive definite. Also a pandas FutureWarning about groupby observed default. These indicate the mixed model did not fully converge and a different optimizer or reparameterization might be advisable.",
+      "environment": "Docker image based on python:3.10-slim with pandas>=1.4.0, numpy>=1.22.0, statsmodels>=0.13.0 (script executed in container runtime with these packages available)."
+    }
+  ],
+  "results": {
+    "hypothesis_tested": "Pre-registered focal hypothesis: There is an interaction between Condition (Category vs Brand) and ProductType (Utilitarian vs Symbolic) on ScoreDiff (Benefits - Symbols); the primary test is the Condition x ProductType interaction.",
+    "findings_summary": [
+      {
+        "outcome_name": "ProductType[T.Utilitarian] (main effect)",
+        "value": "5.850",
+        "standard_error": "0.147",
+        "confidence_interval": "[5.563, 6.138]",
+        "p_value": "<0.001",
+        "statistical_significance": "p < 0.001",
+        "direction": "positive (Utilitarian items have higher ScoreDiff than Symbolic)",
+        "effect_size": "Not directly reported; group-level variance (random intercept variance) = 0.252; R-squared not provided by MixedLM summary"
+      },
+      {
+        "outcome_name": "ProductType[T.Utilitarian]:Condition[T.Category] (interaction)",
+        "value": "0.836",
+        "standard_error": "0.206",
+        "confidence_interval": "[0.433, 1.239]",
+        "p_value": "<0.001",
+        "statistical_significance": "p < 0.001",
+        "direction": "positive (the difference in ScoreDiff between Utilitarian and Symbolic items is larger in the Category condition compared to Brand)",
+        "effect_size": "Interaction estimate = 0.836 (units of ScoreDiff); no direct Cohen's d or partial-eta-squared computed in the run"
+      }
+    ],
+    "tables": [
+      {
+        "table_id": "Collapsed per-participant data (dat_collapsed.csv)",
+        "table_description": "Per-participant mean ScoreDiff by ProductType and Condition (rows: participant ID x ProductType; used as input to the mixed model).",
+        "table_file": "data/original/23/input/replication_data/dat_collapsed.csv"
+      },
+      {
+        "table_id": "Model summary (Mixed Linear Model)",
+        "table_description": "Text printout of the mixed model estimating ScoreDiff ~ ProductType * Condition with random intercept by participant. Includes coefficients, standard errors, z/t and p-values.",
+        "table_file": "data/original/23/input/replication_data/model_summary.txt"
+      },
+      {
+        "table_id": "Means by Condition x ProductType",
+        "table_description": "Descriptive means of ScoreDiff for each Condition (Brand vs Category) by ProductType (Symbolic vs Utilitarian).",
+        "table_file": "data/original/23/input/replication_data/means_by_condition_producttype.csv"
+      }
+    ],
+    "figures": []
+  }
+}
+2026-04-10 17:07:11,084 - replication - INFO - 
+--- Final Answer Found ---
+2026-04-10 17:07:11,086 - replication - INFO - Execute stage output saved to data/original/23/input/execution_results.json
+2026-04-10 17:07:11,088 - replication - INFO - Updated metadata for generate-execute in data/original/23/input/metadata.json
