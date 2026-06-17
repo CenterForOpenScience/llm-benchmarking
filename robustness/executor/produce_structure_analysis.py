@@ -4,7 +4,7 @@ import re
 from core.constants import GEN_GOLD_ANALYSIS_CONSTANTS
 import sys
 
-from info_extractor.file_utils import read_json # Keep save_output here if the agent orchestrates saving
+from replicatorbench.info_extractor.file_utils import read_json # Keep save_output here if the agent orchestrates saving
 from core.prompts import PREAMBLE_ROBUSTNESS, EXAMPLE_ROBUSTNESS, GENERATE_GOLD_ANALYSIS, ROBUSTNESS_DESIGN_CODE_MODE_POLICY, ROBUSTNESS_EXTRACT_POLICY
 from core.agent import Agent, run_react_loop, save_output
 from core.utils import build_file_description, configure_file_logging, get_logger

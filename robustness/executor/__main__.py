@@ -6,7 +6,7 @@ def main():
     p.add_argument("--stage", choices=["execute-gen_gold_analysis", "execute"], required=True)
     p.add_argument("--tier", choices=["easy", "medium", "hard"], default="easy")
     p.add_argument("--study-path", required=True)
-    p.add_argument("--templates-dir", default="./robustness/templates")
+    p.add_argument("--templates-dir", default="./templates")
     p.add_argument("--show-prompt", action="store_true", default=False)
     p.add_argument("--code-mode",choices=CODE_MODE_CHOICES,default=DEFAULT_CODE_MODE,help="Code execution mode: 'native' (run original language) or 'python' (translate all to Python and run Python).",)
     p.add_argument("--model-name", help="Please specify the OpenAI model to be used.")

@@ -8,7 +8,7 @@ import tarfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
-from info_extractor.file_utils import check_long_logs
+from replicatorbench.info_extractor.file_utils import check_long_logs
 import tiktoken
 
 try:
