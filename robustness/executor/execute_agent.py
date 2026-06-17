@@ -9,7 +9,7 @@ from core.actions import base_known_actions, get_execute_tool_definitions
 from core.agent import run_react_loop, save_output
 from core.prompts import PREAMBLE_ROBUSTNESS, EXECUTE, EXAMPLE_ROBUSTNESS, ROBUSTNESS_EXECUTE_CODE_MODE_POLICY
 from core.utils import configure_file_logging, get_logger
-from info_extractor.file_utils import read_json
+from replicatorbench.info_extractor.file_utils import read_json
 from robustness.validator.execute_feedback import run_evaluate_execute_feedback
 
 # Execute-stage-only tools
@@ -66,7 +66,7 @@ CHECKPOINT_MAP = {
 }
 
 
-def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./robustness/templates", tier="easy", code_mode: str = "python", model_name: str="gpt-5"):
+def run_execute(study_path: str, show_prompt: bool = False, templates_dir: str = "./templates", tier="easy", code_mode: str = "python", model_name: str="gpt-5"):
     configure_file_logging(logger, study_path, f"execute_{tier}__{code_mode}.log")
     logger.info(f"[agent] dynamic orchestrator run loop for: {study_path}")
 
