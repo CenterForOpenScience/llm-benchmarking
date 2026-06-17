@@ -78,3 +78,14 @@ test-cov: check-deps
 # run the whole suite (extractor + validator + generator) with test coverage
 test-all: check-deps
 	pytest -q --maxfail=1 --disable-warnings --cov=. --cov-report=term-missing
+
+
+## ROBUSTNESS
+
+# interpreter module
+robustness-execute-gen_gold_analysis: check-deps
+	python -m robustness.executor --tier easy --study-path $(STUDY) --model-name $(MODEL) --stage execute-gen_gold_analysis --code-mode $(CODE_MODE)
+
+robustness-execute: check-deps
+	python -m robustness.executor --stage execute --tier easy --study-path $(STUDY) --code-mode $(CODE_MODE) --model-name $(MODEL)
+

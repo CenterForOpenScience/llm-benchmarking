@@ -145,3 +145,51 @@ Before filling out the JSON template, you must inspect and use the given dataset
 INTERPRET = """
 Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
 """.strip()
+
+
+GENERATE_GOLD_ANALYSIS = """
+Remember, you don't have to read all provided files if you don't think they are necessary to fill out the required JSON.
+""".strip()
+
+ROBUSTNESS_DESIGN_CODE_MODE_POLICY = {
+    "native": """
+RUN POLICY (DESIGN)
+- Do NOT translate code to Python.
+- Run the original language code (R/.do/etc.).
+- If the code is incompatible with the data, you should rewrite the code to make it compatible using the edit_file tool.
+- Otherwise only make minimal fixes needed to run (paths to /app/data, deps, small execution bugs etc.).
+- Identify the correct entrypoint and execution order.
+ """.strip(),
+
+    "python": """
+RUN POLICY (DESIGN)
+- Translate every non-Python analysis script (.R/.do/etc.) into Python. Any necessary translation must be performed BEFORE filling out the given JSON template.
+- Keep originals unchanged; write new files like: <basename>__py.py
+- Ensure all IO uses /app/data.
+- Write the python script to replication_data inside the study path.
+- If the original code is incompatible with the data, rewrite the code so that it is compatible. 
+- Set the executed entrypoint to the Python rewrite (or a Python wrapper that runs the translated scripts in order).
+- Preserve logic, outputs, and seeds as closely as possible.
+- Make sure that the changes are reflected in the your structured report. All docker related information must also be compatible with Python execution.
+ """.strip(),
+ }
+
+
+ROBUSTNESS_EXECUTE_CODE_MODE_POLICY = {
+    "native": """
+RUN POLICY (EXECUTE)
+- Do NOT translate code to Python.
+- If the code is incompatible with the data, you should rewrite the code to make it compatible using the edit_file tool.
+- Execute the original-language entrypoint from analysis_info.json.
+- If it fails, debug in the same language or adjust dependencies.
+ """.strip(),
+    "python": """
+RUN POLICY (EXECUTE)
+- Execute using Python.
+- Any missing code should be written to "data" folder inside the study path.
+- If the original code is incompatible with the data, rewrite the code to Python so that it is compatible. 
+- If analysis_info.json points to a non-.py entrypoint, create/complete the Python translations (keeping originals unchanged),
+  create a single Python entrypoint, and update analysis_info.json to that .py entrypoint.
+- If it fails, fix the Python rewrite / deps (don’t switch back to the original language).
+ """.strip(),
+ }
