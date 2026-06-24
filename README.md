@@ -4,7 +4,7 @@
 [![Center for Open Science](https://img.shields.io/badge/Organization-COS-green)](https://cos.io)
 
 Welcome to the official repository for the **LLM Benchmarking Project**, led by the Center for Open Science (COS). This project provides a modular framework to evaluate the capabilities of large language model (LLM) agents across key components of the scientific research lifecycle, including **replication**, **robustness**, and **research design**.
-It contains the **ReplicatorBench** **ReplicatorAgent** published preprint on [arxiv](https://arxiv.org/pdf/)
+It contains the **ReplicatorBench** **ReplicatorAgent** published preprint on [arxiv](https://arxiv.org/abs/2602.11354) (to appear in KDD 2026 AI4Sciences track).
 
 ## 🔍 ReplicatorBench Overview
 
